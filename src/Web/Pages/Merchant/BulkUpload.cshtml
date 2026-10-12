@@ -98,7 +98,11 @@
                 <dt><code>weight_kg</code></dt><dd>Such as 0.5</dd>
                 <dt><code>item_description</code></dt><dd>Optional</dd>
                 <dt><code>note</code></dt><dd>Optional, for the rider</dd>
+                <dt><code>speed</code></dt><dd>Optional: regular (the default) or express</dd>
+                <dt><code>product_type</code></dt><dd>Optional: general (the default), liquid, fragile, fresh food or frozen</dd>
+                <dt><code>location</code></dt><dd>Optional: the door's coordinates, such as "23.8103, 90.4125", or a full Google Maps link</dd>
             </dl>
+            <p class="hint mt">Every parcel goes with the day's pickup by itself: booked before the cut-off, it is collected the same day.</p>
             <details class="mt">
                 <summary class="link-btn">Show the @Model.Areas.Count area names</summary>
                 <div class="pill-row mt">

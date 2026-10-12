@@ -50,7 +50,9 @@ public class TenantCatalog(IServiceScopeFactory scopeFactory, IMemoryCache cache
                     t.SupportPhone,
                     t.MaxDeliveryAttempts,
                     t.RiderReturnTime,
-                    t.MaxBusinessesPerAccount))
+                    t.MaxBusinessesPerAccount,
+                    t.PickupCutoff,
+                    t.PickupTime))
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
         }) ?? [];

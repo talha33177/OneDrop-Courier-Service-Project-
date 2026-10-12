@@ -37,6 +37,57 @@
 </div>
 
 <div class="card">
+    <div class="card-head"><div><h2>@Icons.Get("zap") Delivery types</h2><p>Added to the delivery charge when you choose them while booking</p></div></div>
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    @foreach (var rate in Model.Rates)
+                    {
+                        <th class="num">@rate.ServiceArea.DisplayName()</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><div class="cell-main">@Icons.Get("zap") Express</div><div class="cell-sub">Sooner, and first on the rider's run</div></td>
+                    @foreach (var rate in Model.Rates)
+                    {
+                        <td class="num">
+                            @if (rate.Extras.ExpressCharge is { } express)
+                            {
+                                <span>+@Money.Taka(express)</span><div class="cell-sub">@Statuses.Promise(rate.Extras.ExpressDays ?? rate.DeliveryDays).ToLowerInvariant()</div>
+                            }
+                            else
+                            {
+                                <span class="faint">Not offered</span>
+                            }
+                        </td>
+                    }
+                </tr>
+                @foreach (var (product, hint) in new (ProductType, string)[]
+                {
+                    (ProductType.Liquid, "Bottles, sealed and kept upright"),
+                    (ProductType.Fragile, "Glass, ceramics, screens"),
+                    (ProductType.FreshFood, "Cakes, fruit, cooked food: delivered first"),
+                    (ProductType.Frozen, "In a cold box, delivered first")
+                })
+                {
+                    <tr>
+                        <td><div class="cell-main">@Icons.Get(Statuses.Icon(product)) @product.DisplayName()</div><div class="cell-sub">@hint</div></td>
+                        @foreach (var rate in Model.Rates)
+                        {
+                            <td class="num">@if (rate.ExtraFor(product) is { } extra) { <span>+@Money.Taka(extra)</span> } else { <span class="faint">Not carried</span> }</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
     <div class="card-head"><h2>@Icons.Get("chart") Price calculator</h2></div>
     <div class="card-body">
         <form id="calc" class="form-grid-3" onsubmit="return false">
@@ -64,7 +115,24 @@
                 <label for="codAmount">Cash to collect (৳)</label>
                 <input type="number" id="codAmount" name="codAmount" value="1000" min="0" step="1" />
             </div>
+            <div class="field">
+                <label for="speed">Speed</label>
+                <select id="speed" name="speed">
+                    <option value="Regular">Regular</option>
+                    <option value="Express">Express</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="productType">What is inside</label>
+                <select id="productType" name="productType">
+                    @foreach (var product in DeliveryOptions.ProductTypes)
+                    {
+                        <option value="@product">@product.DisplayName()</option>
+                    }
+                </select>
+            </div>
         </form>
+        <div class="alert alert-warning mt" id="calc-problem" hidden></div>
         <div class="stats" id="result" hidden>
             <div class="stat"><div><div class="stat-label">Service</div><div class="stat-value" data-r="service" style="font-size:18px"></div></div></div>
             <div class="stat"><div><div class="stat-label">Delivery charge</div><div class="stat-value" data-r="delivery"></div></div></div>
@@ -98,6 +166,9 @@
                 result.querySelector("[data-r=cod]").textContent = taka(q.codCharge);
                 result.querySelector("[data-r=total]").textContent = taka(q.total);
                 result.hidden = false;
+                const problem = document.getElementById("calc-problem");
+                problem.textContent = q.problem ? q.problem + " The charges shown are for a regular parcel of general goods." : "";
+                problem.hidden = !q.problem;
             };
             form.addEventListener("input", run);
         })();

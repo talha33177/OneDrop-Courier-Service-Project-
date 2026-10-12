@@ -102,6 +102,15 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
                 "or add a new pickup point for the new place.");
         }
 
+        // A pickup still on the list with nothing to collect was for the old zone's hub: it is called off
+        if (zones > 1)
+        {
+            var empty = await db.PickupRequests
+                .Where(r => r.PickupPointId == point.Id && r.Status == PickupStatus.Scheduled)
+                .ToListAsync(cancellationToken);
+            empty.ForEach(pickup => pickup.Cancel());
+        }
+
         return await SaveAsync(point.Change(areaId, name, address, phone), cancellationToken);
     }
 
@@ -129,12 +138,11 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
         return Result.Success();
     }
 
+    /// <summary>Parcels wait at the point, or a rider is already on the way to it.</summary>
     private async Task<bool> HasOpenWorkAsync(long pointId, CancellationToken cancellationToken)
     {
         return await db.Parcels.AnyAsync(p => p.PickupPointId == pointId && p.Status == ParcelStatus.Pending, cancellationToken) ||
-            await db.PickupRequests.AnyAsync(
-                r => r.PickupPointId == pointId && (r.Status == PickupStatus.Requested || r.Status == PickupStatus.Assigned),
-                cancellationToken);
+            await db.PickupRequests.AnyAsync(r => r.PickupPointId == pointId && r.Status == PickupStatus.Assigned, cancellationToken);
     }
 
     private Task<Merchant> MerchantAsync(CancellationToken cancellationToken)

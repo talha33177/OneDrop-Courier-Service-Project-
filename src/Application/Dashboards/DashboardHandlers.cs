@@ -60,10 +60,13 @@ public sealed record MerchantDashboard(
     IReadOnlyList<DayCount> Week,
     IReadOnlyList<ParcelRow> Recent)
 {
-    /// <summary>A pickup is requested or a rider is on the way.</summary>
-    public bool PickupOpen { get; init; }
+    /// <summary>Parcels waiting for pickup that go with today's pickup: booked before today's cut-off.</summary>
+    public int PickupToday { get; init; }
 
-    /// <summary>The merchant has asked for a pickup or handed a parcel over at least once.</summary>
+    /// <summary>Parcels booked after today's cut-off, which go with the next day's pickup.</summary>
+    public int PickupLater { get; init; }
+
+    /// <summary>The courier has collected from the merchant, or the merchant has dropped a parcel at a hub, at least once.</summary>
     public bool HandedOver { get; init; }
 
     /// <summary>Parcels still on their way after the day they were due.</summary>
@@ -99,6 +102,12 @@ public sealed record HubRow(string Code, string Name, int AtHub, int ToAssign, i
 
 public sealed record TopMerchant(string Name, int Parcels, int Delivered);
 
+/// <summary>What the courier has set up, in the order it is set up: a parcel needs all of it to travel.</summary>
+public sealed record CourierSetup(int Hubs, int Areas, int Rates, int Riders, int ActiveMerchants)
+{
+    public bool Done => Hubs > 0 && Areas > 0 && Rates > 0 && Riders > 0 && ActiveMerchants > 0;
+}
+
 public sealed record AdminDashboard(
     int BookedToday,
     int PickedUpToday,
@@ -124,6 +133,14 @@ public sealed record AdminDashboard(
 
     /// <summary>Merchants' requests about parcels on their way, still to be answered.</summary>
     public int OpenRequests { get; init; }
+
+    /// <summary>Pickups asked for that no hub has given a rider yet.</summary>
+    public int PickupsWithoutRider { get; init; }
+
+    /// <summary>Riders' runs still to be closed with the cash handed in.</summary>
+    public int OpenRuns { get; init; }
+
+    public CourierSetup Setup { get; init; } = new(0, 0, 0, 0, 0);
 }
 
 /// <summary>
@@ -157,9 +174,8 @@ public class DashboardHandler(
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0;
         var stages = await StagesAsync(cancellationToken);
         var recent = await parcels.ListAsync(new ParcelQuery { PageSize = 8 }, cancellationToken);
-        var pickupOpen = await db.PickupRequests.AnyAsync(
-            r => r.Status == PickupStatus.Requested || r.Status == PickupStatus.Assigned,
-            cancellationToken);
+        var cutoff = tenant.PickupCutoffUtc(today);
+        var pickupToday = await db.Parcels.CountAsync(p => p.Status == ParcelStatus.Pending && p.Created < cutoff, cancellationToken);
         var todayStart = tenant.StartUtc(today);
         var yesterdayStart = tenant.StartUtc(today.AddDays(-1));
         var booked = new BookedCounts(
@@ -172,9 +188,7 @@ public class DashboardHandler(
             .Select(p => new LastPayout(p.Number, p.Amount, p.PaidOn!.Value))
             .AsNoTracking()
             .FirstOrDefaultAsync(cancellationToken);
-        var handedOver = pickupOpen ||
-            await db.PickupRequests.AnyAsync(cancellationToken) ||
-            await db.Parcels.AnyAsync(p => p.Status != ParcelStatus.Pending && p.Status != ParcelStatus.Cancelled, cancellationToken);
+        var handedOver = await db.Parcels.AnyAsync(p => p.Status != ParcelStatus.Pending && p.Status != ParcelStatus.Cancelled, cancellationToken);
 
         return new MerchantDashboard(
             merchant.Name,
@@ -187,7 +201,8 @@ public class DashboardHandler(
             await WeekAsync(tenant, today, cancellationToken),
             recent.Page.Items)
         {
-            PickupOpen = pickupOpen,
+            PickupToday = pickupToday,
+            PickupLater = stages.Counts.Pending - pickupToday,
             HandedOver = handedOver,
             Late = await LateAsync(today, cancellationToken),
             Cod = stages.Cod,
@@ -216,7 +231,7 @@ public class DashboardHandler(
         var returnedToday = await db.Parcels.CountAsync(p => p.ClosedOn >= todayStart && p.Status == ParcelStatus.Returned, cancellationToken);
         var pendingMerchants = await db.Merchants.CountAsync(m => m.Status == MerchantStatus.Pending && !m.Archived, cancellationToken);
         var openPickups = await db.PickupRequests.CountAsync(
-            r => r.Status == PickupStatus.Requested || r.Status == PickupStatus.Assigned,
+            r => r.PickupDate <= today && (r.Status == PickupStatus.Scheduled || r.Status == PickupStatus.Assigned),
             cancellationToken);
         var cash = await (
             from attempt in db.DeliveryAttempts
@@ -280,7 +295,15 @@ public class DashboardHandler(
             Late = await LateAsync(today, cancellationToken),
             Cod = stages.Cod,
             Issues = await IssuesAsync(cancellationToken),
-            OpenRequests = await db.ParcelRequests.CountAsync(r => r.Status == ParcelRequestStatus.Open, cancellationToken)
+            OpenRequests = await db.ParcelRequests.CountAsync(r => r.Status == ParcelRequestStatus.Open, cancellationToken),
+            PickupsWithoutRider = await db.PickupRequests.CountAsync(r => r.Status == PickupStatus.Scheduled && r.PickupDate <= today, cancellationToken),
+            OpenRuns = await db.DeliveryRuns.CountAsync(r => r.Status == RunStatus.Open, cancellationToken),
+            Setup = new CourierSetup(
+                await db.Hubs.CountAsync(h => !h.Archived, cancellationToken),
+                await db.Areas.CountAsync(a => !a.Archived, cancellationToken),
+                await db.DeliveryRates.CountAsync(cancellationToken),
+                await db.Riders.CountAsync(r => !r.Archived, cancellationToken),
+                await db.Merchants.CountAsync(m => m.Status == MerchantStatus.Active && !m.Archived, cancellationToken))
         };
     }
 

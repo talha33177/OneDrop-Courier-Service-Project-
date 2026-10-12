@@ -15,8 +15,8 @@ The one place to see where we are and what comes next for **OneDrop Courier**, t
 | | |
 |---|---|
 | Current phase | **Phase 4** — the admin panel and payouts the courier can steer |
-| Next task | 4.10 recipients pay COD online, if the owner says go (recommended); otherwise 4.3 Courier settings. Still waiting on the owner: 2.1 review and commit of everything since `ce576c1` (all uncommitted on `main`); 2.6 and 2.7 wait on accounts and a decision |
-| Last session | 2026-10-08 — 4.9: merchants pay what they owe online through SSLCommerz, proved on the owner's sandbox store |
+| Next task | The owner's senior puts the site live with [Deployment.md](../Documentation/Deployment.md) (server and address are theirs to choose). Then 4.10 recipients pay COD online, if the owner says go (recommended); otherwise 4.3 Courier settings. Still waiting on the owner: review and commit of everything since `ca16f42` (uncommitted on `main`); 2.6 and 2.7 wait on accounts and a decision |
+| Last session | 2026-10-12 — 4.13: delivery types (express, liquid, fragile, fresh food, frozen), the recipient's door on Google Maps, one pickup a day at the 3:00 pm cut-off, "Manage businesses". The owner adds a Google Maps key to `appsettings.Local.json` to see the map |
 | Blockers | None |
 
 ---
@@ -167,6 +167,21 @@ to say why it is stuck.
       a bKash payment credited, a "success with risk" Nagad payment held and then credited by the admin.
 - [ ] **4.10 Recipients pay their COD online** (recommended next, waiting for the owner's go-ahead). A "Pay now" on
       the tracking page; the rider collects ৳0; refunds through SSLCommerz when a paid parcel is refused or comes back.
+- [x] **4.11 "Get paid now" becomes a request the admin approves** (2026-10-08, owner's choice). "Ask to be paid now"
+      on Payments, one open request per business, taken back by the merchant if it likes; the admin sees the balance,
+      today's part, the cash still with riders and the charges if the parcels on the way came back, then pays at once
+      or refuses with a reason the merchant reads.
+
+- [x] **4.12 Ready to go live** (2026-10-08, owner: for the portfolio, no demo data). A live site starts with the
+      courier's setup and one admin made from `Setup:AdminEmail` / `Setup:AdminPassword` (never changed once it
+      exists); `Tenancy:HomeCourierHost` serves the courier on one address; `deploy/` runs SQL Server Express, the app
+      as Production behind Caddy (HTTPS); [Deployment.md](../Documentation/Deployment.md) for the owner's senior. The
+      dev database was left as it is.
+
+- [x] **4.13 Delivery types, the door on a map, one pickup a day** (2026-10-12, owner). Express and what is inside
+      (liquid, fragile, fresh food, frozen) as extras on the rate card per service area; the recipient's door pinned on
+      Google Maps (with a key) or by a pasted link, and Navigate for riders; pickups scheduled by the 3:00 pm cut-off
+      (truck at 3:30 pm) with the merchant's pickup request removed; "Manage businesses" in the merchant menu.
 
 Kept as it is, by decision: payouts do not wait for a rider's cash. The merchant is paid what the door collected and
 a short rider is the courier's matter with its rider; 4.2 and 4.7 make the shortfall impossible to miss.
@@ -180,6 +195,7 @@ a short rider is the courier's matter with its rider; 4.2 and 4.7 make the short
 | Every 5 seconds (`Jobs:OutboxInterval`) | Outbox senders in process, each in a loop of its own: recipient texts, merchants' webhooks, and merchants' emails |
 | Every hour (`Jobs:Payouts`) | `merchant-payouts`: every merchant's ledger lines up to yesterday (courier's day) |
 | Every 10 minutes (`Jobs:OnlinePayments`) | `online-payments`: asks the gateway about online payments still waiting or failed in the last day; credits what it confirms, closes what was never finished after a day |
+| Every 15 minutes (`Jobs:Pickups`) | `pickups`: carries a missed pickup to today, lists points whose parcels were left behind, calls off a closed list's pickups with nothing to collect |
 
 ## Must-pass tests
 
@@ -215,13 +231,92 @@ New ones are added there and dated here.
 | 2026-10-07 | Several payout accounts per merchant account, the one in use copied onto the main profile; "Get paid now" pays every unpaid line at once with the run's own rules, no limit on how often |
 | 2026-10-07 | The bell is worked out from existing rows when a page is drawn; "seen" is a cookie per login. The merchant ID is shown (owner's request) as the one exception to "never show a raw id" |
 | 2026-10-07 | Phase 4: payouts the admin can steer (refused transfers with their reason, send again, cancel; hold one account; adjustments), then the admin's bell, settings, staff, merchant, stuck parcels, rider pages and a pass over every page (owner). Payouts keep not waiting for a rider's cash |
+| 2026-10-08 | "Get paid now" becomes a request the courier's admin approves; it paid at once, which could pay out cash still with a rider, kept nothing back for parcels that may come back, and had no limit (owner) |
 | 2026-10-08 | SSLCommerz (owner's sandbox) takes money in, first for merchants paying what they owe: an adjustment credit, believed only when the gateway confirms it to our server, once. Not a payout gateway (it cannot send money out) and no prepaid wallet (the payout run would pay a top-up straight back). Recipients paying COD online is the recommended next step |
+| 2026-10-08 | Ready to go live for the portfolio: a clean database with one admin from settings, no demo data outside Development, the courier on one address, `deploy/` with HTTPS; the hosting and the address are the owner's senior's to choose; the dev database is left as it is (owner) |
 
 ---
 
 ## Daily log
 
 Newest first.
+
+### 2026-10-12 (delivery types, the door on a map, one pickup a day)
+- **Owner's request:** delivery types in booking (fast, fragile, frozen and more, priced differently: fragile above
+  regular, frozen above fragile); Google Maps for the recipient so the rider finds the door; in the merchant menu drop
+  "Add business" and rename "All businesses" to "Manage businesses"; one pickup a day, the truck leaving the hub at
+  3:30 pm with the parcels booked before 3:00 pm, later ones the next day, and no manual pickup request.
+  Asked and answered: Google Maps everywhere (the owner adds a key), speed and contents as two choices, a pickup
+  every day.
+- **Done (4.13):** `DeliverySpeed` and `ProductType`, the extras on `DeliveryRate` (`Price` refuses what a service area
+  does not offer), snapshot on the parcel (`SpeedCharge`, `ProductCharge`, in `DeliveryCharge`; a reweigh keeps them).
+  `GeoPoint` reads coordinates and every Google Maps link form; `GoogleMapLinks` opens short links (Google's hosts only).
+  Booking form with option cards priced live, the map pin (Google map, search, click, drag, find the address; or a
+  pasted link without a key), itemised charges and the pickup day; CSV columns `speed`, `product_type`, `location`;
+  API fields; labels, hub lists, assign page, rider app (Navigate, embedded map with a key) show tags and handling, and
+  express and fresh or frozen food go first. Admin rates page edits the extras; merchant rates page and front page show
+  them. Pickups: `Tenant.PickupCutoff` and `PickupTime`, `PickupSchedule` (booking lists the point; the `pickups` job
+  carries, lists and calls off), riders collect only parcels booked before the cut-off, hub "Today's pickups" with one
+  rider for the whole round, the merchant's read-only Pickups page; the request form, cancel and the "ask for a pickup"
+  nudges are gone. A pickup point now moves zone once no parcel waits and no rider is on the way (an empty scheduled
+  pickup is called off). Both databases published (`Scripts/Pre/003`, `Scripts/2026/005`).
+- **Tested:** build 0 warnings (Web compiled to a side folder while an elevated `Web.exe` held `src/Web/bin`); domain
+  **229**, architecture 6; integration `DailyPickupTests` 4, `DeliveryTypesTests` 4, `DeliveryFlowTests`, `BellTests`,
+  `SchemaMatchesModelTests`, `RowLevelSecurityTests`: all pass (one test fix: Razor writes `=` in links as an entity).
+  A first wider run (isolation sweep, portal pages, API, merchant panel, guards, businesses) lost the `ras-x2`
+  connection midway; it found the old pickup-request test and the pickup-point guard, both fixed.
+- **Worth knowing:** a check constraint `x BETWEEN … AND y IS NOT NULL` is false, not unknown, when `x` is NULL; write
+  `x IS NULL OR (…)`. The pickup catch-up job in `OneDrop-Test` lists every old test merchant's pending parcels once.
+
+### 2026-10-08 (last: ready to go live)
+- **Owner's request:** "I will show it in my portfolio so make it ready to be live. Remove if there is any demo data."
+  Asked and answered: the hosting and the address are the owner's senior's to choose; a clean start with only the
+  owner's admin; the dev database `OneDrop` (the owner's own test sign-ups, 13 parcels) is left as it is.
+- **Found:** the only admin logins anywhere were the demo ones, with their password in the README, and a database
+  deployed from nothing had nobody who could sign in (only the Development demo seeder made users); behind a proxy the
+  app saw http and the proxy's address; the courier needed `onedrop.<domain>`; a mistyped address showed raw JSON; the
+  README's first line was a broken fragment on GitHub; the local `docker-compose.yml` promised demo logins it no
+  longer made (`Seed:DemoData` has been off since 2026-10-04).
+- **Done (4.12):** `AdminSetup` makes the courier's admin from `Setup:AdminEmail` / `Setup:AdminName` /
+  `Setup:AdminPassword` when missing and never changes one that exists; a bad password stops the start with the reason.
+  `Tenancy:HomeCourierHost` serves the home courier on one address (and the bare domain sends visitors there).
+  `deploy/docker-compose.yml` (SQL Server 2025 Express, the database deployed on every start, the app as Production
+  with `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, Caddy for HTTPS), `deploy/Caddyfile`, `deploy/.env.example`, LF by
+  `.gitattributes`. `Documentation/Deployment.md` for the senior (server, address or sslip.io, settings, start, first
+  sign-in, updates, backups, other hosts, troubleshooting). Pages get a "We could not find that page" page for an empty
+  error answer; the API keeps problem details. README: title, live-site links, the demo-data wording; the local compose
+  turns the demo on explicitly.
+- **Tested:** build 0 warnings; domain 203, architecture 6; integration `LiveSetupTests` 3 of 3 (admin made once and
+  never changed, refused at another courier, weak password and unknown courier stop the start; one-address host;
+  error pages), `PortalPagesTests` 12 of 12, `IsolationTests` passed with the new error page. **The production stack
+  run for real on Docker Desktop** with `SITE_ADDRESS=localhost`: database deployed from nothing (16 hubs, 87 areas, 0
+  merchants, 0 parcels, one login), "Setup: created the admin", http redirected to https, the admin signed in (secure
+  cookie) and saw the setup checklist, no demo buttons, `/Dev` 404, a restart without the password left the admin as
+  it was, the backup command from the guide produced a file, SQL Server reported Express Edition. Torn down afterwards.
+- **Worth knowing:** `LiveSetupTests`' host test failed once beside the isolation sweep because the Development
+  sign-in page took over 100 s (now a trap in Project-Context); it requests `/Coverage` instead. The first database
+  deploy in Docker Desktop took about 6 minutes.
+
+### 2026-10-08 (later still: an admin panel that says where to go next)
+- **Owner's request:** "make the whole admin panel more userfriendly, so that admin easily understand where to go after
+  where."
+- **Dashboard, read top to bottom.** A setup checklist while the courier is not set up (map, rates, riders, an active
+  merchant, in that order, each with its button); "Waiting for you", the admin bell's lines as a to-do list, each
+  opening the page where it is settled, or one line saying nothing waits; "The parcels' day, across every hub", six
+  numbered steps like the hub board (pickups, coming in, waiting for a rider, out with riders with runs to close and
+  the cash, going back, owed to merchants), each opening the hub chooser on the step's page; then today's numbers,
+  the week, parcels in progress, hubs and top merchants. `AdminDashboard` gained `PickupsWithoutRider`, `OpenRuns` and
+  `Setup` (`CourierSetup`).
+- **`/Admin/Guide`, "How it works".** Set up once in order (coverage, rates, vehicles, riders, merchants); a parcel's day
+  in eight steps with who does each and a link to its page, and the way back for returns; what needs the admin and
+  where; where to look back. In the menu under the dashboard, on the dashboard and in a sidebar box for admins.
+- **Menu by when it is used:** Dashboard and How it works; Every day (hub operations, parcels, requests, failed
+  messages); Money; People; Setup (coverage, rates, vehicles, in setup order). Hub operations stays lit on every hub
+  page, the chooser and run sheets included.
+- **Toasts offer the next step:** a new hub, "Draw a zone on it"; a new zone, "Add its areas"; a new rider, "Hand them
+  parcels at {hub}"; an approved merchant, "Next sign-up (n waiting)" while others wait.
+- **Caught on the screenshots:** `.section-head` is the public site's (42 px headings), the trap already listed; the
+  admin's headings are `.part-head`.
 
 ### 2026-10-08 (later: tabs that do not reload the page, and work marks in the menu)
 - **Owner's requests:** "In payout box when i click any one these [All, Paid, Processing, Cancelled] the whole page
@@ -274,6 +369,24 @@ Newest first.
   The bare domain now sends visitors to the courier named by `Tenancy:HomeCourier` (`onedrop`; the list of couriers
   shows only when none is set); platform admins still sign in at `localhost:5080/Account/Login` and land on the list.
   The launch profile opens `http://onedrop.localhost:5080/`. New `PortalPagesTests` case; the class passed 12 of 12.
+- **Then (owner):** "whats is the logic here. if there is a get paid now then everybody will take out the money".
+  Explained the three holes (cash still with riders, nothing kept for parcels that may come back, no limit) and offered
+  rules-based instant payouts, a request the admin approves, or removing it; the owner chose the request (4.11).
+  `Domain/Payments/PayoutRequest.cs` (open, paid, refused, withdrawn), table `Payments.PayoutRequest` (one open per
+  business, in the policy; both databases published), `PayoutRequestsHandler` (ask, withdraw, the admin's review with
+  balance, today, cash with riders and charges if returned, pay through `PayoutsJob.PayNowAsync`, refuse). The
+  merchant's "Get paid now" is gone; "Ask to be paid now" and "Take back the request" replace it, a refusal shows on
+  Payments and in the merchant's bell; the admin sees "Asking to be paid now" on `/Admin/Payouts` and a bell line.
+  Tested: domain **203** (three new `PayoutRequestTests`); integration `PayoutRequestsTests` (2, new), `BellTests`,
+  `PayoutTests`, `PayoutAccountsTests` (the old pay-now test moved into the new class), `SchemaMatchesModelTests`,
+  `RowLevelSecurityTests`: **18 of 19**, the one failure a clash with `PayoutTests` (below), fixed and rerun.
+- **Then (owner):** "it doesn't show the red reminder on the tab that a work is needs to done". The menu's work marker
+  (`MenuWorkHandler`) did not know about payout requests; it now marks Merchant payouts while one is open. On a
+  favourite the "!" sits on the chip's corner like the bell's count, because inline it widened the chip and pushed it
+  out of a full favourites bar. Also fixed from the live look: "cash still with riders" on a request counted cash of
+  parcels already paid out; it now counts only the cash in the balance being asked for. `PayoutRequestsTests` moved
+  to the rival courier: `PayoutTests` runs OneDrop's payouts as of tomorrow and paid a test merchant's lines out from
+  under it. Rerun there: **2 of 2**, including the menu marker.
 - **Worth knowing:** SSLCommerz's merchant panel is `sandbox-gw.sslcommerz.com` but its API is still
   `sandbox.sslcommerz.com`. Its notice cannot reach localhost, which is why the check job exists. The owner asked
   (again) never to run the full integration suite after a change, and to keep it in the background when it is needed.

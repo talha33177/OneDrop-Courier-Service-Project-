@@ -80,6 +80,9 @@ CREATE SECURITY POLICY [Platform].[TenantIsolation]
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[Payout],
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[Payout] AFTER INSERT,
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[Payout] AFTER UPDATE,
+    ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[PayoutRequest],
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[PayoutRequest] AFTER INSERT,
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[PayoutRequest] AFTER UPDATE,
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryRate],
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryRate] AFTER INSERT,
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryRate] AFTER UPDATE

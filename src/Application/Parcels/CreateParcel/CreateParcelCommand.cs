@@ -20,6 +20,11 @@ public sealed record CreateParcelCommand
 
     public string? RecipientAddress { get; init; }
 
+    /// <summary>Optional: the door pinned on a map, in degrees (23.810331), with <see cref="RecipientLongitude"/>.</summary>
+    public decimal? RecipientLatitude { get; init; }
+
+    public decimal? RecipientLongitude { get; init; }
+
     /// <summary>Give either AreaId or the Area name, from GET /api/v1/areas.</summary>
     public long? AreaId { get; init; }
 
@@ -32,6 +37,12 @@ public sealed record CreateParcelCommand
     public decimal CodAmount { get; init; }
 
     public decimal WeightKg { get; init; }
+
+    /// <summary>regular (the default) or express, where the route offers it.</summary>
+    public DeliverySpeed? Speed { get; init; }
+
+    /// <summary>What is inside: general (the default), liquid, fragile, freshFood or frozen, where the route carries it.</summary>
+    public ProductType? ProductType { get; init; }
 
     public string? ItemDescription { get; init; }
 
@@ -46,7 +57,9 @@ public sealed record CreateParcelCommand
     public int WeightGrams => (int)Math.Round(WeightKg * 1000m, MidpointRounding.AwayFromZero);
 }
 
+/// <param name="DeliveryCharge">The weight's charge plus <see cref="SpeedCharge"/> and <see cref="ProductCharge"/>.</param>
 /// <param name="TotalCharge">What the merchant pays if the parcel is delivered with the whole cash on delivery.</param>
+/// <param name="PickupOn">The day the courier collects it: that day when booked before the pickup cut-off, else the next.</param>
 public sealed record CreateParcelResult(
     string TrackingCode,
     string? MerchantReference,
@@ -58,7 +71,12 @@ public sealed record CreateParcelResult(
     decimal DeliveryCharge,
     decimal CodCharge,
     decimal TotalCharge,
-    DateTime Created)
+    DateTime Created,
+    DeliverySpeed Speed,
+    ProductType ProductType,
+    decimal SpeedCharge,
+    decimal ProductCharge,
+    DateOnly? PickupOn)
 {
     /// <summary>True when this is an earlier parcel returned for a repeated Idempotency-Key.</summary>
     public bool Replayed { get; init; }

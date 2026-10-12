@@ -30,8 +30,8 @@ public static class Menu
         ]),
         new("Businesses",
         [
-            new("/Merchant/Businesses", "All businesses", "layers", "/Merchant/Businesses"),
-            new("/Merchant/NewBusiness", "Add business", "store", "/Merchant/NewBusiness")
+            // Adding a business starts from this page, so it lights up for the add page too
+            new("/Merchant/Businesses", "Manage businesses", "layers", "/Merchant/Businesses", "/Merchant/NewBusiness")
         ]),
         new("Parcels",
         [
@@ -39,7 +39,7 @@ public static class Menu
             new("/Merchant/Parcels", "All parcels", "package", "/Merchant/Parcels", "/Merchant/Parcel", "/Merchant/EditParcel"),
             new("/Merchant/ByDate", "By date", "calendar", "/Merchant/ByDate"),
             new("/Merchant/BulkUpload", "Bulk upload", "upload", "/Merchant/BulkUpload"),
-            new("/Merchant/Pickups", "Pickup requests", "truck", "/Merchant/Pickups"),
+            new("/Merchant/Pickups", "Pickups", "truck", "/Merchant/Pickups"),
             new("/Merchant/Returns", "Returns", "return", "/Merchant/Returns", "/Merchant/Return"),
             new("/Merchant/Requests", "Requests", "message", "/Merchant/Requests"),
             new("/Merchant/Labels", "Print labels", "printer", "/Merchant/Labels"),
@@ -62,29 +62,34 @@ public static class Menu
 
     private static readonly MenuSection[] AdminMenu =
     [
-        new(null, [new("/Admin", "Dashboard", "dashboard", "/Admin/Index")]),
-        new("Operations",
+        // In the order an admin uses them: the day's work first, then money, people, and what is set up once
+        new(null,
         [
+            new("/Admin", "Dashboard", "dashboard", "/Admin/Index"),
+            new("/Admin/Guide", "How it works", "help", "/Admin/Guide")
+        ]),
+        new("Every day",
+        [
+            new("/Hub", "Hub operations", "warehouse", "/Hub/Index", "/Hub/Choose", "/Hub/Scan", "/Hub/Assign", "/Hub/Runs", "/Hub/RunSheet", "/Hub/Pickups", "/Hub/Returns", "/Hub/Labels"),
             new("/Hub/Parcels", "Parcels", "package", "/Hub/Parcels", "/Hub/Parcel"),
             new("/Admin/Requests", "Requests", "message", "/Admin/Requests"),
-            new("/Hub", "Hub operations", "warehouse", "/Hub/Index", "/Hub/Scan", "/Hub/Assign", "/Hub/Runs", "/Hub/Pickups", "/Hub/Returns")
-        ]),
-        new("People",
-        [
-            new("/Admin/Merchants", "Merchants", "store", "/Admin/Merchants", "/Admin/Merchant", "/Admin/NewMerchant"),
-            new("/Admin/Riders", "Riders", "bike", "/Admin/Riders", "/Admin/Rider")
+            new("/Admin/Messages", "Failed messages", "x-circle", "/Admin/Messages")
         ]),
         new("Money",
         [
             new("/Admin/Payouts", "Merchant payouts", "wallet", "/Admin/Payouts", "/Admin/Payout"),
             new("/Admin/Reports", "Reports", "chart", "/Admin/Reports")
         ]),
+        new("People",
+        [
+            new("/Admin/Merchants", "Merchants", "store", "/Admin/Merchants", "/Admin/Merchant", "/Admin/NewMerchant"),
+            new("/Admin/Riders", "Riders", "bike", "/Admin/Riders", "/Admin/Rider")
+        ]),
         new("Setup",
         [
-            new("/Admin/Rates", "Delivery rates", "tag", "/Admin/Rates"),
-            new("/Admin/Vehicles", "Vehicles", "truck", "/Admin/Vehicles"),
             new("/Admin/Coverage", "Coverage", "globe", "/Admin/Coverage"),
-            new("/Admin/Messages", "Failed messages", "message", "/Admin/Messages")
+            new("/Admin/Rates", "Delivery rates", "tag", "/Admin/Rates"),
+            new("/Admin/Vehicles", "Vehicles", "truck", "/Admin/Vehicles")
         ])
     ];
 
@@ -94,7 +99,7 @@ public static class Menu
         [
             new("/Hub", "Hub board", "dashboard", "/Hub/Index"),
             new("/Hub/Scan", "Scan parcels", "scan", "/Hub/Scan"),
-            new("/Hub/Pickups", "Pickup requests", "truck", "/Hub/Pickups"),
+            new("/Hub/Pickups", "Today's pickups", "truck", "/Hub/Pickups"),
             new("/Hub/Assign", "Assign to riders", "send", "/Hub/Assign"),
             new("/Hub/Runs", "Rider closing", "cash", "/Hub/Runs"),
             new("/Hub/Returns", "Returns to merchants", "return", "/Hub/Returns")

@@ -11,6 +11,7 @@ using Infrastructure.Jobs;
 using Infrastructure.Seeding;
 using Application.Abstractions;
 using Web.Authentication;
+using Web.Display;
 using Web.Live;
 using Web.MultiTenancy;
 using Web.Pages.Dev;
@@ -32,6 +33,7 @@ builder.Services.AddSerilog((services, logger) => logger
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Tenant} {Message:lj}{NewLine}{Exception}"));
 
 builder.Services.Configure<TenancyOptions>(builder.Configuration.GetSection("Tenancy"));
+builder.Services.AddSingleton(builder.Configuration.GetSection("GoogleMaps").Get<MapsOptions>() ?? new MapsOptions());
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 var runJobs = builder.Configuration.GetValue<bool>("Jobs:Server");
@@ -96,6 +98,20 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Seed:De
             app.Configuration.GetValue<bool>("Seed:DemoActivity"));
 }
 
+// A live courier's first admin: a database deployed from nothing has nobody who can sign in (see AdminSetup)
+if (app.Configuration["Setup:AdminEmail"] is { Length: > 0 } adminEmail)
+{
+    await app.Services
+        .GetRequiredService<AdminSetup>()
+        .EnsureCourierAdminAsync(
+            app.Configuration["Tenancy:HomeCourier"] is { Length: > 0 } courier
+                ? courier
+                : throw new InvalidOperationException("Setup:AdminEmail needs Tenancy:HomeCourier, the courier to admin."),
+            adminEmail,
+            app.Configuration["Setup:AdminName"] is { Length: > 0 } adminName ? adminName : "Courier admin",
+            app.Configuration["Setup:AdminPassword"]);
+}
+
 if (runJobs)
 {
     app.Services.ScheduleJobs(app.Configuration);
@@ -107,7 +123,13 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseStatusCodePages();
+// An empty error answer (a mistyped address, too many tries): a page for people, problem details for API callers
+app.UseWhen(
+    context => context.Request.Path.StartsWithSegments("/api"),
+    api => api.UseStatusCodePages());
+app.UseWhen(
+    context => !context.Request.Path.StartsWithSegments("/api"),
+    pages => pages.UseStatusCodePagesWithReExecute("/Error"));
 app.UseSerilogRequestLogging();
 app.MapStaticAssets();
 app.UseRouting();

@@ -7,12 +7,16 @@ using Domain.Pricing;
 
 namespace Application.Parcels;
 
-/// <summary>Where a parcel goes and what it costs: the pickup point and its hub, the recipient's area and its hub, the charges.</summary>
-public sealed record Booking(PickupPoint PickupPoint, long PickupHubId, Area Area, Hub DeliveryHub, ParcelCharges Charges);
+/// <summary>
+/// Where a parcel goes and what it costs: the pickup point and its hub, the recipient's area and its hub, the charges,
+/// and the rate they come from (which also says what other speeds and contents the route takes).
+/// </summary>
+public sealed record Booking(PickupPoint PickupPoint, long PickupHubId, Area Area, Hub DeliveryHub, ParcelCharges Charges, DeliveryRate Rate);
 
 /// <summary>
 /// Works out a parcel's route and price for booking, editing and quoting: the merchant's pickup point (or its default),
-/// the recipient's area (by id or name), the hubs of their zones, and the rate of the service area between them.
+/// the recipient's area (by id or name), the hubs of their zones, and the rate of the service area between them with
+/// the extras for the parcel's speed and what is inside.
 /// </summary>
 public class ParcelBooking(IAppDbContext db)
 {
@@ -28,6 +32,8 @@ public class ParcelBooking(IAppDbContext db)
         long? areaId,
         string? areaName,
         int weightGrams,
+        DeliverySpeed speed,
+        ProductType product,
         CancellationToken cancellationToken = default)
     {
         var points = db.PickupPoints.Where(p => p.MerchantId == merchantId && !p.Archived);
@@ -61,7 +67,12 @@ public class ParcelBooking(IAppDbContext db)
         var serviceArea = ServiceAreas.Between(pickupZone, area.Zone!);
         var rate = await db.DeliveryRates.SingleOrDefaultAsync(r => r.ServiceArea == serviceArea, cancellationToken)
             ?? throw new InvalidOperationException($"The courier has no rate for {serviceArea.DisplayName()}.");
+        var charges = rate.Price(weightGrams, speed, product);
+        if (charges.IsFailure)
+        {
+            return charges.Error!;
+        }
 
-        return new Booking(point, pickupZone.HubId, area, area.Zone!.Hub!, rate.ChargesFor(weightGrams));
+        return new Booking(point, pickupZone.HubId, area, area.Zone!.Hub!, charges.Value, rate);
     }
 }

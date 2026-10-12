@@ -5,6 +5,21 @@
     ViewData["Title"] = "Dashboard";
     var d = Model.Data;
     var s = d.Stages;
+    var setup = d.Setup;
+    (string Title, string Help, bool Done, string Page, string Action)[] steps =
+    [
+        ("Draw the map", "Open hubs, give each a zone, and list the areas you deliver to", setup.Hubs > 0 && setup.Areas > 0, "/Admin/Coverage", "Open coverage"),
+        ("Set the delivery rates", "What merchants pay inside the city, in the suburbs and outside", setup.Rates > 0, "/Admin/Rates", "Set rates"),
+        ("Add your riders", "Each works from one hub and signs in to the rider app", setup.Riders > 0, "/Admin/Riders", "Add a rider"),
+        ("Approve or add a merchant", "Shops sign up on the website and wait for you, or you add them yourself",
+            setup.ActiveMerchants > 0, d.PendingMerchants > 0 ? "/Admin/Merchants?status=Pending" : "/Admin/NewMerchant",
+            d.PendingMerchants > 0 ? "Review sign-ups" : "Add a merchant")
+    ];
+    var doneCount = steps.Count(step => step.Done);
+    var current = Array.FindIndex(steps, step => !step.Done);
+    var incoming = d.Hubs.Sum(hub => hub.Incoming);
+    var toAssign = d.Hubs.Sum(hub => hub.ToAssign);
+    var withRiders = d.Hubs.Sum(hub => hub.WithRiders);
 }
 @section Head {
     <partial name="_Live" />
@@ -14,50 +29,119 @@
     <div>
         <div class="page-kicker">@TenantContext.Require().Local(DateTime.UtcNow).ToString("dddd d MMMM")</div>
         <h1>Dashboard</h1>
-        <p>@TenantContext.Tenant?.Name today, across every hub. <span class="badge badge-brand" data-live-status>Live</span></p>
+        <p>@TenantContext.Tenant?.Name today, across every hub. Start at the top: what needs you, then the parcels' day. <span class="badge badge-brand" data-live-status>Live</span></p>
     </div>
     <div class="page-actions">
+        <a class="btn btn-outline" asp-page="/Admin/Guide">@Icons.Get("help") How it works</a>
         <a class="btn btn-outline" asp-page="/Hub/Choose">@Icons.Get("warehouse") Choose a hub</a>
-        <a class="btn btn-outline" asp-page="/Hub/Parcels">@Icons.Get("package") All parcels</a>
         <a class="btn btn-primary" asp-page="/Admin/NewMerchant">@Icons.Get("plus") Add merchant</a>
     </div>
 </div>
 
 <div data-live="dashboard">
-    @if (d.PendingMerchants > 0)
+    @if (!setup.Done)
     {
-        <div class="next-step">
-            <span class="stat-icon">@Icons.Get("store")</span>
-            <div class="next-step-text">
-                <strong>@d.PendingMerchants merchant@(d.PendingMerchants == 1 ? "" : "s") waiting for approval</strong>
-                <span>They can look around but cannot book parcels until you approve them.</span>
+        <div class="card checklist mb">
+            <div class="card-head">
+                <div>
+                    <h2>@Icons.Get("sparkle") Set up the courier</h2>
+                    <p>@doneCount of @steps.Length done. A parcel needs all of these before it can travel; do them in this order.</p>
+                </div>
             </div>
-            <a class="btn btn-primary" asp-page="/Admin/Merchants" asp-route-status="Pending">Review sign-ups @Icons.Get("arrow-right")</a>
+            <div class="card-body">
+                <div class="checklist-bar"><span style="width:@(100 * doneCount / steps.Length)%"></span></div>
+                <ol>
+                    @for (var i = 0; i < steps.Length; i++)
+                    {
+                        var step = steps[i];
+                        <li class="@(step.Done ? "done" : i == current ? "current" : "")">
+                            <span class="check-dot">@Icons.Get("check")</span>
+                            <span class="check-text">@step.Title<small>@step.Help</small></span>
+                            @if (!step.Done)
+                            {
+                                <a class="btn @(i == current ? "btn-primary" : "btn-outline") btn-sm" href="@step.Page">@step.Action</a>
+                            }
+                        </li>
+                    }
+                </ol>
+            </div>
         </div>
     }
 
-    @if (d.OpenRequests > 0)
-    {
-        <div class="next-step">
-            <span class="stat-icon">@Icons.Get("message")</span>
-            <div class="next-step-text">
-                <strong>@d.OpenRequests merchant request@(d.OpenRequests == 1 ? "" : "s") to answer</strong>
-                <span>To cancel a parcel on its way, or to change its cash on delivery.</span>
+    <div class="card mb">
+        <div class="card-head">
+            <div>
+                <h2>@Icons.Get("bell") Waiting for you</h2>
+                <p>Decisions only an admin can make, most recent first. Each line opens the page where you settle it.</p>
             </div>
-            <a class="btn btn-primary" asp-page="/Admin/Requests">Answer them @Icons.Get("arrow-right")</a>
         </div>
-    }
+        @if (Model.Waiting.Count == 0)
+        {
+            <div class="todo-clear">@Icons.Get("check-circle")<div><strong>Nothing needs you right now.</strong> Sign-ups, merchants' requests, flagged parcels and payout problems show up here.</div></div>
+        }
+        else
+        {
+            <ul class="todo-list">
+                @foreach (var notice in Model.Waiting)
+                {
+                    <li>
+                        <a href="@notice.Link">
+                            <span class="bell-icon bell-@notice.Tone.ToString().ToLowerInvariant()">@Icons.Get(notice.Icon)</span>
+                            <span class="todo-text">@notice.Text</span>
+                            <span class="todo-go">Open @Icons.Get("arrow-right")</span>
+                        </a>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
 
+    <div class="part-head">
+        <h2>@Icons.Get("route") The parcels' day, across every hub</h2>
+        <p>In the order a parcel travels. A step with a blue number has work; press it to go to the hub that has it.</p>
+    </div>
+    @{
+        // Count and hint are objects so an amount can be Money.Taka's markup, which "hide the amounts" can mask
+        (string Title, object Count, bool Work, object Hint, string Link)[] flow =
+        [
+            ("Pickups to collect", d.OpenPickups, d.OpenPickups > 0,
+                d.PickupsWithoutRider > 0 ? $"{d.PickupsWithoutRider} still need a rider" : "Each has a rider", "/Hub/Choose?next=Pickups"),
+            ("Coming into hubs", incoming, incoming > 0, "Scan them in as they arrive", "/Hub/Choose?next=Scan"),
+            ("Waiting for a rider", toAssign, toAssign > 0, "Hand them to riders", "/Hub/Choose?next=Assign"),
+            ("Out with riders", withRiders, withRiders > 0 || d.OpenRuns > 0,
+                d.OpenRuns > 0
+                    ? new Microsoft.AspNetCore.Html.HtmlString($"{d.OpenRuns} run{(d.OpenRuns == 1 ? "" : "s")} to close, {Money.Taka(d.CashWithRiders)} in cash")
+                    : "Close each run with the cash",
+                "/Hub/Choose?next=Runs"),
+            ("Going back to merchants", s.Returns, s.Returns > 0, "Hand them back at the hub that collected them", "/Hub/Choose?next=Returns"),
+            ("Owed to merchants", Money.Taka(d.OwedToMerchants), d.OwedToMerchants > 0, "Paid every hour, up to yesterday", "/Admin/Payouts")
+        ];
+    }
+    <nav class="flow" style="--steps:@flow.Length" aria-label="The parcels' day">
+        @foreach (var step in flow)
+        {
+            <a class="flow-step @(step.Work ? "has-work" : "clear")" href="@step.Link">
+                <span class="flow-title">@step.Title</span>
+                <span class="flow-count">@step.Count</span>
+                <span class="flow-hint">@(step.Work ? step.Hint : "All clear")</span>
+            </a>
+        }
+    </nav>
+
+    <div class="part-head">
+        <h2>@Icons.Get("chart") How today is going</h2>
+    </div>
     <div class="stats">
         <div class="stat"><div class="stat-icon blue">@Icons.Get("plus")</div><div><div class="stat-label">Booked today</div><div class="stat-value">@d.BookedToday</div></div></div>
         <div class="stat"><div class="stat-icon amber">@Icons.Get("truck")</div><div><div class="stat-label">Picked up today</div><div class="stat-value">@d.PickedUpToday</div></div></div>
         <div class="stat"><div class="stat-icon green">@Icons.Get("check-circle")</div><div><div class="stat-label">Delivered today</div><div class="stat-value">@d.DeliveredToday</div></div></div>
         <div class="stat"><div class="stat-icon red">@Icons.Get("return")</div><div><div class="stat-label">Returned today</div><div class="stat-value">@d.ReturnedToday</div></div></div>
+        <a class="stat @(d.Late > 0 ? "attention" : "")" asp-page="/Hub/Parcels" asp-route-late="true"><div class="stat-icon red">@Icons.Get("clock")</div><div><div class="stat-label">Late parcels</div><div class="stat-value">@d.Late</div><div class="stat-sub">Past the day they were due</div></div></a>
     </div>
 
     <div class="grid grid-main">
         <div class="card">
-            <div class="card-head"><div><h2>Last 7 days</h2><p>Parcels booked, delivered and returned each day</p></div></div>
+            <div class="card-head"><div><h2>Last 7 days</h2><p>Parcels booked, delivered and returned each day</p></div><a class="btn btn-ghost btn-sm" asp-page="/Admin/Reports">Reports @Icons.Get("arrow-right")</a></div>
             <div class="card-body"><partial name="_WeekChart" model="d.Week" /></div>
         </div>
         <div class="card">
@@ -84,16 +168,9 @@
         </div>
     </div>
 
-    <div class="stats mt-lg">
-        <a class="stat @(d.OpenPickups > 0 ? "attention" : "")" asp-page="/Hub/Choose" asp-route-next="Pickups"><div class="stat-icon amber">@Icons.Get("truck")</div><div><div class="stat-label">Pickups open</div><div class="stat-value">@d.OpenPickups</div></div></a>
-        <a class="stat @(d.Late > 0 ? "attention" : "")" asp-page="/Hub/Parcels" asp-route-late="true"><div class="stat-icon red">@Icons.Get("clock")</div><div><div class="stat-label">Late parcels</div><div class="stat-value">@d.Late</div><div class="stat-sub">Past the day they were due</div></div></a>
-        <a class="stat" asp-page="/Hub/Choose" asp-route-next="Runs"><div class="stat-icon dark">@Icons.Get("cash")</div><div><div class="stat-label">Cash with riders</div><div class="stat-value">@Money.Taka(d.CashWithRiders)</div></div></a>
-        <a class="stat" asp-page="/Admin/Payouts"><div class="stat-icon">@Icons.Get("wallet")</div><div><div class="stat-label">Owed to merchants</div><div class="stat-value">@Money.Taka(d.OwedToMerchants)</div></div></a>
-    </div>
-
-    <div class="grid grid-2">
+    <div class="grid grid-2 mt-lg">
         <div class="card">
-            <div class="card-head"><h2>@Icons.Get("warehouse") Hubs</h2><a class="btn btn-ghost btn-sm" asp-page="/Admin/Coverage">Coverage</a></div>
+            <div class="card-head"><div><h2>@Icons.Get("warehouse") Hubs</h2><p>Press a hub to open its board</p></div><a class="btn btn-ghost btn-sm" asp-page="/Admin/Coverage">Coverage</a></div>
             <div class="table-wrap">
                 <table class="table compact">
                     <thead><tr><th>Hub</th><th class="num">At hub</th><th class="num">For riders</th><th class="num">Coming</th><th class="num">With riders</th></tr></thead>
@@ -113,7 +190,7 @@
             </div>
         </div>
         <div class="card">
-            <div class="card-head"><h2>@Icons.Get("trending") Top merchants this month</h2></div>
+            <div class="card-head"><h2>@Icons.Get("trending") Top merchants this month</h2><a class="btn btn-ghost btn-sm" asp-page="/Admin/Merchants">Merchants</a></div>
             @if (d.TopMerchants.Count == 0)
             {
                 <div class="card-body muted">No parcels booked this month yet.</div>

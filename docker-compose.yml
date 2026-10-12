@@ -1,4 +1,5 @@
-# The whole demo on one machine: SQL Server, the database deployed from nothing, and the app.
+# The whole demo on one machine: SQL Server, the database deployed from nothing, and the app. Not for a live site:
+# that is deploy/docker-compose.yml (Production, no demo data, HTTPS), described in Documentation/Deployment.md.
 #
 #   cp .env.example .env        # then choose a SQL Server password in .env (git-ignored)
 #   docker compose up --build
@@ -42,6 +43,8 @@ services:
       target: web
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      Seed__DemoData: "true"
+      Seed__DemoActivity: "true"
       ConnectionStrings__Database: Server=sql,1433;Database=OneDrop;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true;MultipleActiveResultSets=true
     ports:
       - "5080:8080"

@@ -291,6 +291,12 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
             // The seeded van carries 300 parcels for OneDrop only; the rival courier sets its own capacities
             ("/Admin/Vehicles", async () => Assert.DoesNotContain("value=\"300\"", await rivalAdmin.PageAsync("/Admin/Vehicles"))),
             ("/Admin/Messages", async () => Assert.DoesNotContain(outCode, await rivalAdmin.PageAsync("/Admin/Messages"))),
+            ("/Admin/Guide", async () =>
+            {
+                // Holds no data: an admin reads it, a merchant is kept out
+                Assert.Contains("Set up once, in this order", await admin.PageAsync("/Admin/Guide"));
+                Assert.DoesNotContain("Set up once, in this order", await (await owner.GetAsync("/Admin/Guide")).Content.ReadAsStringAsync(Cancel));
+            }),
 
             // The platform's list of couriers and the jobs dashboard are for platform admins only
             ("/Platform/Tenants", async () => Assert.NotEqual(HttpStatusCode.OK, (await Visit("", "").GetAsync("/Platform/Tenants")).StatusCode)),

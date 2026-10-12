@@ -107,7 +107,6 @@ public class PickupRequestConfiguration : IEntityTypeConfiguration<PickupRequest
     public void Configure(EntityTypeBuilder<PickupRequest> builder)
     {
         builder.MapTenantOwned(Schemas.Delivery);
-        builder.Property(r => r.Note).HasMaxLength(300);
         builder.Property(r => r.RowVersion).IsRowVersion();
         builder.Ignore(r => r.IsOpen);
         builder.HasOne<Merchant>().WithMany().HasForeignKey(r => r.MerchantId).OnDelete(DeleteBehavior.Restrict);

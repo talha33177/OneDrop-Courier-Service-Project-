@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Application.Parcels.Browse;
 using Application.Parcels.CreateParcel;
 using Domain.Common;
+using Domain.Pricing;
 
 namespace Web.Pages.Merchant;
 
@@ -16,6 +17,11 @@ public class ParcelForm
 
     public string? RecipientAddress { get; set; }
 
+    /// <summary>The door pinned on the map (hidden fields the map fills in), or empty.</summary>
+    public decimal? RecipientLatitude { get; set; }
+
+    public decimal? RecipientLongitude { get; set; }
+
     public long? AreaId { get; set; }
 
     public long? PickupPointId { get; set; }
@@ -23,6 +29,10 @@ public class ParcelForm
     public decimal CodAmount { get; set; }
 
     public decimal WeightKg { get; set; } = 0.5m;
+
+    public DeliverySpeed Speed { get; set; } = DeliverySpeed.Regular;
+
+    public ProductType ProductType { get; set; } = ProductType.General;
 
     public string? ItemDescription { get; set; }
 
@@ -36,9 +46,13 @@ public class ParcelForm
             RecipientName = parcel.RecipientName,
             RecipientPhone = Display.Money.Phone(parcel.RecipientPhone),
             RecipientAddress = parcel.RecipientAddress,
+            RecipientLatitude = parcel.Pin?.Latitude,
+            RecipientLongitude = parcel.Pin?.Longitude,
             AreaId = parcel.AreaId,
             CodAmount = parcel.CodAmount,
             WeightKg = parcel.WeightGrams / 1000m,
+            Speed = parcel.Speed,
+            ProductType = parcel.ProductType,
             ItemDescription = parcel.ItemDescription,
             Note = parcel.Note
         };
@@ -52,10 +66,14 @@ public class ParcelForm
             RecipientName = RecipientName,
             RecipientPhone = RecipientPhone,
             RecipientAddress = RecipientAddress,
+            RecipientLatitude = RecipientLatitude,
+            RecipientLongitude = RecipientLongitude,
             AreaId = AreaId,
             PickupPointId = PickupPointId,
             CodAmount = CodAmount,
             WeightKg = WeightKg,
+            Speed = Speed,
+            ProductType = ProductType,
             ItemDescription = ItemDescription,
             Note = Note,
             IdempotencyKey = idempotencyKey

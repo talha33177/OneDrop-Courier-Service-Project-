@@ -8,9 +8,9 @@ using Serilog.Context;
 namespace Web.MultiTenancy;
 
 /// <summary>
-/// First step of every request: onedrop.{root domain} selects the OneDrop courier. An unknown subdomain is a 404,
-/// never a fall-back to some default tenant. API calls may use the bare domain; the API key selects the
-/// tenant for them (see ApiKeyAuthenticationHandler).
+/// First step of every request: onedrop.{root domain}, or the one address in Tenancy:HomeCourierHost, selects the
+/// OneDrop courier. An unknown subdomain is a 404, never a fall-back to some default tenant. API calls may use the bare
+/// domain; the API key selects the tenant for them (see ApiKeyAuthenticationHandler).
 /// </summary>
 public class TenantResolutionMiddleware(RequestDelegate next, IOptions<TenancyOptions> options)
 {

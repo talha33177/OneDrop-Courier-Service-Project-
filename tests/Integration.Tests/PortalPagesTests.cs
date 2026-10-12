@@ -42,10 +42,8 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
     {
         WebAppFactory.RequireDatabase();
         var shop = await NewMerchantAsync(area: "Mirpur 10");
-        var merchant = await SignInAsync("onedrop", shop.Email);
-        var point = await QueryAsync("onedrop", db => db.PickupPoints.Where(p => p.MerchantId == shop.Id).Select(p => p.Id).SingleAsync(Cancel));
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Dhaka")));
-        await merchant.SubmitAsync("/Merchant/Pickups", "/Merchant/Pickups", ("PointId", $"{point}"), ("Date", today.ToString("yyyy-MM-dd")), ("Expected", "1"), ("Note", ""));
+        // Booking puts the merchant's point on the Mirpur hub's pickup list
+        await BookAsync(shop.ApiKey);
         var hub = await SignInAsync("onedrop", "hub@onedrop.test");
 
         var asked = await hub.GetAsync("/Hub/Pickups");
@@ -182,17 +180,14 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
     }
 
     [Fact]
-    public async Task A_merchant_asks_for_a_pickup_the_hub_sends_a_rider_and_the_rider_collects_the_parcels()
+    public async Task A_booked_parcel_goes_on_the_days_pickup_the_hub_sends_a_rider_and_the_rider_collects_the_parcels()
     {
         WebAppFactory.RequireDatabase();
         var shop = await NewMerchantAsync(area: "Mirpur 10");
         var rider = await NewRiderAsync("MIR");
         var codes = new[] { await BookAsync(shop.ApiKey), await BookAsync(shop.ApiKey) };
-        var merchant = await SignInAsync("onedrop", shop.Email);
-        var point = await QueryAsync("onedrop", db => db.PickupPoints.Where(p => p.MerchantId == shop.Id).Select(p => p.Id).SingleAsync(Cancel));
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Dhaka")));
 
-        Assert.Contains("Pickup requested", await merchant.SubmitAsync("/Merchant/Pickups", "/Merchant/Pickups", ("PointId", $"{point}"), ("Date", today.ToString("yyyy-MM-dd")), ("Expected", "2"), ("Note", "Gate 2")));
+        // Booking listed the point once for its day; the merchant asks for nothing
         var pickup = await QueryAsync("onedrop", db => db.PickupRequests.SingleAsync(p => p.MerchantId == shop.Id, Cancel));
 
         var hub = await SignInAsync("onedrop", "hub@onedrop.test");
@@ -211,8 +206,8 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
 
         Assert.Equal(PickupStatus.Completed, await QueryAsync("onedrop", db => db.PickupRequests.Where(p => p.Id == pickup.Id).Select(p => p.Status).SingleAsync(Cancel)));
 
-        // Another merchant cannot cancel it
+        // Another merchant does not see it
         var other = await SignInAsync("onedrop", (await NewMerchantAsync()).Email);
-        Assert.Equal(HttpStatusCode.NotFound, (await other.PostFormAsync("/Merchant/Pickups", "/Merchant/Pickups?handler=Cancel", ("id", $"{pickup.Id}"))).StatusCode);
+        Assert.DoesNotContain(rider.Email[..6], await other.PageAsync("/Merchant/Pickups"));
     }
 }

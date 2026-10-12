@@ -75,7 +75,7 @@
                                             <span title="Flagged: clear it on the parcel's page first">@Icons.Get("flag")</span>
                                         }
                                     </td>
-                                    <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.Merchant</div></td>
+                                    <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.Merchant</div><div class="tag-row">@Statuses.Tags(p.Speed, p.ProductType)</div></td>
                                     <td>@p.RecipientName</td>
                                     <td>@p.Area</td>
                                     <td>

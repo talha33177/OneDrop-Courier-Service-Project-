@@ -13,6 +13,11 @@ public class DeliveryRateConfiguration : IEntityTypeConfiguration<DeliveryRate>
         builder.Property(r => r.ExtraKgCharge).HasPrecision(10, 2);
         builder.Property(r => r.CodChargePercent).HasPrecision(5, 2);
         builder.Property(r => r.ReturnCharge).HasPrecision(10, 2);
+        builder.Property(r => r.ExpressCharge).HasPrecision(10, 2);
+        builder.Property(r => r.LiquidCharge).HasPrecision(10, 2);
+        builder.Property(r => r.FragileCharge).HasPrecision(10, 2);
+        builder.Property(r => r.FreshFoodCharge).HasPrecision(10, 2);
+        builder.Property(r => r.FrozenCharge).HasPrecision(10, 2);
         builder.HasIndex(r => new { r.TenantId, r.ServiceArea }).IsUnique().HasDatabaseName("UX_DeliveryRate_Tenant_ServiceArea");
     }
 }

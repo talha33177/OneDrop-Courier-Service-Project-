@@ -12,7 +12,7 @@
     <div class="page-head">
         <div>
             <h1>My pickups</h1>
-            <p>Collect the parcels at each merchant and tick the ones you take.</p>
+            <p>Collect the parcels at each merchant and tick the ones you take. Only parcels booked before the day's cut-off go with you; later ones wait for the next pickup.</p>
         </div>
     </div>
 
@@ -28,21 +28,17 @@
             <div class="task-head">
                 <div>
                     <div class="task-name">@p.Merchant</div>
-                    <div class="muted" style="font-size:12.5px">@p.PickupPoint · @p.Date.ToString("ddd d MMM") · about @p.Expected parcels</div>
+                    <div class="muted" style="font-size:12.5px">@p.PickupPoint · @p.Date.ToString("ddd d MMM") · @p.Parcels.Count parcel@(p.Parcels.Count == 1 ? "" : "s")</div>
                 </div>
             </div>
             <div class="task-meta">
                 <div>@Icons.Get("map-pin") <span>@p.Address, <strong>@p.Area</strong></span></div>
                 <div>@Icons.Get("phone") <a href="tel:@Money.Phone(p.ContactPhone)">@Money.Phone(p.ContactPhone)</a></div>
-                @if (p.Note is not null)
-                {
-                    <div>@Icons.Get("message") <span>@p.Note</span></div>
-                }
             </div>
             <form method="post" asp-route-id="@p.Id">
                 @if (p.Parcels.Count == 0)
                 {
-                    <p class="muted">No parcels are booked at this point yet.</p>
+                    <p class="muted">Nothing left to collect here: the merchant's parcels were cancelled or brought to the hub.</p>
                 }
                 else
                 {

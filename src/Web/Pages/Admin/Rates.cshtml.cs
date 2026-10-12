@@ -35,4 +35,25 @@ public class RatesModel(RatesHandler rates) : PageModel
 
         return RedirectToPage();
     }
+
+    public async Task<IActionResult> OnPostExtrasAsync(
+        ServiceArea area,
+        decimal? expressCharge,
+        int? expressDays,
+        decimal? liquidCharge,
+        decimal? fragileCharge,
+        decimal? freshFoodCharge,
+        decimal? frozenCharge,
+        CancellationToken cancellationToken)
+    {
+        var changed = await rates.ChangeExtrasAsync(
+            area,
+            new RateExtras(expressCharge, expressDays, liquidCharge, fragileCharge, freshFoodCharge, frozenCharge),
+            cancellationToken);
+        TempData[changed.IsSuccess ? "Done" : "Problem"] = changed.IsSuccess
+            ? $"{area.DisplayName()} delivery types saved. Parcels booked from now on use them."
+            : changed.Error!.Message;
+
+        return RedirectToPage();
+    }
 }

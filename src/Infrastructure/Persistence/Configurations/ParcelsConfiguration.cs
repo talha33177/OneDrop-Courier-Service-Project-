@@ -33,6 +33,12 @@ public class ParcelConfiguration : IEntityTypeConfiguration<Parcel>
         builder.Property(p => p.ExtraKgCharge).HasPrecision(10, 2);
         builder.Property(p => p.CodChargePercent).HasPrecision(5, 2);
         builder.Property(p => p.ReturnCharge).HasPrecision(10, 2);
+        builder.Property(p => p.SpeedCharge).HasPrecision(10, 2);
+        builder.Property(p => p.ProductCharge).HasPrecision(10, 2);
+        builder.Property(p => p.RecipientLatitude).HasPrecision(9, 6);
+        builder.Property(p => p.RecipientLongitude).HasPrecision(9, 6);
+        builder.Ignore(p => p.Pin);
+        builder.Ignore(p => p.IsPriority);
         builder.Property(p => p.HoldReason).HasMaxLength(200);
         builder.Property(p => p.ReturnReason).HasMaxLength(200);
         builder.Property(p => p.IssueNote).HasMaxLength(200);

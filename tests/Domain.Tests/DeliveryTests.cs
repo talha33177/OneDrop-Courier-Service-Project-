@@ -54,14 +54,12 @@ public class DeliveryTests
     }
 
     [Fact]
-    public void A_pickup_is_asked_for_up_to_a_week_ahead_and_goes_requested_assigned_completed()
+    public void A_pickup_is_scheduled_for_its_day_and_goes_scheduled_assigned_completed()
     {
-        Assert.Equal("pickup.date", PickupRequest.Create(7, 1, Build.Mirpur, Today.AddDays(-1), Today, 3, null).Error?.Code);
-        Assert.Equal("pickup.date", PickupRequest.Create(7, 1, Build.Mirpur, Today.AddDays(8), Today, 3, null).Error?.Code);
-        Assert.Equal("pickup.parcels", PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 0, null).Error?.Code);
-
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 3, "At the counter").Value;
-        var load = PickupRequest.ToCollect(3, []);
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
+        var load = Load.Of([500, 1_000, 800]);
+        Assert.Equal(PickupStatus.Scheduled, pickup.Status);
+        Assert.Equal(Today, pickup.PickupDate);
         Assert.Equal("pickup.notAssigned", pickup.Complete(3, Now).Error?.Code);
         Assert.Equal("pickup.rider", pickup.Assign(NewRider(hubId: Build.Gulshan), Build.Fleet(), load).Error?.Code);
         Assert.True(pickup.Assign(NewRider(), Build.Fleet(), load).IsSuccess);
@@ -70,6 +68,20 @@ public class DeliveryTests
         Assert.Equal(PickupStatus.Completed, pickup.Status);
         Assert.Equal(2, pickup.PickedParcels);
         Assert.Equal("pickup.closed", pickup.Cancel().Error?.Code);
+        Assert.Equal("pickup.carry", pickup.CarryTo(Today.AddDays(1)).Error?.Code);
+    }
+
+    [Fact]
+    public void A_pickup_whose_day_passed_is_carried_to_today_and_waits_for_a_rider_again()
+    {
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today.AddDays(-1));
+        Assert.True(pickup.Assign(NewRider(), Build.Fleet(), Load.Of([500])).IsSuccess);
+
+        Assert.Equal("pickup.carry", pickup.CarryTo(Today.AddDays(-1)).Error?.Code);
+        Assert.True(pickup.CarryTo(Today).IsSuccess);
+        Assert.Equal(Today, pickup.PickupDate);
+        Assert.Equal(PickupStatus.Scheduled, pickup.Status);
+        Assert.Null(pickup.RiderId);
     }
 
     [Fact]
@@ -77,10 +89,11 @@ public class DeliveryTests
     {
         var rider = NewRider();
         rider.Deactivate();
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 1, null).Value;
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
 
-        Assert.Equal("pickup.rider", pickup.Assign(rider, Build.Fleet(), PickupRequest.ToCollect(1, [])).Error?.Code);
+        Assert.Equal("pickup.rider", pickup.Assign(rider, Build.Fleet(), Load.Of([1_000])).Error?.Code);
         Assert.True(pickup.Cancel().IsSuccess);
+        Assert.Equal(PickupStatus.Cancelled, pickup.Status);
     }
 
     [Theory]
@@ -125,13 +138,6 @@ public class DeliveryTests
     }
 
     [Fact]
-    public void A_pickup_is_sized_by_what_is_booked_or_what_the_merchant_expects_whichever_is_more()
-    {
-        Assert.Equal(new Load(10, 1_500, 1_000), PickupRequest.ToCollect(10, [500, 1_000]));
-        Assert.Equal(new Load(3, 1_800, 800), PickupRequest.ToCollect(2, [500, 500, 800]));
-    }
-
-    [Fact]
     public void The_hub_sends_the_smallest_vehicle_that_carries_a_pickup_in_one_trip()
     {
         var fleet = Build.Fleet();
@@ -146,8 +152,8 @@ public class DeliveryTests
     [Fact]
     public void A_pickup_too_big_for_the_riders_vehicle_is_refused_and_says_what_to_send()
     {
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 120, null).Value;
-        var load = PickupRequest.ToCollect(pickup.ExpectedParcels, [1_000, 2_000]);
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
+        var load = Load.Of([.. Enumerable.Repeat(500, 120)]);
 
         var refused = pickup.Assign(NewRider(), Build.Fleet(), load).Error!;
         Assert.Equal("pickup.vehicle", refused.Code);
@@ -159,8 +165,8 @@ public class DeliveryTests
     [Fact]
     public void A_pickup_nothing_carries_in_one_trip_goes_to_the_biggest_vehicle()
     {
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 1_000, null).Value;
-        var load = PickupRequest.ToCollect(pickup.ExpectedParcels, []);
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
+        var load = Load.Of([.. Enumerable.Repeat(100, 1_000)]);
 
         Assert.Equal("pickup.vehicle", pickup.Assign(NewRider(), Build.Fleet(), load).Error?.Code);
         Assert.True(pickup.Assign(NewRider(vehicle: Vehicle.Van), Build.Fleet(), load).IsSuccess);

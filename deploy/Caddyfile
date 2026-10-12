@@ -1,0 +1,5 @@
+# Caddy fetches and renews the HTTPS certificate for SITE_ADDRESS by itself (Let's Encrypt), as soon as the name's DNS
+# points at this server and ports 80 and 443 are open. Plain http is redirected to https.
+{$SITE_ADDRESS} {
+	reverse_proxy web:8080
+}

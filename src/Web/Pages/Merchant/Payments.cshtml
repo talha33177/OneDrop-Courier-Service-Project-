@@ -27,10 +27,10 @@
     switch (back.Status)
     {
         case OnlinePaymentStatus.Paid:
-            <div class="alert alert-success" role="status">@Icons.Get("check-circle")<div><strong>Thank you: @Money.Taka(back.PaidAmount ?? back.Amount) received</strong>@(back.Method is null ? "" : $" by {back.Method}") (@back.Number). It is on your balance below.</div></div>
+            <div class="alert alert-success" role="status">@Icons.Get("check-circle")<div><strong>Thank you: you paid the courier @Money.Taka(back.PaidAmount ?? back.Amount)</strong>@(back.Method is null ? "" : $" by {back.Method}") (@back.Number). It is on your balance below as "Paid online".</div></div>
             break;
         case OnlinePaymentStatus.Review:
-            <div class="alert alert-info" role="status">@Icons.Get("info")<div><strong>@Money.Taka(back.PaidAmount ?? back.Amount) received (@back.Number).</strong> The courier checks it before it reaches your balance; you will see it here once they have.</div></div>
+            <div class="alert alert-info" role="status">@Icons.Get("info")<div><strong>You paid the courier @Money.Taka(back.PaidAmount ?? back.Amount) (@back.Number).</strong> The courier checks it before it reaches your balance; you will see it here once they have.</div></div>
             break;
         case OnlinePaymentStatus.Failed:
             <div class="alert alert-warning" role="status">@Icons.Get("alert")<div><strong>@back.Number was not paid.</strong> @back.Note Nothing was taken; you can try again.</div></div>
@@ -48,6 +48,10 @@
 {
     <div class="alert alert-warning" role="status">@Icons.Get("pause")<div>The courier is holding your payouts: <strong>@hold.TrimEnd('.').</strong> Your balance keeps counting and is paid once the hold is lifted. @if (TenantContext.Tenant?.SupportPhone is { } hotline) { <text>Questions? Call <a href="tel:@hotline">@hotline</a>.</text> }</div></div>
 }
+@if (Model.Requests.Refused is { } refused)
+{
+    <div class="alert alert-info" role="status">@Icons.Get("info")<div><strong>The courier did not pay your request of @refused.Created.ToString("d MMM") early:</strong> @refused.Answer?.TrimEnd('.'). Your balance goes out with the daily payouts as usual.</div></div>
+}
 
 <div class="grid grid-2 mb">
     <div class="balance-card">
@@ -59,7 +63,11 @@
         }
         else
         {
-            <div class="stat-sub">@(d.PayoutAccount is null ? "No payout account yet" : $"To {d.PayoutAccount}"). We send it by ourselves the morning after each day, or now if you ask.</div>
+            <div class="stat-sub">@(d.PayoutAccount is null ? "No payout account yet" : $"To {d.PayoutAccount}"). We send it by ourselves the morning after each day. Need it sooner? Ask, and the courier decides.</div>
+        }
+        @if (Model.Requests.Open is { } open)
+        {
+            <div class="stat-sub"><strong>You asked to be paid now</strong> on @open.Created.ToString("d MMM, h:mm tt") (@Money.Taka(open.AmountAsked) then). The courier is checking it.</div>
         }
         <div class="gap">
             @if (canPayOnline)
@@ -72,10 +80,16 @@
             {
                 <span class="stat-sub">Online payments start at @Money.Taka(online.Limits.Minimum).</span>
             }
-            @if (d.CanPayNow)
+            @if (Model.Requests.Open is not null)
             {
-                <form method="post" asp-page-handler="PayNow" class="inline-form">
-                    <button class="btn btn-primary" type="submit" data-confirm="Everything in your balance, today's cash too, is sent to @d.PayoutAccount now." data-confirm-title="Get paid now?" data-confirm-ok="Pay me now">@Icons.Get("send") Get paid now</button>
+                <form method="post" asp-page-handler="Withdraw" class="inline-form">
+                    <button class="btn btn-outline" type="submit" data-confirm="Your balance then goes out with the daily payouts, the morning after each day." data-confirm-title="Take back your request?" data-confirm-ok="Take it back">@Icons.Get("x") Take back the request</button>
+                </form>
+            }
+            else if (d.CanPayNow)
+            {
+                <form method="post" asp-page-handler="Ask" class="inline-form">
+                    <button class="btn btn-primary" type="submit" data-confirm="The courier checks your balance, today's cash too, and sends it to @d.PayoutAccount if it agrees. You see the answer here." data-confirm-title="Ask to be paid now?" data-confirm-ok="Ask the courier" data-confirm-tone="calm">@Icons.Get("send") Ask to be paid now</button>
                 </form>
             }
             <a class="btn btn-outline" asp-page="/Merchant/Settings" asp-fragment="payout">@Icons.Get("settings") Payout accounts</a>

@@ -32,7 +32,9 @@ public partial class BellTests(WebAppFactory factory) : AppTests(factory)
         await door.SubmitAsync($"/Rider/Delivery/{refused}", $"/Rider/Delivery/{refused}?handler=Refuse", ("reason", "Customer not at home"));
         await hub.SubmitAsync($"/Hub/Parcel/{flagged}", $"/Hub/Parcel/{flagged}?handler=Flag", ("issue", "Exceptional"), ("note", "Box torn open"));
         var owner = await SignInAsync("onedrop", shop.Email);
-        await owner.SubmitAsync("/Merchant/Payments", "/Merchant/Payments?handler=PayNow");
+        await owner.SubmitAsync("/Merchant/Payments", "/Merchant/Payments?handler=Ask");
+        var request = await QueryAsync("onedrop", db => db.PayoutRequests.Where(r => r.MerchantId == shop.Id).Select(r => r.Id).SingleAsync(Cancel));
+        await (await SignInAsync("onedrop", "admin@onedrop.test")).SubmitAsync("/Admin/Payouts", $"/Admin/Payouts?handler=PayRequest&id={request}");
 
         var page = await owner.PageAsync("/Merchant/Parcels");
         Assert.Contains("parcel delivered on", page);
@@ -99,9 +101,9 @@ public partial class BellTests(WebAppFactory factory) : AppTests(factory)
         Assert.Empty(Marked(await owner.PageAsync("/Merchant")));
         Assert.Empty(Marked(await door.PageAsync("/Rider")));
 
-        // Booked with no pickup asked for: the merchant's pickups wait; another merchant's menu stays quiet
+        // Booked: it goes with the day's pickup by itself, so nothing waits for the merchant
         var code = await BookAsync(shop.ApiKey, area: "Gulshan 2", cod: 700);
-        Assert.Equal(["/Merchant/Pickups"], Marked(await owner.PageAsync("/Merchant")));
+        Assert.Empty(Marked(await owner.PageAsync("/Merchant")));
         Assert.Empty(Marked(await other.PageAsync("/Merchant")));
 
         // At the hub and given to the rider: the rider's deliveries wait, and the parcel no longer waits for a pickup

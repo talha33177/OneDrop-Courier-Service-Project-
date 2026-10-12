@@ -1,0 +1,96 @@
+# The live site on one Linux server: SQL Server, the database deployed (and updated) on every start, the app, and
+# Caddy in front of it for HTTPS. Documentation/Deployment.md walks through it step by step.
+#
+#   cd deploy
+#   cp .env.example .env        # then fill it in (git-ignored)
+#   docker compose up -d --build
+#
+# The database starts clean: the courier, its hubs, zones, areas and rate card, and the one admin named in .env.
+# Nothing else; no demo logins, merchants or parcels (those exist only in Development).
+name: onedrop-live
+
+services:
+  sql:
+    image: mcr.microsoft.com/mssql/server:2025-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      # Express is free for production use (Developer, the image's default, is not)
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${SA_PASSWORD:?Set SA_PASSWORD in deploy/.env}
+    volumes:
+      - sql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -b -Q \"SELECT 1\" > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # Runs once per start and exits: creates the database the first time, then applies new schema and data scripts
+  database:
+    build:
+      context: ..
+      target: database
+    command:
+      - -ConnectionString
+      - Server=sql,1433;Database=OneDrop;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true;MultipleActiveResultSets=true
+    depends_on:
+      sql:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      target: web
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Caddy terminates HTTPS: trust its X-Forwarded-For and X-Forwarded-Proto, so the app sees the visitor's address
+      # (rate limits) and https (secure cookies, links)
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      ConnectionStrings__Database: Server=sql,1433;Database=OneDrop;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true;MultipleActiveResultSets=true
+      Tenancy__HomeCourierHost: ${SITE_ADDRESS:?Set SITE_ADDRESS in deploy/.env}
+      Links__PortalUrlFormat: https://${SITE_ADDRESS}/
+      Setup__AdminEmail: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in deploy/.env}
+      Setup__AdminName: ${ADMIN_NAME:-}
+      Setup__AdminPassword: ${ADMIN_PASSWORD:-}
+      Email__Host: ${EMAIL_HOST:-}
+      Email__Port: ${EMAIL_PORT:-587}
+      Email__User: ${EMAIL_USER:-}
+      Email__Password: ${EMAIL_PASSWORD:-}
+      Email__From: ${EMAIL_FROM:-}
+      Email__FromName: ${EMAIL_FROM_NAME:-}
+      Sslcommerz__StoreId: ${SSLCOMMERZ_STORE_ID:-}
+      Sslcommerz__StorePassword: ${SSLCOMMERZ_STORE_PASSWORD:-}
+      Sslcommerz__BaseUrl: ${SSLCOMMERZ_BASE_URL:-https://sandbox.sslcommerz.com/}
+      GoogleMaps__ApiKey: ${GOOGLE_MAPS_API_KEY:-}
+    volumes:
+      # Sign-in cookies survive a restart or an update
+      - keys:/home/app/.aspnet/DataProtection-Keys
+    depends_on:
+      database:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The HTTPS certificates; kept so a restart does not ask Let's Encrypt again
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+
+volumes:
+  sql-data:
+  keys:
+  caddy-data:
+  caddy-config:

@@ -1,7 +1,6 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Domain.Merchants;
-using Domain.Payments;
 
 namespace Integration.Tests;
 
@@ -52,39 +51,6 @@ public class PayoutAccountsTests(WebAppFactory factory) : AppTests(factory)
         Assert.Equal(PayoutMethod.Bank, (await MerchantAsync(shop)).PayoutMethod);
         Assert.Contains("2201203456789", await (await SignInAsync("onedrop", shop.Email)).PageAsync("/Merchant/Settings"));
         Assert.Equal(1, await QueryAsync("onedrop", db => db.MerchantPayoutAccounts.CountAsync(a => a.AccountId == shop.Id && a.Number == "2201203456789", Cancel)));
-    }
-
-    [Fact]
-    public async Task A_merchant_who_asks_to_be_paid_now_gets_todays_cash_at_once_and_nothing_twice()
-    {
-        WebAppFactory.RequireDatabase();
-        var shop = await NewMerchantAsync(area: "Banani");
-        var code = await BookAsync(shop.ApiKey, area: "Gulshan 2", cod: 1500);
-        var rider = await NewRiderAsync("GUL");
-        await QueryAsync("onedrop", async db =>
-        {
-            var parcel = await db.Parcels.SingleAsync(p => p.TrackingCode == code, Cancel);
-            parcel.ReceiveAt(parcel.DeliveryHubId, Today);
-            parcel.AssignTo(rider.Id, parcel.DeliveryHubId);
-            parcel.Deliver(1500, null, DateTime.UtcNow);
-            db.LedgerEntries.AddRange(LedgerEntry.For(parcel, Today));
-
-            return await db.SaveChangesAsync(Cancel);
-        });
-        var owner = await SignInAsync("onedrop", shop.Email);
-
-        var payments = await owner.PageAsync("/Merchant/Payments");
-        Assert.Contains("Get paid now", payments);
-        Assert.Contains("Of which collected today, sent tomorrow morning", payments);
-
-        var paid = await owner.SubmitAsync("/Merchant/Payments", "/Merchant/Payments?handler=PayNow");
-        Assert.Contains("is on its way to you", paid);
-        var payout = await QueryAsync("onedrop", db => db.Payouts.AsNoTracking().SingleAsync(p => p.MerchantId == shop.Id, Cancel));
-        Assert.Equal((PayoutStatus.Paid, Today, 1500 - 60 - 15m), (payout.Status, payout.UpToDate, payout.Amount));
-        Assert.Equal(0, await QueryAsync("onedrop", db => db.LedgerEntries.CountAsync(e => e.MerchantId == shop.Id && e.PayoutId == null, Cancel)));
-
-        Assert.Contains("There is nothing to pay yet", await owner.SubmitAsync("/Merchant/Payments", "/Merchant/Payments?handler=PayNow"));
-        Assert.DoesNotContain("Get paid now", await owner.PageAsync("/Merchant/Payments"));
     }
 
     private Task<Merchant> MerchantAsync(TestMerchant shop)

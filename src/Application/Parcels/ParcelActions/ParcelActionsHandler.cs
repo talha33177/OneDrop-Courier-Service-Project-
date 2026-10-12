@@ -6,6 +6,7 @@ using Application.Parcels.Browse;
 using Application.Parcels.CreateParcel;
 using Domain.Common;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.ParcelActions;
 
@@ -46,6 +47,8 @@ public class ParcelActionsHandler(
             details.AreaId,
             details.Area,
             details.WeightGrams,
+            details.Speed ?? DeliverySpeed.Regular,
+            details.ProductType ?? ProductType.General,
             cancellationToken);
         if (route.IsFailure)
         {
@@ -62,7 +65,10 @@ public class ParcelActionsHandler(
             details.WeightGrams,
             details.ItemDescription,
             details.Note,
-            route.Value.Charges));
+            route.Value.Charges)
+        {
+            Pin = GeoPoint.From(details.RecipientLatitude, details.RecipientLongitude).Value
+        });
 
         return await SaveAsync(edited, cancellationToken);
     }

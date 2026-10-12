@@ -7,8 +7,8 @@ using Domain.Payments;
 namespace Integration.Tests;
 
 /// <summary>
-/// One parcel's whole life through the panels' pages, as the people who do the work see it: the merchant books it and
-/// asks for a pickup, the hub sends a rider, scans it in, sends it to the hub that delivers it, hands it to a rider, the
+/// One parcel's whole life through the panels' pages, as the people who do the work see it: the merchant books it,
+/// which puts it on the day's pickup list, the hub sends a rider, scans it in, sends it to the hub that delivers it, hands it to a rider, the
 /// rider delivers it and the hub closes the rider's run. Then the ledger, the merchant's pages and public tracking.
 /// </summary>
 public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
@@ -24,12 +24,9 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
         var merchant = await SignInAsync("onedrop", shop.Email);
         var hub = await SignInAsync("onedrop", "hub@onedrop.test");
 
-        // The merchant asks for a pickup; the Mirpur hub sends a rider who collects the parcel
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Dhaka")));
-        var pointId = await QueryAsync("onedrop", db => db.PickupPoints.Where(p => p.MerchantId == shop.Id).Select(p => p.Id).SingleAsync(Cancel));
-        var requested = await merchant.SubmitAsync("/Merchant/Pickups", "/Merchant/Pickups", ("PointId", $"{pointId}"), ("Date", today.ToString("yyyy-MM-dd")), ("Expected", "1"));
-        Assert.Contains("Pickup requested", requested);
+        // Booking put the merchant's pickup point on the day's pickup list; the Mirpur hub sends a rider who collects it
         var pickupId = await QueryAsync("onedrop", db => db.PickupRequests.Where(r => r.MerchantId == shop.Id).Select(r => r.Id).SingleAsync(Cancel));
+        Assert.Contains("Waiting for a rider", await merchant.PageAsync("/Merchant/Pickups"));
         Assert.Contains("Rider assigned", await hub.SubmitAsync("/Hub/Pickups?hub=MIR", $"/Hub/Pickups?handler=Assign&id={pickupId}&hub=MIR", ("riderId", $"{collector.Id}")));
         var rider = await SignInAsync("onedrop", collector.Email);
         Assert.Contains(code, await rider.PageAsync("/Rider/Pickups"));

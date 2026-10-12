@@ -5,8 +5,8 @@ namespace Domain.Delivery;
 /// <summary>Stored as TINYINT. Never renumber a value that has been saved.</summary>
 public enum PickupStatus : byte
 {
-    /// <summary>Asked for by the merchant; no rider yet.</summary>
-    Requested = 1,
+    /// <summary>On the day's pickup list; no rider yet.</summary>
+    Scheduled = 1,
 
     /// <summary>A rider is going to collect.</summary>
     Assigned = 2,
@@ -14,12 +14,15 @@ public enum PickupStatus : byte
     /// <summary>The rider collected the parcels.</summary>
     Completed = 3,
 
+    /// <summary>Called off: nothing was left to collect, or its parcels went with another pickup.</summary>
     Cancelled = 4
 }
 
 /// <summary>
-/// A merchant asking the hub to send a rider to one of its pickup points to collect the parcels booked there. The hub of
-/// the point's zone assigns a rider, who picks the parcels up and completes it.
+/// The day's pickup at one of a merchant's pickup points. The courier collects once a day: every parcel booked at the
+/// point before the day's cut-off goes with that day's pickup, so pickups are scheduled as parcels are booked and
+/// never asked for. The hub of the point's zone assigns a rider, who picks the parcels up and completes it. A pickup
+/// the day passed without is carried to the next day.
 /// </summary>
 public class PickupRequest : TenantEntity, IMerchantOwned
 {
@@ -34,13 +37,8 @@ public class PickupRequest : TenantEntity, IMerchantOwned
     /// <summary>The hub that collects: the pickup point's zone's hub.</summary>
     public long HubId { get; private set; }
 
-    /// <summary>The day the merchant wants the rider to come (the tenant's date).</summary>
+    /// <summary>The day the parcels are collected (the tenant's date).</summary>
     public DateOnly PickupDate { get; private set; }
-
-    /// <summary>How many parcels the merchant expects to hand over, so the hub sends a big enough vehicle (<see cref="ToCollect"/>).</summary>
-    public int ExpectedParcels { get; private set; }
-
-    public string? Note { get; private set; }
 
     public PickupStatus Status { get; private set; }
 
@@ -53,52 +51,19 @@ public class PickupRequest : TenantEntity, IMerchantOwned
 
     public byte[] RowVersion { get; private set; } = [];
 
-    public bool IsOpen => Status is PickupStatus.Requested or PickupStatus.Assigned;
+    public bool IsOpen => Status is PickupStatus.Scheduled or PickupStatus.Assigned;
 
-    public static Result<PickupRequest> Create(
-        long merchantId,
-        long pickupPointId,
-        long hubId,
-        DateOnly pickupDate,
-        DateOnly today,
-        int expectedParcels,
-        string? note)
+    /// <summary>Puts a pickup point on the pickup list of <paramref name="day"/>.</summary>
+    public static PickupRequest Schedule(long merchantId, long pickupPointId, long hubId, DateOnly day)
     {
-        if (pickupDate < today || pickupDate > today.AddDays(7))
-        {
-            return Error.Validation("pickup.date", "Choose a pickup day between today and a week from today.");
-        }
-
-        if (expectedParcels is < 1 or > 1000)
-        {
-            return Error.Validation("pickup.parcels", "Say how many parcels the rider collects, between 1 and 1,000.");
-        }
-
-        var text = note.NullIfBlank();
-        if (text?.Length > 300)
-        {
-            return Error.Validation("pickup.note", "The note is at most 300 characters.");
-        }
-
         return new PickupRequest
         {
             MerchantId = merchantId,
             PickupPointId = pickupPointId,
             HubId = hubId,
-            PickupDate = pickupDate,
-            ExpectedParcels = expectedParcels,
-            Note = text,
-            Status = PickupStatus.Requested
+            PickupDate = day,
+            Status = PickupStatus.Scheduled
         };
-    }
-
-    /// <summary>
-    /// What the rider collects: the parcels booked at the point (<paramref name="bookedGrams"/>, one weight each), or as
-    /// many as the merchant said to expect when that is more.
-    /// </summary>
-    public static Load ToCollect(int expectedParcels, IReadOnlyCollection<int> bookedGrams)
-    {
-        return Load.Of(bookedGrams) with { Parcels = Math.Max(expectedParcels, bookedGrams.Count) };
     }
 
     /// <summary>
@@ -110,7 +75,7 @@ public class PickupRequest : TenantEntity, IMerchantOwned
     {
         if (!IsOpen)
         {
-            return Error.Conflict("pickup.closed", "This pickup is already done or cancelled.");
+            return Error.Conflict("pickup.closed", "This pickup is already done or called off.");
         }
 
         if (rider.HubId != HubId || rider.Archived)
@@ -146,12 +111,30 @@ public class PickupRequest : TenantEntity, IMerchantOwned
         return Result.Success();
     }
 
-    /// <summary>The merchant no longer needs the rider. Only before the pickup is done.</summary>
+    /// <summary>
+    /// The pickup's day passed without it being made: it goes on the list of <paramref name="today"/> and waits for
+    /// the hub to choose a rider again.
+    /// </summary>
+    public Result CarryTo(DateOnly today)
+    {
+        if (!IsOpen || today <= PickupDate)
+        {
+            return Error.Conflict("pickup.carry", "Only an open pickup whose day has passed is carried to another day.");
+        }
+
+        PickupDate = today;
+        RiderId = null;
+        Status = PickupStatus.Scheduled;
+
+        return Result.Success();
+    }
+
+    /// <summary>Nothing is left to collect, or the parcels go with another pickup. Only before the pickup is done.</summary>
     public Result Cancel()
     {
         if (!IsOpen)
         {
-            return Error.Conflict("pickup.closed", "This pickup is already done or cancelled.");
+            return Error.Conflict("pickup.closed", "This pickup is already done or called off.");
         }
 
         Status = PickupStatus.Cancelled;

@@ -1,10 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.Labels;
 
-/// <summary>What a parcel label shows: who it is from and to, the hub that delivers it, the cash to collect.</summary>
+/// <summary>
+/// What a parcel label shows: who it is from and to, the hub that delivers it, the cash to collect, and in large type
+/// whether it is express and how to handle what is inside.
+/// </summary>
 public sealed record ParcelLabel(
     string TrackingCode,
     string? MerchantReference,
@@ -18,7 +22,9 @@ public sealed record ParcelLabel(
     decimal CodAmount,
     int WeightGrams,
     string? ItemDescription,
-    string? Note);
+    string? Note,
+    DeliverySpeed Speed,
+    ProductType ProductType);
 
 /// <summary>
 /// Labels to print and stick on parcels: the ones named, or every parcel still waiting for pickup, newest first. A
@@ -56,7 +62,9 @@ public class ParcelLabelsHandler(IAppDbContext db)
                 parcel.CodAmount,
                 parcel.WeightGrams,
                 parcel.ItemDescription,
-                parcel.Note))
+                parcel.Note,
+                parcel.Speed,
+                parcel.ProductType))
             .Take(MaxLabels)
             .AsNoTracking()
             .ToListAsync(cancellationToken);

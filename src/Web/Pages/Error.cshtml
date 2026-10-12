@@ -1,13 +1,22 @@
 @page
+@* Also drawn again for an empty error answer to a form, whose token belongs to the page that sent it *@
+@attribute [Microsoft.AspNetCore.Mvc.IgnoreAntiforgeryToken]
 @{
-    ViewData["Title"] = "Error";
+    var status = HttpContext.Response.StatusCode;
+    var (title, text) = status switch
+    {
+        404 => ("We could not find that page", "The address may be mistyped, or the page has moved."),
+        429 => ("Too many tries", "Please wait a minute and try again."),
+        _ => ("Something went wrong", "The problem has been logged. Please try again in a moment.")
+    };
+    ViewData["Title"] = status == 404 ? "Not found" : "Error";
 }
 
 <div class="auth-page">
     <div class="auth-card text-center">
         <div class="stat-icon red" style="margin:0 auto 14px">@Icons.Get("alert")</div>
-        <h1>Something went wrong</h1>
-        <p class="sub">The problem has been logged. Please try again in a moment.</p>
+        <h1>@title</h1>
+        <p class="sub">@text</p>
         <a class="btn btn-primary" href="/">Back to the start</a>
     </div>
 </div>

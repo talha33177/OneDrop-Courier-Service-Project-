@@ -14,7 +14,11 @@ public sealed record ParcelDetails(
     int WeightGrams,
     string? ItemDescription,
     string? Note,
-    ParcelCharges Charges);
+    ParcelCharges Charges)
+{
+    /// <summary>Where the door is, pinned on a map, so the rider can be guided to it; null when not pinned.</summary>
+    public GeoPoint? Pin { get; init; }
+}
 
 /// <summary>Everything needed to book a parcel.</summary>
 public sealed record NewParcel(long MerchantId, long PickupPointId, long PickupHubId, ParcelDetails Details)
@@ -33,7 +37,9 @@ public sealed record NewParcel(long MerchantId, long PickupPointId, long PickupH
 /// in three fields: <see cref="CurrentHubId"/> while at a hub, <see cref="TransferToHubId"/> while travelling between
 /// hubs and <see cref="RiderId"/> while a rider has it; at most one is set. Its charges and delivery time are worked
 /// out from the rate card when it is booked and never change after it is picked up; the day it is due
-/// (<see cref="DueOn"/>) is counted from the day the courier takes it. A hub can flag a problem on it
+/// (<see cref="DueOn"/>) is counted from the day the courier takes it. It goes regular or express
+/// (<see cref="Speed"/>) and says what is inside (<see cref="ProductType"/>), each with its extra in the delivery charge,
+/// and may carry the door pinned on a map (<see cref="Pin"/>). A hub can flag a problem on it
 /// (<see cref="Issue"/>) for the courier to look at.
 /// </summary>
 public class Parcel : TenantEntity, IMerchantOwned
@@ -82,7 +88,29 @@ public class Parcel : TenantEntity, IMerchantOwned
 
     public string RecipientAddress { get; private set; } = "";
 
+    /// <summary>The door pinned on a map; both null when the merchant did not pin it.</summary>
+    public decimal? RecipientLatitude { get; private set; }
+
+    public decimal? RecipientLongitude { get; private set; }
+
+    public GeoPoint? Pin => GeoPoint.From(RecipientLatitude, RecipientLongitude) is { IsSuccess: true } point ? point.Value : null;
+
     public string? ItemDescription { get; private set; }
+
+    /// <summary>Regular, or express: sooner, and first on the hub's shelf and the rider's run.</summary>
+    public DeliverySpeed Speed { get; private set; }
+
+    /// <summary>What is inside, which says how to handle it (fragile, frozen and so on).</summary>
+    public ProductType ProductType { get; private set; }
+
+    /// <summary>The express charge it was booked at, part of <see cref="DeliveryCharge"/>; 0 for regular.</summary>
+    public decimal SpeedCharge { get; private set; }
+
+    /// <summary>The extra for what is inside it was booked at, part of <see cref="DeliveryCharge"/>; 0 for general goods.</summary>
+    public decimal ProductCharge { get; private set; }
+
+    /// <summary>Goes first on the hub's shelf and the rider's run: express, or food that spoils.</summary>
+    public bool IsPriority => DeliveryOptions.IsPriority(Speed, ProductType);
 
     /// <summary>What the merchant said the parcel weighs when booking it.</summary>
     public int WeightGrams { get; private set; }
@@ -169,7 +197,13 @@ public class Parcel : TenantEntity, IMerchantOwned
     /// reaches a rate card that has changed since.
     /// </summary>
     public ParcelCharges Charges => new(
-        ServiceArea, DeliveryCharge, CodChargePercent, ReturnCharge, DeliveryDays, IncludedWeightGrams, BaseCharge, ExtraKgCharge);
+        ServiceArea, DeliveryCharge, CodChargePercent, ReturnCharge, DeliveryDays, IncludedWeightGrams, BaseCharge, ExtraKgCharge)
+    {
+        Speed = Speed,
+        ProductType = ProductType,
+        SpeedCharge = SpeedCharge,
+        ProductCharge = ProductCharge
+    };
 
     public bool IsFinal => Status.IsFinal();
 
@@ -810,6 +844,8 @@ public class Parcel : TenantEntity, IMerchantOwned
         RecipientName = name;
         RecipientPhone = details.RecipientPhone.Value;
         RecipientAddress = address;
+        RecipientLatitude = details.Pin?.Latitude;
+        RecipientLongitude = details.Pin?.Longitude;
         CodAmount = details.CodAmount;
         WeightGrams = details.WeightGrams;
         ItemDescription = details.ItemDescription.NullIfBlank();
@@ -822,6 +858,10 @@ public class Parcel : TenantEntity, IMerchantOwned
         IncludedWeightGrams = details.Charges.IncludedWeightGrams;
         BaseCharge = details.Charges.BaseCharge;
         ExtraKgCharge = details.Charges.ExtraKgCharge;
+        Speed = details.Charges.Speed;
+        ProductType = details.Charges.ProductType;
+        SpeedCharge = details.Charges.SpeedCharge;
+        ProductCharge = details.Charges.ProductCharge;
 
         return Result.Success();
     }

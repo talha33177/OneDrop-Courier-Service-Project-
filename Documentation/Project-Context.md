@@ -48,6 +48,12 @@ and collects the cash on delivery (COD), and the shop is paid that cash, less th
 | Suburb | ৳100 | ৳20 | 1% | ৳50 |
 | Outside city | ৳120 | ৳20 | 1% | ৳60 |
 
+On top come the **delivery types** (2026-10-12), each an extra on the delivery charge, set per service area on the
+rates page (empty means not offered there): **express** ৳40 (delivered the day after pickup, inside city and suburb
+only) and what is inside: liquid ৳10, fragile ৳20, fresh food ৳30, frozen ৳50 (fresh food and frozen inside city and
+suburb only). Express and food that spoils go first at the hub and on the rider's run; labels, hub lists and the
+rider's app show the tags and how to handle the parcel.
+
 The service area comes from the pickup point's zone and the destination's zone (`ServiceAreas.Between`): same city
 and neither a suburb → inside city; same city with a suburb zone → suburb; different cities → outside city. The COD
 charge is a percentage of the COD amount rounded to whole taka (away from zero). A returned parcel costs the delivery
@@ -57,6 +63,13 @@ delivery charge on its scale, at the rates the parcel was booked under; the merc
 shown on the parcel.
 
 ### The life of a parcel
+**One pickup a day** (2026-10-12): a parcel booked before the courier's cut-off (`Tenant.PickupCutoff`, 3:00 pm) goes
+with that day's pickup, which leaves the hub at `Tenant.PickupTime` (3:30 pm); one booked later goes the next day.
+Booking puts the pickup point on that day's list (`Delivery.PickupRequest`, one open per point and day); merchants
+never ask for a pickup. The `pickups` job (every 15 minutes) carries a missed pickup to today, lists points whose
+parcels were left behind, and calls off a closed list's pickups with nothing left to collect. A rider collects only
+parcels booked before the pickup's cut-off.
+
 `Pending` (booked) → `PickedUp` (rider collected) → `AtHub` (received) → `InTransit` (sent to the delivery hub) →
 `AtHub` → `OutForDelivery` (in a rider's run) → `Delivered` / `PartlyDelivered` / `OnHold` / `Returning` → `Returned`
 (handed back at the pickup hub). `Cancelled` only before pickup. Where it is lives on the parcel: `CurrentHubId`,
@@ -85,8 +98,10 @@ isolation. Inside a courier each merchant sees only its own parcels and each rid
 
 ## 2. Where we are
 
-The traditional courier rebuild is done on branch `traditional-courier` (uncommitted, for the owner's review). All
-three test suites pass; the app was checked live on the dev database. The plan's "Today" says what is next.
+The traditional courier rebuild and Phases 3 and 4 so far are on `main` (pushed as `ca16f42` on 2026-10-08; the work
+since is uncommitted for the owner's review). The app is ready to go live for the owner's portfolio: `deploy/` runs it
+on one Linux server with a clean database and one admin, and [Deployment.md](Deployment.md) is the guide for the
+owner's senior, who chooses the server and the address. The plan's "Today" says what is next.
 
 ---
 
@@ -97,13 +112,14 @@ three test suites pass; the app was checked live on the dev database. The plan's
 |---|---|---|
 | Domain | `src/Domain` | `Common` (Entity with domain events, TenantEntity, Result/Error, PhoneNumber), `Platform/Tenant`, `Network` (Hub, Zone with `City` and `IsSuburb`, Area), `Pricing` (ServiceArea, DeliveryRate, ParcelCharges), `Merchants` (Merchant with status, payout account, webhook; MerchantApiKey; PickupPoint; Moderator with MerchantPermissions; WebhookSignature), `Parcels` (Parcel and its state machine, ParcelEvent, ParcelStatusChanged), `Delivery` (Rider, DeliveryRun, DeliveryAttempt, PickupRequest), `Payments` (LedgerEntry, Payout, OnlinePayment), `Notifications` (OutboxMessage) |
 | Application | `src/Application` | Use cases as vertical slices: `Parcels` (CreateParcel, Browse, ParcelActions, Labels, Track, Quote, FraudCheck, BulkImport), `Hubs` (HubDirectory, HubScan, HubBoard, AssignParcels, Runs), `Delivery` (Pickups, RiderDay, Riders), `Merchants` (Onboarding, Admin, Account, ApiKeys, Webhook, Moderators with MerchantAccess), `Payments` (RunPayouts/PayoutsJob, MerchantPayments, AdminPayouts, OnlinePayments + CheckOnlinePaymentsJob), `Pricing/Rates`, `Network` (ListAreas, Coverage), `Dashboards`, `Notifications` (outbox contracts, RecipientTexts + SendOutboxJob, SendWebhooksJob, FailedMessages). Interfaces: `IAppDbContext`, `ITenantContext`, `ITenantCatalog`, `ICurrentUser`, `ISmsSender`, `IWebhookSender`, `IPayoutGateway`, `IPaymentGateway`, `ITrackingLinks`, `IUserAccounts`, `IOperationsFeed`, `ITenantJob` |
-| Infrastructure | `src/Infrastructure` | `Persistence/AppDbContext` (query filters, outbox writer, `AcrossTenantsAsync`), `Configurations/*`, `TenantSaveInterceptor`, `TenantSessionInterceptor`, `MultiTenancy`, `Identity` (AppUser, UserAccounts), `Sms/FakeSmsSender`, `Payments/FakePayoutGateway`, `Payments/SslcommerzGateway` and `FakePaymentGateway`, `Webhooks/HttpWebhookSender`, `Seeding` (DemoDataSeeder, DemoActivity), `Jobs` (Hangfire, TenantJobRunner, TenantJobRegistry, OutboxDispatcher) |
+| Infrastructure | `src/Infrastructure` | `Persistence/AppDbContext` (query filters, outbox writer, `AcrossTenantsAsync`), `Configurations/*`, `TenantSaveInterceptor`, `TenantSessionInterceptor`, `MultiTenancy`, `Identity` (AppUser, UserAccounts), `Sms/FakeSmsSender`, `Payments/FakePayoutGateway`, `Payments/SslcommerzGateway` and `FakePaymentGateway`, `Webhooks/HttpWebhookSender`, `Seeding` (DemoDataSeeder, DemoActivity, AdminSetup for a live site's first admin), `Jobs` (Hangfire, TenantJobRunner, TenantJobRegistry, OutboxDispatcher) |
 | Web | `src/Web` | Razor Pages: public site (`/`, `/Track`, `/Coverage`, `/Account/*`), `Merchant/*`, `Hub/*`, `Rider/*`, `Admin/*`, `Platform/Tenants`, `Dev/*`; `Api/V1` (parcels, charge, areas); `Live` (SignalR); `Display` (`Icons`, `Statuses`, `Money`); `wwwroot/css/site.css` (the design system, with its motion), `wwwroot/css/landing.css` (the front page's drawings) and `wwwroot/js/site.js` (shared behaviours: count-up, busy buttons, confirm dialog, toasts, tips, "/" search, drawings resting off screen, sections rising in); `Pages/Shared/Art/*` (the front page's line drawings), `Pages/Shared/_BrandMark.cshtml` (the logo); `wwwroot/images/logo.svg` and `logo-on-dark.svg` (the logo with its name, outlined), `wwwroot/icons` (app icons) |
 | Database | `src/Database` | SQL project (Microsoft.Build.Sql 2.1.0) → `Database.dacpac`. Owns the schema |
 | Database Update | `src/Database Update` | DbUp: `Scripts/2026/001_SeedCourier.sql` (the courier, 16 hubs, 21 zones, 87 areas, the rate card); `Scripts/Pre` empty |
 | Tests | `tests/Domain.Tests`, `tests/Architecture.Tests`, `tests/Integration.Tests` | 161 + 6 + 68 = **235 tests, all passing** |
 | Tools | `tools/db/publish.ps1`, `tools/Simulator` | Deploy a database; book made-up shops' parcels through the running app's API (`--parcels 40 --pace 2`) |
-| Docker and CI | `Dockerfile`, `docker-compose.yml`, `.github/workflows/ci.yml` | Compose = SQL Server 2025 + deploy + app on `onedrop.localhost:5080`; CI deploys a throwaway SQL Server from nothing and runs every suite |
+| Docker and CI | `Dockerfile`, `docker-compose.yml`, `.github/workflows/ci.yml` | Compose = SQL Server 2025 + deploy + app on `onedrop.localhost:5080` (Development, with the demo logins); CI deploys a throwaway SQL Server from nothing and runs every suite |
+| Live site | `deploy/` (`docker-compose.yml`, `Caddyfile`, `.env.example`), `Documentation/Deployment.md` | SQL Server Express + deploy + the app as Production + Caddy (HTTPS) on one Linux server; the courier on one address (`Tenancy:HomeCourierHost`), its first admin from `Setup:AdminEmail` / `Setup:AdminPassword` |
 
 ### Features
 - **Booking.** `CreateParcelHandler` serves the API, the form (`/Merchant/NewParcel`, a live quote beside it) and the
@@ -115,6 +131,14 @@ three test suites pass; the app was checked live on the dev database. The plan's
   top bar (merchant, admin, hub) of up to eight pages a person pins with the menu's stars or the "Add" picker, kept in a
   cookie per login (`favourites-{userId}`) with defaults per role. The avatar at the top right opens the account menu
   (name, email, role, account pages, change password at `/Account/Password`, sign out).
+- **Delivery types and the door on a map** (2026-10-12). The booking form, the CSV upload (`speed`, `product_type`,
+  `location`) and the API (`speed`, `productType`, `recipientLatitude`, `recipientLongitude`) take a speed and what is
+  inside, priced live with each option's extra or "not offered here". The recipient's door can be pinned: on Google's
+  map (search, click, drag, "find the address") when `GoogleMaps:ApiKey` is set, or by pasting the Google Maps link
+  or coordinates the customer sent (the server reads every link form and opens `maps.app.goo.gl` short links,
+  `Infrastructure/Maps/GoogleMapLinks`, Google's short hosts only). Riders tap Navigate for Google Maps directions;
+  parcel pages show the pin (a small embedded map with a key). Merchant menu: "Manage businesses" (adding one starts
+  there), "Pickups" (read-only: the rule, today's and tomorrow's parcels per point, the latest pickups).
 - **Merchant panel.** Dashboard ("Right now" by stage with cash, quick actions, tools, last 30 days, last 7 days, money
   and last payment), parcels with tabs (partly delivered has its own; in review and exceptional show while a hub has
   flagged one), search, date range and
@@ -176,9 +200,13 @@ three test suites pass; the app was checked live on the dev database. The plan's
   to, which is copied onto the main profile as before so every business, the payout run and the admin's page read it
   unchanged; one in use cannot be removed, and an account the admin sets is kept among them. `/Merchant/Payments`
   splits the balance into what the next payout run sends by itself (up to yesterday) and what came in today, shows the
-  cash still to collect on parcels on their way, and offers **Get paid now**: every line not yet paid out, today's
-  too, in one payout sent at once (`PayoutsJob.PayNowAsync`, the same rules as the run: nothing at ৳0 or less or
-  without an account; a failed transfer is sent again by the next run).
+  cash still to collect on parcels on their way, and offers **Ask to be paid now** (2026-10-08; it replaced a "Get
+  paid now" that paid at once). The merchant asks (`Payments.PayoutRequest`, one open per business, which it may take
+  back); the courier's admin sees each request on `/Admin/Payouts` and in the bell with what is at stake: the balance
+  now and how much of it is today's, the cash still with riders whose run is not closed, and the delivery and return
+  charges the merchant would owe if its parcels on the way came back. The admin pays (every line not yet paid out,
+  today's too, in one payout sent at once through `PayoutsJob.PayNowAsync`, the run's own rules) or refuses with a
+  reason the merchant reads on Payments and in its bell; the daily payouts carry on either way.
 - **The bell.** A bell in the merchant's top bar lists what happened over the last week, newest first: deliveries
   (a line a day with the cash), partly delivered, held or refused at the door, back with the merchant, problems a hub
   flagged, return lists to confirm, answered requests and payouts sent; a count of what came since it was last
@@ -227,8 +255,11 @@ three test suites pass; the app was checked live on the dev database. The plan's
   the shelf), parcel search and page (ask for a return), label reprints.
 - **Rider app.** Today: cash in hand, stops with address, phone, COD; a delivery page per parcel with Delivered,
   Partly delivered (amount and reason), On hold (reason and date), Refused (reason); pickups to collect.
-- **Admin.** Live dashboard (today's counts, stages, last 7 days, hubs, top merchants, cash with riders, owed to
-  merchants), merchants, riders (add with a login, edit, stop), payouts (owed per merchant, run now, payouts and
+- **Admin.** Live dashboard, read top to bottom: a setup checklist while the courier is not set up, "Waiting for you"
+  (the admin bell's lines as a to-do list), the parcels' day across every hub as six numbered steps that open the hub
+  with that work, then today's counts, stages, last 7 days, hubs and top merchants; a guide (`/Admin/Guide`, "How it
+  works": the setup order, a parcel's day with the page for each step, what needs the admin); a menu ordered by when
+  it is used (every day, money, people, setup); toasts that offer the next step, merchants, riders (add with a login, edit, stop), payouts (owed per merchant, run now, payouts and
   invoices), rates (change for new bookings only), coverage (the map, and tabs that open and close hubs, draw zones on
   them and keep the areas), failed messages (send again).
 - **Public.** Landing page: the promise, a tracking box and the courier's real counts (cities, hubs, areas) beside an
@@ -270,6 +301,13 @@ three test suites pass; the app was checked live on the dev database. The plan's
   takes money in and cannot send it to merchants), the app's own SQL login instead of `sa`.
 
 ### Database
+- 2026-10-12: `Parcels.Parcel.Speed`, `ProductType`, `SpeedCharge`, `ProductCharge` (both extras part of
+  `DeliveryCharge`), `RecipientLatitude`, `RecipientLongitude`; `Pricing.DeliveryRate.ExpressCharge`, `ExpressDays`,
+  `LiquidCharge`, `FragileCharge`, `FreshFoodCharge`, `FrozenCharge` (NULL: not offered); `Platform.Tenant.PickupCutoff`,
+  `PickupTime`; `Delivery.PickupRequest` lost `ExpectedParcels` and `Note`, status 1 is now Scheduled, and
+  `UX_PickupRequest_Point_Date_Open` keeps one open pickup per point and day. `Scripts/Pre/003_DeliveryTypesAndPickups.sql`
+  backfills old parcels (regular, general, no extras) and drops the two columns; `Scripts/2026/005` seeds the extras
+  and the 3:00 pm cut-off and 3:30 pm pickup.
 - `Merchants.Merchant.MainMerchantId` (2026-10-06): set on a business added to another merchant's account, pointing at its main profile (`FK_Merchant_Merchant`, never itself).
 - `Merchants.MerchantPicture` (2026-10-06): the picture (PNG, JPEG or WebP, at most 512 KB, judged by its first bytes) of a main profile or a business, one row per merchant, in a table of its own so that reading a merchant never loads the bytes. Uploaded in `/Merchant/Settings` for the business being worked in and served by `/Merchant/Picture/{id}` to logins of the same account only; it shows in the sidebar, the account menu, the business switcher and `/Merchant/Businesses`.
 - `Merchants.Moderator` (2026-10-06): a person who works in a merchant account with a login of their own, and what
@@ -302,15 +340,18 @@ three test suites pass; the app was checked live on the dev database. The plan's
   (`PaidAmount`, `StoreAmount` after its fee, `Method`, `ValidationId`, `BankTransactionId`) and `LedgerEntryId`, the
   one credit it wrote (`UX_OnlinePayment_LedgerEntry`; `chk_OnlinePayment_Credit`: paid exactly when credited).
   Merchant-filtered and in the policy.
+- `Payments.PayoutRequest` (2026-10-08): a merchant asking to be paid now (status 1 open, 2 paid with `PayoutId`, 3
+  refused with `Answer`, 4 withdrawn), the balance when it asked (`AmountAsked`), one open per business
+  (`UX_PayoutRequest_Merchant_Open`). Merchant-filtered and in the policy.
 - Schemas: `Platform` (Tenant), `Identity`, `Network` (Hub, Zone, Area), `Pricing` (DeliveryRate), `Merchants`
   (Merchant, MerchantApiKey, MerchantPicture, MerchantPayoutAccount, Moderator, PickupPoint), `Parcels` (Parcel,
   ParcelEvent, ParcelRequest, sequence TrackingNumber →
   `OD10000001`),
   `Delivery` (Rider, DeliveryRun, DeliveryAttempt, PickupRequest, VehicleCapacity, ReturnList, ReturnListParcel,
-  sequence ReturnListNumber → `RL-100001`), `Payments` (LedgerEntry, Payout, OnlinePayment, sequences
+  sequence ReturnListNumber → `RL-100001`), `Payments` (LedgerEntry, Payout, PayoutRequest, OnlinePayment, sequences
   PayoutNumber → `INV-000001` and OnlinePaymentNumber → `PAY-100001`), `Notifications` (OutboxMessage).
 - Every tenant table has `TenantId` + FK + index, the housekeeping columns, and its predicates in the security policy
-  `Platform.TenantIsolation` (25 tables).
+  `Platform.TenantIsolation` (26 tables).
 - Seed (`001_SeedCourier.sql`, then `002`, `003`): OneDrop Courier (Asia/Dhaka, BDT, SMS sender `OneDrop`, hotline 09610-001122,
   10 businesses per merchant account, 3
   attempts); 16 hubs (Dhaka city 5; suburbs Savar, Gazipur, Narayanganj; Chattogram, Sylhet, Rajshahi, Khulna,
@@ -333,7 +374,7 @@ three test suites pass; the app was checked live on the dev database. The plan's
 | Charges snapshot on the parcel at booking | A rate change must never reprice a parcel already booked or invoiced |
 | COD charge rounded to whole taka, away from zero | Money shown and paid in whole taka; ৳12.50 → ৳13 is what couriers do |
 | Merchants sign up and wait for approval; admins can add active merchants directly | Couriers vet merchants before collecting cash for them |
-| Pickups are requests the hub assigns to a rider; a merchant may also drop parcels at a hub (`Pending` → `AtHub`) | Both happen in real life |
+| Pickups are assigned to a rider by the hub; a merchant may also drop parcels at a hub (`Pending` → `AtHub`). Until 2026-10-12 the merchant asked for each pickup; now they are scheduled by the day's cut-off (below) | Both happen in real life |
 | A rider's day is a `DeliveryRun` per rider per day; each hand-over is a `DeliveryAttempt` | The run carries the cash check; attempts count towards the courier's maximum |
 | On hold only while attempts remain; the last failed attempt returns the parcel | Couriers try three times, then return |
 | Returns travel back to the pickup hub and are handed back there; the merchant pays delivery + return charge | The pickup hub is where the merchant's parcels come from |
@@ -373,6 +414,9 @@ three test suites pass; the app was checked live on the dev database. The plan's
 | **2026-10-07: payouts the admin can steer** (Phase 4.1, owner: "Lets fix these"). A refused transfer keeps the gateway's reason and is retried hourly; the admin sends it again or cancels it, which frees its lines. Holding is per account, with a reason. A merchant who owes the courier is settled by an adjustment line (no parcel, a reason), never by editing lines. Payouts still do not wait for a rider's cash | A payout copies the account it was made for, so a payout to a wrong account could never succeed: cancelling it is the only way to send the money to a corrected one. Its key stays the same on every retry, so a transfer the gateway made but failed to confirm is never made twice (the cancel dialog says to check with the gateway first). A ledger is only ever added to, so a settlement or a correction is a line of its own the merchant can read. The merchant is owed what the door collected; a rider short of cash is the courier's matter with its rider, made visible in 4.2 and 4.7 rather than taken from the merchant |
 | 2026-10-07: the admin's bell is a list of what waits, not of events (Phase 4.2): one line per kind of work with its count, timed by its newest item | An admin acts on work that is open, not on a feed; counting what waits keeps the bell short however busy the courier is, and each line's time still tells them when something new joined it |
 | **2026-10-08: SSLCommerz (the owner's sandbox store) takes one kind of money in: a merchant paying what it owes.** Not the payout gateway, and no prepaid wallet; paying a recipient's COD online comes next, with refunds (owner, unsure which use; this was the recommendation). The payment credits an `Adjustment` line, and is believed only when our server asks the gateway; a held one (risky, or another amount) waits for the admin; a check job catches payers whose browser never came back | SSLCommerz collects payments; it cannot send money to merchants' bKash accounts, so payouts stay fake. A prepaid wallet would fight the ledger: the hourly payout run pays any positive balance back the next morning, so a top-up would be returned. Paying a debt is the one use the ledger already understands; a credit adjustment is what 4.1 already writes when a merchant pays by hand, so statements, invoices, payouts and reports needed no change. The return address is open to anyone, because the merchant's sign-in does not travel with the gateway's post, so nothing posted is believed. Money the gateway took is always credited, once (the payment's row version and a unique credit), even after the page said it failed, because double-charging a merchant is worse than a late credit. Localhost cannot receive SSLCommerz's notice, hence the job |
+| **2026-10-08: "Get paid now" became a request the admin approves** (owner, after asking "if there is a get paid now then everybody will take out the money"; offered a rules-based instant payout, a request, or removing it, the owner chose the request). The merchant asks, once at a time; the admin pays at once or refuses with a reason; the daily payouts are unchanged | Paying instantly had three holes: today's cash may still be in a rider's pocket (a parcel counts as delivered when the rider taps it, the cash arrives when the run is closed), nothing was kept back for parcels on their way that may come back and be charged, and nothing limited how often. A person deciding, shown exactly those three facts, closes them without rules the courier would have to tune. The admin's own "Pay now" on a merchant's page stays |
+| **2026-10-12: delivery types, a map pin, and one pickup a day** (owner). Speed (regular, express) and what is inside (general, liquid, fragile, fresh food, frozen) are two choices, so a parcel can be express and fragile; each is an extra on the rate card per service area, empty where not offered, snapshot on the parcel and part of the delivery charge. The pin uses Google Maps (owner's choice) with a key the owner adds; without one, a pasted link still pins and riders still navigate. Pickups are scheduled by the 3:00 pm cut-off and never asked for; the merchant's pickup request is gone | The owner wanted Steadfast-style delivery types with fragile above regular and frozen above fragile; two choices avoid a type per combination, and extras keep the ledger, invoices and reports unchanged. Fresh and frozen food cannot wait days on the road, hence not outside the city. One daily truck at 3:30 pm is how the owner runs pickups; scheduling at booking plus a catch-up job means a missed or partial pickup is never forgotten. Tenant settings are nullable because the seed scripts that insert the tenant cannot change, so a NULL cut-off means "collected the day it is booked" |
+| **2026-10-08: ready to go live, for the owner's portfolio** (owner: "make it ready to be live. Remove if there is any demo data"; the hosting and the address are the owner's senior's to choose). A live site starts clean: the courier, its map and rates from the database scripts, and one admin made from `Setup:AdminEmail` / `Setup:AdminPassword` when missing and never changed once it exists. `deploy/` runs it on one Linux server (SQL Server Express, the app as Production trusting the proxy's forwarded headers, Caddy for HTTPS); `Tenancy:HomeCourierHost` serves the courier on one address. The dev database was left as it is (owner) | Demo logins with a password printed in the README cannot be on a public site, and a database deployed from nothing had nobody who could sign in, because only the Development demo seeder made users. A setting that only adds what is missing lets the password setting be emptied after the first sign-in. One address instead of `onedrop.<domain>` works on any host (a platform's own address, a subdomain of a company domain, sslip.io) without wildcard DNS. Without the forwarded headers behind a proxy the app saw http and the proxy's address, so cookies, links and the per-address rate limit were wrong. Express, because SQL Server's Developer edition may not run a live site |
 
 ---
 
@@ -389,7 +433,8 @@ three test suites pass; the app was checked live on the dev database. The plan's
 | Repository | https://github.com/talha33177net-eng/OneDrop (private), local folder `C:\Courier Project`; the rebuild is on branch `traditional-courier` |
 | Git identity | Talha Ahmed &lt;talha33177.net@gmail.com&gt; |
 | App URLs | http://onedrop.localhost:5080 (the courier; the launch profile opens it); http://localhost:5080 sends visitors there (`Tenancy:HomeCourier`, 2026-10-08), and platform admins sign in at http://localhost:5080/Account/Login |
-| Demo logins, API keys | [README](../README.md) — password `OneDrop#2026` (Development only) |
+| Demo logins, API keys | [README](../README.md) — password `OneDrop#2026` (Development only, with `Seed:DemoData`) |
+| Live site | Not hosted yet (2026-10-08): the owner's senior chooses the server and the address and follows [Deployment.md](Deployment.md). The production stack was proved on this machine with Docker Desktop (`SITE_ADDRESS=localhost`) |
 
 ### Everyday commands
 ```powershell
@@ -458,6 +503,7 @@ dotnet run --project src/Web
 | The VPN link to the SQL Server can be slow | Check `sys.dm_exec_sessions`; stop and rerun a stalled publish |
 | A CSS rule beats an SVG presentation attribute (`stroke-width="5"` loses to `.o { stroke-width: 2.4 }`) | In the drawings, a one-off stroke or fill goes in `style="…"` |
 | Headless screenshots do not move animations that run on the compositor (the planet's turn) | To see a frame, pause every animation at a time: `document.getAnimations().forEach(a => { a.pause(); a.currentTime = t; })` |
+| In Development the sign-in page lists every `.test` login with its roles, and `OneDrop-Test` holds thousands (each test makes its own): one GET of `/Account/Login` there takes about 50 s, a large part of a full integration run | Never outside Development. A test login that needs no demo button can use another domain (`LiveSetupTests` uses `@admin.example`) |
 | A short class name on a page can collide with a shared partial's (`.step` vs `.progress-steps .step`) | Front-page classes are prefixed (`how-step`, `hero-…`); search `Pages` before adding a bare one |
 
 ---

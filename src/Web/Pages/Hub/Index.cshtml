@@ -86,7 +86,7 @@
                                     <td>@p.Area</td>
                                     <td>@p.Merchant</td>
                                     <td>
-                                        @Statuses.Badge(p.Status)
+                                        @Statuses.Badge(p.Status) @Statuses.Tags(p.Speed, p.ProductType)
                                         @if (p.Issue is { } issue)
                                         {
                                             <div class="mt-xs">@Statuses.Badge(issue)</div>

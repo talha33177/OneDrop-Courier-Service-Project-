@@ -36,6 +36,9 @@ public sealed record ParcelView
 
     public required string RecipientAddress { get; init; }
 
+    /// <summary>The door pinned on a map, when the merchant pinned it.</summary>
+    public GeoPoint? Pin { get; init; }
+
     public required long AreaId { get; init; }
 
     public required string Area { get; init; }
@@ -74,7 +77,19 @@ public sealed record ParcelView
 
     public ServiceArea ServiceArea { get; init; }
 
+    /// <summary>The weight's charge plus <see cref="SpeedCharge"/> and <see cref="ProductCharge"/>.</summary>
     public decimal DeliveryCharge { get; init; }
+
+    public DeliverySpeed Speed { get; init; }
+
+    public ProductType ProductType { get; init; }
+
+    public decimal SpeedCharge { get; init; }
+
+    public decimal ProductCharge { get; init; }
+
+    /// <summary>While it waits for pickup: the day the courier collects it.</summary>
+    public DateOnly? PickupOn { get; init; }
 
     public decimal CodChargePercent { get; init; }
 
@@ -149,6 +164,7 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
     public async Task<Result<ParcelView>> GetAsync(string? trackingCode, CancellationToken cancellationToken = default)
     {
         var tenant = tenantContext.Require();
+        var today = tenant.Today(time.GetUtcNow().UtcDateTime);
         var code = trackingCode?.Trim().ToUpperInvariant();
         var found = await (
             from parcel in db.Parcels
@@ -217,6 +233,7 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
             RecipientName = p.RecipientName,
             RecipientPhone = p.RecipientPhone,
             RecipientAddress = p.RecipientAddress,
+            Pin = p.Pin,
             AreaId = p.AreaId,
             Area = found.Area,
             City = found.City,
@@ -237,6 +254,12 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
             CollectedAmount = p.CollectedAmount,
             ServiceArea = p.ServiceArea,
             DeliveryCharge = p.DeliveryCharge,
+            Speed = p.Speed,
+            ProductType = p.ProductType,
+            SpeedCharge = p.SpeedCharge,
+            ProductCharge = p.ProductCharge,
+            // A parcel left behind by its day's pickup goes with today's
+            PickupOn = p.Status == ParcelStatus.Pending ? new[] { tenant.PickupDayFor(p.Created), today }.Max() : null,
             CodChargePercent = p.CodChargePercent,
             CodCharge = p.CodCharge ?? p.Charges.CodChargeOn(p.CodAmount),
             ReturnCharge = p.ReturnCharge,
@@ -247,7 +270,7 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
             HoldUntil = p.HoldUntil,
             DeliveryDays = p.DeliveryDays,
             DueOn = p.DueOn,
-            Late = p.IsLate(tenant.Today(time.GetUtcNow().UtcDateTime)),
+            Late = p.IsLate(today),
             ReturnReason = p.ReturnReason,
             Issue = p.Issue,
             IssueNote = p.IssueNote,

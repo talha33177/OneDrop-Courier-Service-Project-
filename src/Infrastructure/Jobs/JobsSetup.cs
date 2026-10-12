@@ -4,6 +4,7 @@ using Hangfire.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Application.Delivery.Pickups;
 using Application.Notifications.SendEmails;
 using Application.Notifications.SendOutbox;
 using Application.Notifications.SendWebhooks;
@@ -27,7 +28,8 @@ public static class JobsSetup
             typeof(SendWebhooksJob),
             typeof(SendEmailsJob),
             typeof(PayoutsJob),
-            typeof(CheckOnlinePaymentsJob)));
+            typeof(CheckOnlinePaymentsJob),
+            typeof(PickupsJob)));
         services.AddScoped<TenantJobRunner>();
         // The connection string is read when Hangfire first opens a connection, from the final configuration
         services.AddHangfire((provider, configuration) => configuration
@@ -63,5 +65,9 @@ public static class JobsSetup
             OnlinePaymentsHandler.RecurringId,
             runner => runner.EnqueueForEveryTenantAsync(nameof(CheckOnlinePaymentsJob), CancellationToken.None),
             configuration["Jobs:OnlinePayments"] ?? throw new InvalidOperationException("Jobs:OnlinePayments is not set."));
+        recurring.AddOrUpdate<TenantJobRunner>(
+            PickupSchedule.RecurringId,
+            runner => runner.EnqueueForEveryTenantAsync(nameof(PickupsJob), CancellationToken.None),
+            configuration["Jobs:Pickups"] ?? throw new InvalidOperationException("Jobs:Pickups is not set."));
     }
 }

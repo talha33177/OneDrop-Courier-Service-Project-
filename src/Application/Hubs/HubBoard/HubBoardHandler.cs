@@ -3,10 +3,14 @@ using Application.Abstractions;
 using Application.Common;
 using Domain.Delivery;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Hubs.HubBoard;
 
-/// <summary>A parcel as the hub's lists show it, with any problem flagged on it (which keeps it from a rider).</summary>
+/// <summary>
+/// A parcel as the hub's lists show it, with any problem flagged on it (which keeps it from a rider), how fast it goes
+/// and what is inside (express and food that spoils go first).
+/// </summary>
 public sealed record BoardParcel(
     string TrackingCode,
     string Merchant,
@@ -20,7 +24,12 @@ public sealed record BoardParcel(
     DateOnly? DueOn,
     int WeightGrams,
     ParcelIssue? Issue,
-    string? IssueNote);
+    string? IssueNote,
+    DeliverySpeed Speed,
+    ProductType ProductType)
+{
+    public bool IsPriority => DeliveryOptions.IsPriority(Speed, ProductType);
+}
 
 /// <summary>Parcels at the hub that leave for one other hub: forward ones, or returns going back.</summary>
 public sealed record DispatchGroup(string HubCode, string HubName, bool Returns, IReadOnlyList<BoardParcel> Parcels);
@@ -69,7 +78,8 @@ public class HubBoardHandler(IAppDbContext db, ITenantContext tenantContext, Hub
             join merchant in db.Merchants on parcel.MerchantId equals merchant.Id
             join area in db.Areas on parcel.AreaId equals area.Id
             where parcel.CurrentHubId == hub.Id
-            orderby parcel.DueOn == null, parcel.DueOn, parcel.Id
+            orderby parcel.Speed == DeliverySpeed.Express || parcel.ProductType == ProductType.FreshFood ||
+                parcel.ProductType == ProductType.Frozen descending, parcel.DueOn == null, parcel.DueOn, parcel.Id
             select new
             {
                 parcel.Status,
@@ -89,7 +99,9 @@ public class HubBoardHandler(IAppDbContext db, ITenantContext tenantContext, Hub
                     parcel.DueOn,
                     parcel.WeightGrams,
                     parcel.Issue,
-                    parcel.IssueNote)
+                    parcel.IssueNote,
+                    parcel.Speed,
+                    parcel.ProductType)
             })
             .AsNoTracking()
             .ToListAsync(cancellationToken);
@@ -114,9 +126,14 @@ public class HubBoardHandler(IAppDbContext db, ITenantContext tenantContext, Hub
             .OrderBy(g => g.Merchant)
             .ToList();
 
+        var tenant = tenantContext.Require();
+        var now = time.GetUtcNow().UtcDateTime;
+        var today = tenant.Today(now);
         var incoming = await db.Parcels.CountAsync(p => p.TransferToHubId == hub.Id, cancellationToken);
+        // Today's pickups; tomorrow's list (parcels booked after the cut-off) is not work yet
         var pickups = await db.PickupRequests.CountAsync(
-            r => r.HubId == hub.Id && (r.Status == PickupStatus.Requested || r.Status == PickupStatus.Assigned),
+            r => r.HubId == hub.Id && r.PickupDate <= today &&
+                (r.Status == PickupStatus.Scheduled || r.Status == PickupStatus.Assigned),
             cancellationToken);
         var openRuns = db.DeliveryRuns.Where(r => r.HubId == hub.Id && r.Status == RunStatus.Open);
         var withRiders = await (
@@ -130,8 +147,6 @@ public class HubBoardHandler(IAppDbContext db, ITenantContext tenantContext, Hub
             join run in openRuns on attempt.RunId equals run.Id
             select (decimal?)attempt.CollectedAmount)
             .SumAsync(cancellationToken) ?? 0;
-        var tenant = tenantContext.Require();
-        var now = time.GetUtcNow().UtcDateTime;
         var runDates = await openRuns.Select(r => r.RunDate).ToListAsync(cancellationToken);
 
         return new HubBoard(
@@ -145,6 +160,6 @@ public class HubBoardHandler(IAppDbContext db, ITenantContext tenantContext, Hub
             runDates.Count,
             runDates.Count(day => tenant.RunIsLate(day, now)),
             cash,
-            tenant.Today(now));
+            today);
     }
 }

@@ -7,6 +7,7 @@
 -- Date: 2026-10-04
 --       2026-10-05 RiderReturnTime
 --       2026-10-06 MaxBusinessesPerAccount
+--       2026-10-09 PickupCutoff, PickupTime
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Platform].[Tenant] (
     [Id]                        BIGINT         IDENTITY (1, 1) NOT NULL,
@@ -22,6 +23,11 @@ CREATE TABLE [Platform].[Tenant] (
     [RiderReturnTime]           TIME (0)       NULL,
     -- Businesses a merchant account may add besides its main profile; NULL for no limit
     [MaxBusinessesPerAccount]   INT            NULL,
+    -- The day's pickup cut-off (the tenant's clock): parcels booked before it are collected that day, later ones the
+    -- next day; NULL for none (collected the day they are booked)
+    [PickupCutoff]              TIME (0)       NULL,
+    -- When the day's pickup leaves the hub, as told to merchants; NULL for not said
+    [PickupTime]                TIME (0)       NULL,
     [Archived]                  BIT            DEFAULT ((0)) NOT NULL,
     [UpdatedId]                 BIGINT         NULL,
     [UpdatedOn]                 DATETIME2 (7)  DEFAULT (getutcdate()) NOT NULL,

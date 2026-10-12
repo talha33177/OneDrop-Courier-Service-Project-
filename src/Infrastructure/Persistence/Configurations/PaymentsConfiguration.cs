@@ -50,6 +50,24 @@ public class PayoutConfiguration : IEntityTypeConfiguration<Payout>
     }
 }
 
+public class PayoutRequestConfiguration : IEntityTypeConfiguration<PayoutRequest>
+{
+    public void Configure(EntityTypeBuilder<PayoutRequest> builder)
+    {
+        builder.MapTenantOwned(Schemas.Payments);
+        builder.Property(r => r.AmountAsked).IsMoney();
+        builder.Property(r => r.Answer).HasMaxLength(PayoutRequest.MaxAnswerLength);
+        builder.Ignore(r => r.IsOpen);
+        builder.Property(r => r.RowVersion).IsRowVersion();
+        builder.HasOne<Merchant>().WithMany().HasForeignKey(r => r.MerchantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Payout>().WithMany().HasForeignKey(r => r.PayoutId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(r => r.MerchantId)
+            .IsUnique()
+            .HasFilter("[Status] = 1")
+            .HasDatabaseName("UX_PayoutRequest_Merchant_Open");
+    }
+}
+
 public class OnlinePaymentConfiguration : IEntityTypeConfiguration<OnlinePayment>
 {
     public void Configure(EntityTypeBuilder<OnlinePayment> builder)

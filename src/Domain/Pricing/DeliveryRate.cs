@@ -2,7 +2,10 @@ using Domain.Common;
 
 namespace Domain.Pricing;
 
-/// <summary>What a parcel costs the merchant and how soon it is delivered, worked out when it is booked and kept on the parcel.</summary>
+/// <summary>
+/// What a parcel costs the merchant and how soon it is delivered, worked out when it is booked and kept on the parcel.
+/// The delivery charge is the weight's charge plus the extras for the parcel's speed and for what is inside.
+/// </summary>
 /// <param name="CodChargePercent">Taken off the cash collected when the parcel is delivered.</param>
 /// <param name="ReturnCharge">Added to the delivery charge when the parcel comes back to the merchant.</param>
 /// <param name="DeliveryDays">Days after pickup the courier promises to deliver in; null when it promises none.</param>
@@ -16,13 +19,23 @@ public sealed record ParcelCharges(
     decimal BaseCharge,
     decimal ExtraKgCharge)
 {
-    /// <summary>The delivery charge these rates give a parcel weighing <paramref name="weightGrams"/>.</summary>
+    public DeliverySpeed Speed { get; init; } = DeliverySpeed.Regular;
+
+    public ProductType ProductType { get; init; } = ProductType.General;
+
+    /// <summary>The express charge, or 0 for regular delivery.</summary>
+    public decimal SpeedCharge { get; init; }
+
+    /// <summary>The extra for what is inside (fragile, frozen and so on), or 0 for general goods.</summary>
+    public decimal ProductCharge { get; init; }
+
+    /// <summary>The delivery charge these rates give a parcel weighing <paramref name="weightGrams"/>, extras included.</summary>
     public decimal DeliveryChargeFor(int weightGrams)
     {
         var extraGrams = Math.Max(0, weightGrams - IncludedWeightGrams);
         var extraKg = (extraGrams + 999) / 1000;
 
-        return BaseCharge + extraKg * ExtraKgCharge;
+        return BaseCharge + extraKg * ExtraKgCharge + SpeedCharge + ProductCharge;
     }
 
     /// <summary>The same rates applied to a corrected weight, so a reweigh never reaches today's rate card.</summary>
@@ -46,8 +59,9 @@ public sealed record ParcelCharges(
 /// <summary>
 /// One line of a tenant's rate card: what a parcel in one <see cref="ServiceArea"/> costs the merchant. The first
 /// <see cref="IncludedWeightGrams"/> cost <see cref="BaseCharge"/>, each started kilogram above it
-/// <see cref="ExtraKgCharge"/>; <see cref="DeliveryDays"/> is how soon after pickup it is delivered. Every number is
-/// the tenant's own, set by its admin; none has a default.
+/// <see cref="ExtraKgCharge"/>; <see cref="DeliveryDays"/> is how soon after pickup it is delivered. On top come the
+/// extras for express delivery and for what is inside (liquid, fragile, fresh food, frozen); an extra left empty is
+/// not offered in this service area. Every number is the tenant's own, set by its admin; none has a default.
 /// </summary>
 public class DeliveryRate : TenantEntity
 {
@@ -78,6 +92,39 @@ public class DeliveryRate : TenantEntity
     /// time, so parcels get no date to be delivered by.
     /// </summary>
     public int? DeliveryDays { get; private set; }
+
+    /// <summary>Added for express delivery; null when express is not offered in this service area.</summary>
+    public decimal? ExpressCharge { get; private set; }
+
+    /// <summary>Days after pickup an express parcel is delivered in; null to keep <see cref="DeliveryDays"/>.</summary>
+    public int? ExpressDays { get; private set; }
+
+    public decimal? LiquidCharge { get; private set; }
+
+    public decimal? FragileCharge { get; private set; }
+
+    public decimal? FreshFoodCharge { get; private set; }
+
+    public decimal? FrozenCharge { get; private set; }
+
+    public bool Offers(DeliverySpeed speed)
+    {
+        return speed == DeliverySpeed.Regular || (speed == DeliverySpeed.Express && ExpressCharge is not null);
+    }
+
+    /// <summary>The extra for <paramref name="product"/>: 0 for general goods, null when it is not carried here.</summary>
+    public decimal? ExtraFor(ProductType product)
+    {
+        return product switch
+        {
+            ProductType.General => 0,
+            ProductType.Liquid => LiquidCharge,
+            ProductType.Fragile => FragileCharge,
+            ProductType.FreshFood => FreshFoodCharge,
+            ProductType.Frozen => FrozenCharge,
+            _ => null
+        };
+    }
 
     public static Result<DeliveryRate> Create(ServiceArea area, RateValues values)
     {
@@ -123,17 +170,91 @@ public class DeliveryRate : TenantEntity
         return Result.Success();
     }
 
-    /// <summary>The delivery charge for a parcel weighing <paramref name="weightGrams"/>.</summary>
+    /// <summary>
+    /// The extras for express delivery and for what is inside, for parcels booked from now on. An extra left empty
+    /// stops it being offered in this service area.
+    /// </summary>
+    public Result ChangeExtras(RateExtras extras)
+    {
+        decimal?[] charges = [extras.ExpressCharge, extras.LiquidCharge, extras.FragileCharge, extras.FreshFoodCharge, extras.FrozenCharge];
+        if (charges.Any(charge => charge is < 0 or > MaxCharge))
+        {
+            return Error.Validation("rate.extra", $"Extras must be between ৳0 and ৳{MaxCharge:N0}, or left empty when not offered.");
+        }
+
+        if (extras.ExpressDays is not null && extras.ExpressCharge is null)
+        {
+            return Error.Validation("rate.expressDays", "Set the express charge too, or leave the express time empty.");
+        }
+
+        if (extras.ExpressDays is < 0 or > MaxDeliveryDays || extras.ExpressDays > DeliveryDays)
+        {
+            return Error.Validation(
+                "rate.expressDays",
+                "Express delivery takes between 0 days (the same day) and the regular delivery time.");
+        }
+
+        ExpressCharge = extras.ExpressCharge;
+        ExpressDays = extras.ExpressDays;
+        LiquidCharge = extras.LiquidCharge;
+        FragileCharge = extras.FragileCharge;
+        FreshFoodCharge = extras.FreshFoodCharge;
+        FrozenCharge = extras.FrozenCharge;
+
+        return Result.Success();
+    }
+
+    /// <summary>The delivery charge for a regular parcel of general goods weighing <paramref name="weightGrams"/>.</summary>
     public decimal DeliveryChargeFor(int weightGrams)
     {
         return ChargesFor(weightGrams).DeliveryCharge;
     }
 
-    /// <summary>The charges a parcel weighing <paramref name="weightGrams"/> is booked at.</summary>
+    /// <summary>The charges a regular parcel of general goods weighing <paramref name="weightGrams"/> is booked at.</summary>
     public ParcelCharges ChargesFor(int weightGrams)
     {
         var charges = new ParcelCharges(
             ServiceArea, 0, CodChargePercent, ReturnCharge, DeliveryDays, IncludedWeightGrams, BaseCharge, ExtraKgCharge);
+
+        return charges.ForWeight(weightGrams);
+    }
+
+    /// <summary>
+    /// The charges a parcel weighing <paramref name="weightGrams"/> is booked at, going at <paramref name="speed"/>
+    /// with <paramref name="product"/> inside, or why the courier does not carry it so in this service area.
+    /// </summary>
+    public Result<ParcelCharges> Price(int weightGrams, DeliverySpeed speed, ProductType product)
+    {
+        if (!Enum.IsDefined(speed) || !Offers(speed))
+        {
+            return Error.Validation(
+                "parcel.speed",
+                $"Express delivery is not offered {ServiceArea.Destination()}. Choose regular delivery.");
+        }
+
+        if (!Enum.IsDefined(product) || ExtraFor(product) is not { } productCharge)
+        {
+            return Error.Validation(
+                "parcel.productType",
+                $"The courier does not carry {product.DisplayName().ToLowerInvariant()} parcels {ServiceArea.Destination()}.");
+        }
+
+        var express = speed == DeliverySpeed.Express;
+        var charges = new ParcelCharges(
+            ServiceArea,
+            0,
+            CodChargePercent,
+            ReturnCharge,
+            express ? ExpressDays ?? DeliveryDays : DeliveryDays,
+            IncludedWeightGrams,
+            BaseCharge,
+            ExtraKgCharge)
+        {
+            Speed = speed,
+            ProductType = product,
+            SpeedCharge = express ? ExpressCharge!.Value : 0,
+            ProductCharge = productCharge
+        };
 
         return charges.ForWeight(weightGrams);
     }
@@ -146,3 +267,12 @@ public sealed record RateValues(
     decimal CodChargePercent,
     decimal ReturnCharge,
     int? DeliveryDays);
+
+/// <summary>A service area's extras; an empty one is not offered there.</summary>
+public sealed record RateExtras(
+    decimal? ExpressCharge,
+    int? ExpressDays,
+    decimal? LiquidCharge,
+    decimal? FragileCharge,
+    decimal? FreshFoodCharge,
+    decimal? FrozenCharge);

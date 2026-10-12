@@ -66,6 +66,8 @@ public interface IAppDbContext
 
     DbSet<OnlinePayment> OnlinePayments { get; }
 
+    DbSet<PayoutRequest> PayoutRequests { get; }
+
     DbSet<OutboxMessage> OutboxMessages { get; }
 
     /// <summary>For the rare change that needs two saves in one transaction.</summary>

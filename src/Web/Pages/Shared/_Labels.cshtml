@@ -20,6 +20,19 @@
                     <div>@Money.Phone(label.RecipientPhone)</div>
                     <div class="label-small">@label.RecipientAddress, @label.Area</div>
                     <div class="label-cod">COD @Money.Taka(label.CodAmount)</div>
+                    @if (label.Speed == Domain.Pricing.DeliverySpeed.Express || Domain.Pricing.DeliveryOptions.Handling(label.ProductType) is not null)
+                    {
+                        <div class="label-care">
+                            @if (label.Speed == Domain.Pricing.DeliverySpeed.Express)
+                            {
+                                <span>@Icons.Get("zap") Express</span>
+                            }
+                            @if (Domain.Pricing.DeliveryOptions.Handling(label.ProductType) is { } handling)
+                            {
+                                <span>@Icons.Get(Statuses.Icon(label.ProductType)) @handling</span>
+                            }
+                        </div>
+                    }
                     <div class="label-small mt" style="margin-top:6px">
                         From @label.Merchant · @Money.Phone(label.MerchantPhone)<br />
                         @Money.Kg(label.WeightGrams)@(label.ItemDescription is null ? "" : $" · {label.ItemDescription}")@(label.MerchantReference is null ? "" : $" · {label.MerchantReference}")

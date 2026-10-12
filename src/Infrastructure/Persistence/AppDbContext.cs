@@ -90,6 +90,8 @@ public class AppDbContext(
 
     public DbSet<OnlinePayment> OnlinePayments => Set<OnlinePayment>();
 
+    public DbSet<PayoutRequest> PayoutRequests => Set<PayoutRequest>();
+
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     /// <summary>Read by the tenant filter at query time. Null means "no tenant", which matches no row.</summary>

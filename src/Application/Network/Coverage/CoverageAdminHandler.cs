@@ -394,7 +394,7 @@ public class CoverageAdminHandler(IAppDbContext db)
                 (p.CurrentHubId == hub.Id || p.TransferToHubId == hub.Id || (p.Status == ParcelStatus.Pending && p.PickupHubId == hub.Id)),
             cancellationToken);
         var pickups = await db.PickupRequests.CountAsync(
-            r => r.HubId == hub.Id && (r.Status == PickupStatus.Requested || r.Status == PickupStatus.Assigned),
+            r => r.HubId == hub.Id && (r.Status == PickupStatus.Scheduled || r.Status == PickupStatus.Assigned),
             cancellationToken);
         if (zones + riders + parcels + pickups == 0)
         {

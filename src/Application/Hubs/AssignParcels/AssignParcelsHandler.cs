@@ -4,6 +4,7 @@ using Application.Common;
 using Domain.Common;
 using Domain.Delivery;
 using Domain.Network;
+using Domain.Pricing;
 
 namespace Application.Hubs.AssignParcels;
 
@@ -117,10 +118,13 @@ public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext
         var fleet = new Fleet(await db.VehicleCapacities.AsNoTracking().ToListAsync(cancellationToken));
         var load = Load.Of(await db.Parcels.Where(p => p.RiderId == rider.Id).Select(p => p.WeightGrams).ToListAsync(cancellationToken));
 
-        // The parcels due soonest go first, so the ones left behind when the vehicle is full are the least urgent
+        // Express and food that spoils go first, then the parcels due soonest, so the ones left behind when the vehicle
+        // is full are the least urgent
         var parcels = await db.Parcels
             .Where(p => codes.Contains(p.TrackingCode))
-            .OrderBy(p => p.DueOn == null)
+            .OrderByDescending(p => p.Speed == DeliverySpeed.Express || p.ProductType == ProductType.FreshFood ||
+                p.ProductType == ProductType.Frozen)
+            .ThenBy(p => p.DueOn == null)
             .ThenBy(p => p.DueOn)
             .ThenBy(p => p.Id)
             .ToListAsync(cancellationToken);

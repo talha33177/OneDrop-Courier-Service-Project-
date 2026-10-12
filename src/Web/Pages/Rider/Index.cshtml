@@ -101,6 +101,10 @@
                     <div class="muted" style="font-size:12px">@(d.CodAmount == 0 ? "already paid" : "to collect")</div>
                 </div>
             </div>
+            @if (d.Speed != Domain.Pricing.DeliverySpeed.Regular || d.ProductType != Domain.Pricing.ProductType.General)
+            {
+                <div class="tag-row">@Statuses.Tags(d.Speed, d.ProductType)</div>
+            }
             <div class="task-meta">
                 <div>@Icons.Get("map-pin") <span>@d.RecipientAddress, <strong>@d.Area</strong></span></div>
                 <div>@Icons.Get("phone") <a href="tel:@Money.Phone(d.RecipientPhone)">@Money.Phone(d.RecipientPhone)</a></div>
@@ -120,7 +124,14 @@
             <div class="task-actions">
                 <a class="btn btn-primary" asp-page="/Rider/Delivery" asp-route-code="@d.TrackingCode">@Icons.Get("check") Record outcome</a>
                 <a class="btn btn-outline" href="tel:@Money.Phone(d.RecipientPhone)">@Icons.Get("phone") Call</a>
-                <a class="btn btn-outline" href="https://www.google.com/maps/search/?api=1&query=@Uri.EscapeDataString(place)" target="_blank" rel="noopener">@Icons.Get("map-pin") Map</a>
+                @if (d.Pin is { } door)
+                {
+                    <a class="btn btn-outline" href="@MapLinks.Directions(door)" target="_blank" rel="noopener">@Icons.Get("navigation") Navigate</a>
+                }
+                else
+                {
+                    <a class="btn btn-outline" href="@MapLinks.Search(place)" target="_blank" rel="noopener">@Icons.Get("map-pin") Map</a>
+                }
             </div>
         </div>
     }

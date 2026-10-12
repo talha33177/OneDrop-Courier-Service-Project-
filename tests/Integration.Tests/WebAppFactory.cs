@@ -116,7 +116,9 @@ public sealed class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
             ["Email:From"] = "",
             // Never the real payment gateway either: without a store, Development uses the test gateway (/Dev/Pay)
             ["Sslcommerz:StoreId"] = "",
-            ["Sslcommerz:StorePassword"] = ""
+            ["Sslcommerz:StorePassword"] = "",
+            // No Google Maps in tests: pages fall back to links, and short map links are opened by a stand-in
+            ["GoogleMaps:ApiKey"] = ""
         };
 
         builder.UseEnvironment("Development");
@@ -127,12 +129,24 @@ public sealed class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<IWebhookSender>(Webhooks);
+            services.AddSingleton<IMapLinks, ShortMapLinks>();
             services.AddTransient<IStartupFilter, ClientAddressFilter>();
         });
         foreach (var (key, value) in settings)
         {
             builder.UseSetting(key, value);
         }
+    }
+}
+
+/// <summary>Stands in for Google's short links, so no test reaches the internet: one known link opens, any other does not.</summary>
+public sealed class ShortMapLinks : IMapLinks
+{
+    public const string Link = "https://maps.app.goo.gl/TestPin";
+
+    public Task<string?> ExpandAsync(string link, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(link == Link ? "https://www.google.com/maps/place/Test/@23.7509,90.3904,17z" : null);
     }
 }
 

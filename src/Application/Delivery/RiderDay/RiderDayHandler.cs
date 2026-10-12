@@ -5,6 +5,7 @@ using Domain.Common;
 using Domain.Delivery;
 using Domain.Parcels;
 using Domain.Payments;
+using Domain.Pricing;
 
 namespace Application.Delivery.RiderDay;
 
@@ -19,11 +20,12 @@ public sealed record RiderPickup(
     string Area,
     string ContactPhone,
     DateOnly Date,
-    int Expected,
-    string? Note,
     IReadOnlyList<PickupParcel> Parcels);
 
-/// <summary>A parcel the rider has to deliver, with everything needed at the door.</summary>
+/// <summary>
+/// A parcel the rider has to deliver, with everything needed at the door: how to handle it, and the door pinned on a
+/// map when the merchant pinned it.
+/// </summary>
 public sealed record RiderDelivery(
     string TrackingCode,
     string Merchant,
@@ -38,7 +40,14 @@ public sealed record RiderDelivery(
     string? Note,
     int Attempts,
     int MaxAttempts,
-    DateOnly? DueOn);
+    DateOnly? DueOn,
+    DeliverySpeed Speed,
+    ProductType ProductType,
+    decimal? Latitude,
+    decimal? Longitude)
+{
+    public GeoPoint? Pin => GeoPoint.From(Latitude, Longitude) is { IsSuccess: true } point ? point.Value : null;
+}
 
 public sealed record RiderDone(string TrackingCode, string RecipientName, string Area, AttemptOutcome Outcome, decimal Collected, string? Reason);
 
@@ -95,7 +104,12 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
             join area in db.Areas on parcel.AreaId equals area.Id
             where pointIds.Contains(parcel.PickupPointId) && parcel.Status == ParcelStatus.Pending
             orderby parcel.Id
-            select new { parcel.PickupPointId, Row = new PickupParcel(parcel.TrackingCode, parcel.RecipientName, area.Name, parcel.CodAmount) })
+            select new
+            {
+                parcel.PickupPointId,
+                parcel.Created,
+                Row = new PickupParcel(parcel.TrackingCode, parcel.RecipientName, area.Name, parcel.CodAmount)
+            })
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
@@ -105,7 +119,8 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
             join merchant in db.Merchants on parcel.MerchantId equals merchant.Id
             join area in db.Areas on parcel.AreaId equals area.Id
             where attempt.RiderId == rider.Id && attempt.Outcome == null
-            orderby area.Name, parcel.Id
+            orderby parcel.Speed == DeliverySpeed.Express || parcel.ProductType == ProductType.FreshFood ||
+                parcel.ProductType == ProductType.Frozen descending, area.Name, parcel.Id
             select new RiderDelivery(
                 parcel.TrackingCode,
                 merchant.Name,
@@ -120,7 +135,11 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
                 parcel.Note,
                 parcel.Attempts,
                 tenant.MaxDeliveryAttempts,
-                parcel.DueOn))
+                parcel.DueOn,
+                parcel.Speed,
+                parcel.ProductType,
+                parcel.RecipientLatitude,
+                parcel.RecipientLongitude))
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
@@ -155,9 +174,12 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
                     p.Area,
                     p.ContactPhone,
                     p.request.PickupDate,
-                    p.request.ExpectedParcels,
-                    p.request.Note,
-                    [.. waiting.Where(w => w.PickupPointId == p.request.PickupPointId).Select(w => w.Row)]))
+                    [
+                        .. waiting
+                            .Where(w => w.PickupPointId == p.request.PickupPointId &&
+                                w.Created < tenant.PickupCutoffUtc(p.request.PickupDate))
+                            .Select(w => w.Row)
+                    ]))
             ],
             deliveries,
             done,
@@ -195,7 +217,10 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
         return RecordAsync(trackingCode, (parcel, _) => parcel.Refuse(reason), _ => AttemptOutcome.Refused, _ => 0, reason, cancellationToken);
     }
 
-    /// <summary>The rider collected <paramref name="trackingCodes"/> at the pickup point; the rest stay with the merchant.</summary>
+    /// <summary>
+    /// The rider collected <paramref name="trackingCodes"/> at the pickup point; the rest stay with the merchant. Only
+    /// parcels booked before the pickup's cut-off go with it: one booked later waits for the next day's pickup.
+    /// </summary>
     public async Task<Result<int>> CompletePickupAsync(
         long requestId,
         IReadOnlyCollection<string> trackingCodes,
@@ -210,13 +235,15 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
             return Pickups.PickupsHandler.NotFound;
         }
 
+        var tenant = tenantContext.Require();
+        var cutoff = tenant.PickupCutoffUtc(request.PickupDate);
         var codes = trackingCodes.Select(c => c.Trim().ToUpperInvariant()).ToList();
         var picked = await db.Parcels
             .Where(p => p.PickupPointId == request.PickupPointId && p.MerchantId == request.MerchantId &&
-                p.Status == ParcelStatus.Pending && codes.Contains(p.TrackingCode))
+                p.Status == ParcelStatus.Pending && p.Created < cutoff && codes.Contains(p.TrackingCode))
             .ToListAsync(cancellationToken);
         var now = time.GetUtcNow().UtcDateTime;
-        var today = tenantContext.Require().Today(now);
+        var today = tenant.Today(now);
         foreach (var parcel in picked)
         {
             parcel.PickUp(today);

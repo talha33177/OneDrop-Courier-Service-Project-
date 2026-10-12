@@ -3,6 +3,7 @@ using Application.Abstractions;
 using Application.Common;
 using Domain.Common;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.Browse;
 
@@ -73,6 +74,10 @@ public sealed record ParcelRow(
 
     /// <summary>A problem a hub flagged on the parcel, if any.</summary>
     public ParcelIssue? Issue { get; init; }
+
+    public DeliverySpeed Speed { get; init; }
+
+    public ProductType ProductType { get; init; }
 }
 
 public sealed record ParcelList(Page<ParcelRow> Page, IReadOnlyDictionary<ParcelTab, int> Counts);
@@ -182,7 +187,9 @@ public class ParcelListHandler(IAppDbContext db, ITenantContext tenantContext, T
                 parcel.Created,
                 parcel.DueOn)
             {
-                Issue = parcel.Issue
+                Issue = parcel.Issue,
+                Speed = parcel.Speed,
+                ProductType = parcel.ProductType
             })
             .Skip((number - 1) * size)
             .Take(size)

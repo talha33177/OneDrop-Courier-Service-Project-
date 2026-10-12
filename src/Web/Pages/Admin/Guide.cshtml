@@ -1,0 +1,120 @@
+@page
+@model Web.Pages.Admin.GuideModel
+@{
+    ViewData["Title"] = "How it works";
+    (string Icon, string Title, string Text, string Link, string Action)[] setup =
+    [
+        ("globe", "Coverage", "Open the hubs, give each the zones it serves, and list the areas merchants can send to. A zone's city decides the rate.", "/Admin/Coverage", "Open coverage"),
+        ("tag", "Delivery rates", "What merchants pay inside the city, in the suburbs and outside, by weight, and the cash on delivery charge.", "/Admin/Rates", "Set rates"),
+        ("truck", "Vehicles", "How much a bicycle, a motorbike or a van carries, so no rider is handed more than they can take.", "/Admin/Vehicles", "Check vehicles"),
+        ("bike", "Riders", "Each rider works from one hub with a vehicle, and signs in to the rider app on their phone.", "/Admin/Riders", "Add riders"),
+        ("store", "Merchants", "Shops sign up on the website and wait for your approval, or you add them yourself, active at once.", "/Admin/Merchants", "Open merchants")
+    ];
+    (string Title, string Who, string Text, string Link, string Action)[] day =
+    [
+        ("Booked", "The merchant", "Books a parcel on its panel, by spreadsheet or through the API. Its charge is fixed by today's rates.", "/Hub/Parcels?tab=Pending", "Parcels not collected yet"),
+        ("Picked up", "The hub, then a rider", "Every parcel booked before the day's cut-off goes on that day's pickup list by itself; later ones go the next day. The pickup hub gives each pickup a rider (or one rider the whole round), who collects the parcels and brings them in.", "/Hub/Choose?next=Pickups", "Today's pickups"),
+        ("Scanned in", "Hub staff", "Every parcel that reaches a hub is scanned in (Receive). The scan says what to do with it next.", "/Hub/Choose?next=Scan", "Scan parcels"),
+        ("Sent to the delivery hub", "Hub staff", "A parcel another hub delivers is scanned out (Send) and scanned in again there. Skipped when the same hub delivers it.", "/Hub/Choose?next=Scan", "Scan parcels"),
+        ("Given to a rider", "Hub staff", "Parcels waiting at the delivery hub are handed to riders for the day. Print the run sheet for the rider to carry.", "/Hub/Choose?next=Assign", "Assign to riders"),
+        ("At the door", "The rider", "Records each door in the rider app: delivered, partly delivered, on hold for another day, or refused. The recipient gets a text.", "/Hub/Parcels?tab=OutForDelivery", "Parcels out for delivery"),
+        ("Rider's run closed", "Hub staff", "When the rider is back, count the cash they hand in against what they collected. Held and refused parcels go back on the shelf.", "/Hub/Choose?next=Runs", "Rider closing"),
+        ("Merchant paid", "Automatic, every hour", "Each merchant is paid the cash collected up to yesterday, less charges, to its payout account, with an invoice.", "/Admin/Payouts", "Merchant payouts")
+    ];
+    (string Icon, string Title, string Text, string Link, string Action)[] attention =
+    [
+        ("store", "A shop signed up", "Look at it and approve it; until then it cannot book.", "/Admin/Merchants?status=Pending", "Sign-ups"),
+        ("message", "A merchant asked to cancel a parcel or change its cash", "Approve it, and the parcel changes at once, or refuse it with a reason the merchant reads.", "/Admin/Requests", "Requests"),
+        ("flag", "A hub flagged a parcel", "In review: something to check. Exceptional: something went wrong. A flagged parcel is not given to a rider until the flag is cleared.", "/Hub/Parcels?tab=Exceptional", "Flagged parcels"),
+        ("wallet", "A payout did not go through", "The gateway refused a transfer, a merchant has no payout account, or an online payment was held for a check.", "/Admin/Payouts", "Merchant payouts"),
+        ("x-circle", "A text, webhook or email failed", "It was tried four times. Send it again once the cause is fixed.", "/Admin/Messages", "Failed messages"),
+        ("cash", "A merchant's balance needs a hand", "Hold its payouts, pay it now, or write an adjustment with a reason, from the merchant's own page.", "/Admin/Merchants", "Merchants")
+    ];
+}
+
+<div class="page-head">
+    <div>
+        <div class="breadcrumb"><a asp-page="/Admin/Index">Dashboard</a> <span>/</span> <span>How it works</span></div>
+        <h1>How it works</h1>
+        <p>What you set up once, how a parcel travels and who moves it, and the page for each step. Lost? Find the step you are at and follow its link.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-primary" asp-page="/Admin/Index">@Icons.Get("dashboard") Back to the dashboard</a>
+    </div>
+</div>
+
+<div class="part-head">
+    <h2>@Icons.Get("settings") Set up once, in this order</h2>
+    <p>A parcel needs every one of these before it can travel. The dashboard shows what is still missing.</p>
+</div>
+<ol class="guide-setup">
+    @foreach (var step in setup)
+    {
+        <li class="card">
+            <span class="stat-icon">@Icons.Get(step.Icon)</span>
+            <h3>@step.Title</h3>
+            <p>@step.Text</p>
+            <a class="btn btn-outline btn-sm" href="@step.Link">@step.Action @Icons.Get("arrow-right")</a>
+        </li>
+    }
+</ol>
+
+<div class="part-head">
+    <h2>@Icons.Get("route") A parcel's day</h2>
+    <p>Every parcel goes through these steps in order. The dashboard counts each one across every hub; a hub's board counts them for that hub.</p>
+</div>
+<div class="card">
+    <ol class="guide-steps">
+        @foreach (var step in day)
+        {
+            <li>
+                <div class="guide-step-text">
+                    <h3>@step.Title <span class="badge plain">@step.Who</span></h3>
+                    <p>@step.Text</p>
+                </div>
+                <a class="btn btn-ghost btn-sm" href="@step.Link">@step.Action @Icons.Get("arrow-right")</a>
+            </li>
+        }
+    </ol>
+    <div class="card-foot guide-return">
+        @Icons.Get("return")
+        <div>
+            <strong>When a parcel cannot be delivered</strong>
+            <span>After the last failed try, or when you approve a merchant's cancellation, it travels back to the hub that collected it. That hub hands it back at the counter, or sends it with a rider on a return list the merchant signs for.</span>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="/Hub/Choose?next=Returns">Returns to merchants @Icons.Get("arrow-right")</a>
+    </div>
+</div>
+
+<div class="part-head">
+    <h2>@Icons.Get("bell") When something needs you</h2>
+    <p>You do not have to look for these: the bell at the top and the dashboard's "Waiting for you" list them, and the menu marks the page with a red "!".</p>
+</div>
+<div class="card">
+    <ul class="todo-list guide-attention">
+        @foreach (var item in attention)
+        {
+            <li>
+                <a href="@item.Link">
+                    <span class="bell-icon bell-attention">@Icons.Get(item.Icon)</span>
+                    <span class="todo-text">@item.Title<small>@item.Text</small></span>
+                    <span class="todo-go">@item.Action @Icons.Get("arrow-right")</span>
+                </a>
+            </li>
+        }
+    </ul>
+</div>
+
+<div class="part-head">
+    <h2>@Icons.Get("chart") Looking back</h2>
+</div>
+<div class="grid grid-2">
+    <a class="card guide-link" asp-page="/Admin/Index">
+        <span class="stat-icon">@Icons.Get("dashboard")</span>
+        <span><strong>Dashboard</strong><small>Today, live: what waits, the parcels' day and the last seven days.</small></span>
+    </a>
+    <a class="card guide-link" asp-page="/Admin/Reports">
+        <span class="stat-icon">@Icons.Get("chart")</span>
+        <span><strong>Reports</strong><small>Any period: deliveries, cash and charges by day, by rider and returns by merchant, each as a spreadsheet.</small></span>
+    </a>
+</div>

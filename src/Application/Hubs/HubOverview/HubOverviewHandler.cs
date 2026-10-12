@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
+using Application.Common;
 using Domain.Delivery;
 using Domain.Parcels;
 
@@ -12,14 +13,15 @@ public sealed record HubWork(HubItem Hub, int PickupsOpen, int ToAssign, int Inc
 }
 
 /// <summary>Counts every hub's open work from the pickups, parcels and runs when asked: nothing is stored.</summary>
-public class HubOverviewHandler(IAppDbContext db, HubDirectory hubs)
+public class HubOverviewHandler(IAppDbContext db, HubDirectory hubs, ITenantContext tenantContext, TimeProvider time)
 {
-    /// <summary>Every hub of the courier, in name order, with its open work.</summary>
+    /// <summary>Every hub of the courier, in name order, with its open work (today's pickups, not tomorrow's list).</summary>
     public async Task<IReadOnlyList<HubWork>> ListAsync(CancellationToken cancellationToken = default)
     {
         var all = await hubs.ListAsync(cancellationToken);
+        var today = tenantContext.Require().Today(time.GetUtcNow().UtcDateTime);
         var pickups = await db.PickupRequests
-            .Where(r => r.Status == PickupStatus.Requested || r.Status == PickupStatus.Assigned)
+            .Where(r => r.PickupDate <= today && (r.Status == PickupStatus.Scheduled || r.Status == PickupStatus.Assigned))
             .GroupBy(r => r.HubId)
             .Select(g => new { HubId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.HubId, x => x.Count, cancellationToken);

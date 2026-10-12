@@ -41,6 +41,7 @@ using Application.Parcels.Track;
 using Application.Payments.AdminPayouts;
 using Application.Payments.MerchantPayments;
 using Application.Payments.OnlinePayments;
+using Application.Payments.PayoutRequests;
 using Application.Payments.RunPayouts;
 using Application.Reports;
 using Application.Pricing.Rates;
@@ -75,6 +76,8 @@ public static class DependencyInjection
         services.AddScoped<RunsHandler>();
 
         services.AddScoped<PickupsHandler>();
+        services.AddScoped<PickupSchedule>();
+        services.AddScoped<PickupsJob>();
         services.AddScoped<RiderDayHandler>();
         services.AddScoped<AdminRidersHandler>();
         services.AddScoped<VehicleCapacitiesHandler>();
@@ -96,6 +99,7 @@ public static class DependencyInjection
         services.AddScoped<MerchantPaymentsHandler>();
         services.AddScoped<AdminPayoutsHandler>();
         services.AddScoped<OnlinePaymentsHandler>();
+        services.AddScoped<PayoutRequestsHandler>();
         services.AddScoped<CheckOnlinePaymentsJob>();
         services.AddScoped<ReportsHandler>();
 

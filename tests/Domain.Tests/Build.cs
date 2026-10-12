@@ -22,6 +22,21 @@ internal static class Build
     public static readonly RateValues Suburb = new(1000, 100, 20, 1, 50, 2);
     public static readonly RateValues OutsideCity = new(1000, 120, 20, 1, 60, 3);
 
+    /// <summary>The launch extras: express ৳40 in a day, liquid ৳10, fragile ৳20, fresh food ৳30, frozen ৳50.</summary>
+    public static readonly RateExtras NearExtras = new(40, 1, 10, 20, 30, 50);
+
+    /// <summary>Outside the city: no express, and no fresh or frozen food.</summary>
+    public static readonly RateExtras FarExtras = new(null, null, 10, 20, null, null);
+
+    /// <summary>A rate with the launch extras for its service area.</summary>
+    public static DeliveryRate RateWithExtras(ServiceArea area)
+    {
+        var rate = Rate(area);
+        rate.ChangeExtras(area == ServiceArea.OutsideCity ? FarExtras : NearExtras);
+
+        return rate;
+    }
+
     /// <summary>
     /// The launch courier's vehicles: a bicycle carries 25 parcels, 15 kg and 5 kg a parcel; a motorbike 40, 30 kg and
     /// 10 kg; a pickup van 300, a tonne and 30 kg.

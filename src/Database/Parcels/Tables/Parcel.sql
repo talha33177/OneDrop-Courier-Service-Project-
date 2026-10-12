@@ -8,7 +8,11 @@
 --          ReturnCharge are the rate it was booked at, DeliveryDays the days after pickup it was promised in (NULL: no
 --          promise). IncludedWeightGrams, BaseCharge and ExtraKgCharge are the weight rule it was booked under, kept
 --          so a hub's reweigh prices it as it was sold; MeasuredWeightGrams is what the hub's scale said and, when it
---          is set, the weight DeliveryCharge follows. DueOn is the day it should be delivered by, set when the courier
+--          is set, the weight DeliveryCharge follows. Speed (Domain.Pricing.DeliverySpeed: 1 regular, 2 express) and
+--          ProductType (Domain.Pricing.ProductType: 1 general, 2 liquid, 3 fragile, 4 fresh food, 5 frozen) are how it
+--          goes and what is inside; SpeedCharge and ProductCharge are their extras as booked, both part of
+--          DeliveryCharge. RecipientLatitude and RecipientLongitude are the door pinned on a map, both or neither.
+--          DueOn is the day it should be delivered by, set when the courier
 --          takes it and moved to a later day the recipient asks for. Issue is a problem a hub flagged for the courier
 --          to look at (Domain.Parcels.ParcelIssue: 1 in review, 2 exceptional) with IssueNote and IssueRaisedOn, the
 --          time it was first flagged; all three are NULL while there is none, and a flagged parcel is not handed to a
@@ -20,6 +24,8 @@
 --       2026-10-05 DeliveryDays, DueOn
 --       2026-10-05 MeasuredWeightGrams, IncludedWeightGrams, BaseCharge, ExtraKgCharge (reweighing at the hub)
 --       2026-10-07 Issue, IssueNote, IssueRaisedOn (problems a hub flags)
+--       2026-10-09 Speed, ProductType, SpeedCharge, ProductCharge (delivery types), RecipientLatitude and
+--                  RecipientLongitude (the door on a map)
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Parcels].[Parcel] (
     [Id]                  BIGINT          IDENTITY (1, 1) NOT NULL,
@@ -36,6 +42,8 @@ CREATE TABLE [Parcels].[Parcel] (
     [RecipientName]       NVARCHAR (200)  NOT NULL,
     [RecipientPhone]      NVARCHAR (20)   NOT NULL,
     [RecipientAddress]    NVARCHAR (500)  NOT NULL,
+    [RecipientLatitude]   DECIMAL (9, 6)  NULL,
+    [RecipientLongitude]  DECIMAL (9, 6)  NULL,
     [ItemDescription]     NVARCHAR (200)  NULL,
     [WeightGrams]         INT             NOT NULL,
     [MeasuredWeightGrams] INT             NULL,
@@ -48,6 +56,10 @@ CREATE TABLE [Parcels].[Parcel] (
     [IncludedWeightGrams] INT             NOT NULL,
     [BaseCharge]          DECIMAL (10, 2) NOT NULL,
     [ExtraKgCharge]       DECIMAL (10, 2) NOT NULL,
+    [Speed]               TINYINT         NOT NULL,
+    [ProductType]         TINYINT         NOT NULL,
+    [SpeedCharge]         DECIMAL (10, 2) NOT NULL,
+    [ProductCharge]       DECIMAL (10, 2) NOT NULL,
     [DeliveryDays]        INT             NULL,
     [DueOn]               DATE            NULL,
     [Status]              TINYINT         NOT NULL,
@@ -81,6 +93,10 @@ CREATE TABLE [Parcels].[Parcel] (
     CONSTRAINT [FK_Parcel_User] FOREIGN KEY ([UpdatedId]) REFERENCES [Identity].[User] ([Id]),
     CONSTRAINT [chk_Parcel_Status] CHECK ([Status] BETWEEN 1 AND 11),
     CONSTRAINT [chk_Parcel_ServiceArea] CHECK ([ServiceArea] BETWEEN 1 AND 3),
+    CONSTRAINT [chk_Parcel_Speed] CHECK ([Speed] BETWEEN 1 AND 2),
+    CONSTRAINT [chk_Parcel_ProductType] CHECK ([ProductType] BETWEEN 1 AND 5),
+    CONSTRAINT [chk_Parcel_Extras] CHECK ([SpeedCharge] >= (0) AND [ProductCharge] >= (0)),
+    CONSTRAINT [chk_Parcel_Pin] CHECK (([RecipientLatitude] IS NULL AND [RecipientLongitude] IS NULL) OR ([RecipientLatitude] BETWEEN -90 AND 90 AND [RecipientLongitude] BETWEEN -180 AND 180)),
     CONSTRAINT [chk_Parcel_Weight] CHECK ([WeightGrams] > (0)),
     CONSTRAINT [chk_Parcel_Amounts] CHECK ([CodAmount] >= (0) AND [DeliveryCharge] >= (0) AND [CodChargePercent] >= (0) AND [ReturnCharge] >= (0) AND [Attempts] >= (0)),
     CONSTRAINT [chk_Parcel_Location] CHECK ((CASE WHEN [CurrentHubId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [TransferToHubId] IS NULL THEN 0 ELSE 1 END + CASE WHEN [RiderId] IS NULL THEN 0 ELSE 1 END) <= 1),

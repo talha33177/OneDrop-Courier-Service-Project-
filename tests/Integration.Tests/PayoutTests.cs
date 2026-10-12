@@ -178,8 +178,8 @@ public class PayoutTests(WebAppFactory factory) : AppTests(factory)
         var merchant = await SignInAsync("onedrop", shop.Email);
         var payments = await merchant.PageAsync("/Merchant/Payments");
         Assert.Contains("Checking a damage claim", payments);
-        Assert.DoesNotContain("Get paid now", payments);
-        Assert.Contains("on hold", await merchant.SubmitAsync("/Merchant/Payments", "/Merchant/Payments?handler=PayNow"));
+        Assert.DoesNotContain("Ask to be paid now", payments);
+        Assert.Contains("on hold", await merchant.SubmitAsync("/Merchant/Payments", "/Merchant/Payments?handler=Ask"));
         await RunAsync(DateTime.UtcNow.AddDays(1));
         Assert.Empty(await QueryAsync("onedrop", db => db.Payouts.Where(p => p.MerchantId == shop.Id).ToListAsync(Cancel)));
 

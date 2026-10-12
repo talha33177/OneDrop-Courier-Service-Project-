@@ -1,4 +1,4 @@
-# Projectsees its payments and invoices, and adds moderators who work in the account with their own sign-in |
+# OneDrop Courier
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="src/Web/wwwroot/images/logo-on-dark.svg" />
@@ -14,7 +14,7 @@ the next day.
 
 | Who | What they do |
 |---|---|
-| Merchant | Signs up (approved by the courier), books parcels by form, spreadsheet or API, asks for pickups, prints labels, follows every parcel (by stage, by date, in stats over any period, and a bell of what happened), asks the courier to cancel a parcel on its way or change its cash, confirms the returns a rider brings back, checks a phone number's delivery record, keeps several payout accounts and can be paid now, sees its payments and invoices, exports its parcels, and adds moderators who work in the account with a sign-in of their own |
+| Merchant | Signs up (approved by the courier), books parcels by form, spreadsheet or API, asks for pickups, prints labels, follows every parcel (by stage, by date, in stats over any period, and a bell of what happened), asks the courier to cancel a parcel on its way or change its cash, confirms the returns a rider brings back, checks a phone number's delivery record, keeps several payout accounts and asks to be paid early, sees its payments and invoices, exports its parcels, and adds moderators who work in the account with a sign-in of their own |
 | Hub staff | Scan parcels in and out (receive, send to the delivery hub, hand back returns), send riders to pickups, hand parcels to riders, send returns back to merchants with a rider, flag a parcel with a problem, close each rider's run with the cash handed in |
 | Rider | A phone screen: today's pickups, deliveries and returns to hand back, and at each door delivered, partly delivered, on hold or refused |
 | Courier admin | Live dashboard, merchants (approve, suspend, edit), merchants' requests to answer, riders, the rate card, coverage, payouts, reports, failed messages |
@@ -35,6 +35,7 @@ Prices come from the courier's rate card, per service area (seeded values):
 | [Documentation/Project-Context.md](Documentation/Project-Context.md) | The product, every decision and why, the environment, traps already found. Start here |
 | [Documentation/Architecture.md](Documentation/Architecture.md) | Diagrams: layers, the life of a parcel, parcel states, tenant isolation, the outbox, a day at the courier |
 | [Documentation/Demo.md](Documentation/Demo.md) | The demo script, step by step |
+| [Documentation/Deployment.md](Documentation/Deployment.md) | Putting it live on a server: a clean start with one admin, HTTPS, updates and backups |
 | [Plans/Implementation-Plan.md](Plans/Implementation-Plan.md) | What is built, how it was tested, what is next, the decisions log and the daily log |
 | [Documentation/Conventions.md](Documentation/Conventions.md), [Documentation/Database.md](Documentation/Database.md) | Rules for code and SQL |
 
@@ -100,11 +101,18 @@ back to `/pay/{transaction}/success` on the courier's own address, which works o
 notice (`/pay/notice`) cannot reach localhost, so there a payment whose browser never came back is found by the check
 job that runs every 10 minutes. The integration tests always use the test gateway.
 
+**Google Maps (optional).** Merchants pin the recipient's door on a map while booking, and riders tap Navigate to get
+Google Maps directions to it. The map in the booking form, its place search and the small maps on parcel pages need a
+Google Maps browser key with Maps JavaScript API, Places API (New), Geocoding API and Maps Embed API turned on; put it
+in the same git-ignored file as `"GoogleMaps": { "ApiKey": "…" }` and restrict it to your address in Google Cloud.
+Without a key, merchants paste the Google Maps link the customer sent (short `maps.app.goo.gl` links are opened by
+the server) and riders still get directions. The integration tests never use a key.
+
 Then:
 
 ```powershell
 ./tools/db/publish.ps1                      # dbup pre -> publish the dacpac -> dbup (the courier, hubs, zones, areas, rates)
-dotnet run --project src/Web                # seeds demo logins, merchants and riders on start
+dotnet run --project src/Web                # the app; demo logins only with Seed:DemoData (below)
 ```
 
 | Address | What |
@@ -112,8 +120,7 @@ dotnet run --project src/Web                # seeds demo logins, merchants and r
 | http://onedrop.localhost:5080 | OneDrop Courier: public site, tracking, sign-up, and every panel |
 | http://localhost:5080 | Sends visitors to OneDrop Courier (`Tenancy:HomeCourier`); platform admins sign in at http://localhost:5080/Account/Login and land on the list of couriers |
 
-Browsers resolve `*.localhost` to your machine, so no hosts-file changes are needed. In Development the app also books
-about twenty sample parcels in every stage (`Seed:DemoActivity`), so every screen has something to show.
+Browsers resolve `*.localhost` to your machine, so no hosts-file changes are needed.
 
 ### Fill it with more parcels
 
@@ -136,12 +143,17 @@ copy .env.example .env          # then choose a SQL Server password in .env (git
 docker compose up --build       # SQL Server 2025, the database deployed from nothing, then the app
 ```
 
-The same address works (http://onedrop.localhost:5080). SQL Server is on `localhost,14330`; `docker compose down -v`
-deletes its data.
+The same address works (http://onedrop.localhost:5080), with the demo logins below and sample parcels. SQL Server is on
+`localhost,14330`; `docker compose down -v` deletes its data. This is a demo on your own machine; a live site uses
+`deploy/` instead ([Deployment.md](Documentation/Deployment.md)).
 
 ### Demo logins (Development only, password `OneDrop#2026`)
 
-The sign-in page lists them as one-press buttons in Development.
+Made on start when `Seed:DemoData` is true, which is off by default: turn it on in your git-ignored
+`src/Web/appsettings.Local.json` (`"Seed": { "DemoData": true, "DemoActivity": true }`; `DemoActivity` also books
+about twenty sample parcels in every stage). The sign-in page then lists them as one-press buttons. Outside Development
+there are no demo logins at all: a live site starts with only the admin named when it is deployed
+([Deployment.md](Documentation/Deployment.md)).
 
 | Login | Role |
 |---|---|
@@ -231,6 +243,7 @@ tools/
   db/publish.ps1        deploy the database (Windows PowerShell and PowerShell 7 on Linux)
   Simulator             demo shops and parcels through the running app's API
 Dockerfile, docker-compose.yml, .github/workflows/ci.yml
+deploy/                 the live site: production compose (SQL Server, the app, Caddy for HTTPS) and its settings
 Documentation/          context, architecture diagrams, demo, conventions
 Plans/                  the plan and daily log
 ```

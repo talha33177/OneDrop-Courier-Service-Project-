@@ -76,6 +76,7 @@
     <Build Include="Payments/Tables/LedgerEntry.sql" />
     <Build Include="Payments/Tables/OnlinePayment.sql" />
     <Build Include="Payments/Tables/Payout.sql" />
+    <Build Include="Payments/Tables/PayoutRequest.sql" />
     <Build Include="Platform/Functions/TenantAccess.sql" />
     <Build Include="Platform/Security Policies/TenantIsolation.sql" />
   </ItemGroup>

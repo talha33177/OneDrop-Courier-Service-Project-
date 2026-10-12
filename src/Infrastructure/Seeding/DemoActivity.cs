@@ -223,16 +223,16 @@ internal sealed class DemoActivity(
             db.LedgerEntries.AddRange(LedgerEntry.For(parcel, today));
         }
 
-        // 6. Pickup requests: one waiting for a rider, one with a rider on the way
+        // 6. Today's pickups: one waiting for a rider, one with a rider on the way
         var first = points.Single(p => p.MerchantId == merchants[0].Id);
-        db.PickupRequests.Add(PickupRequest.Create(merchants[0].Id, first.Id, areaZones[first.AreaId].HubId, today, today, 3, "Parcels are at the front desk").Value);
+        db.PickupRequests.Add(PickupRequest.Schedule(merchants[0].Id, first.Id, areaZones[first.AreaId].HubId, today));
         var second = points.Single(p => p.MerchantId == merchants[1].Id);
-        var collect = PickupRequest.Create(merchants[1].Id, second.Id, areaZones[second.AreaId].HubId, today, today, 2, null).Value;
+        var collect = PickupRequest.Schedule(merchants[1].Id, second.Id, areaZones[second.AreaId].HubId, today);
         var collector = riders.FirstOrDefault(r => r.HubId == collect.HubId);
         if (collector is not null)
         {
             var fleet = new Fleet(await db.VehicleCapacities.ToListAsync(cancellationToken));
-            collect.Assign(collector, fleet, PickupRequest.ToCollect(collect.ExpectedParcels, []));
+            collect.Assign(collector, fleet, Load.Of([]));
         }
 
         db.PickupRequests.Add(collect);

@@ -93,7 +93,7 @@
             <div class="how-step-art"><partial name="~/Pages/Shared/Art/_StepPickup.cshtml" /></div>
             <span class="how-step-num">02</span>
             <h3>Pick up</h3>
-            <p>Ask for a pickup and a rider collects your parcels from the shop and brings them to our hub.</p>
+            <p>Our pickup comes to your shop every day and collects everything you booked, with nothing to ask for.</p>
         </div>
         <div class="how-step" data-reveal>
             <div class="how-step-art"><partial name="~/Pages/Shared/Art/_StepHub.cshtml" /></div>
@@ -119,8 +119,8 @@
     <div class="features" data-reveal>
         <div class="feature">
             <span class="feature-icon">@Icons.Get("truck")</span>
-            <h3>Pickup from your door</h3>
-            <p>Ask for a pickup and a rider comes to collect your parcels. No pickup charge.</p>
+            <h3>Daily pickup from your door</h3>
+            <p>Every parcel you book goes with the day's pickup by itself. No pickup charge.</p>
         </div>
         <div class="feature">
             <span class="feature-icon">@Icons.Get("cash")</span>
@@ -169,6 +169,14 @@
                     @if (rate.DeliveryDays is { } days)
                     {
                         <li>@Icons.Get("check") <span>Delivered @Statuses.AfterPickup(days)</span></li>
+                    }
+                    @if (rate.Extras.ExpressCharge is { } express)
+                    {
+                        <li>@Icons.Get("check") <span>Express for @Money.Taka(express) more</span></li>
+                    }
+                    @if (rate.ExtraFor(Domain.Pricing.ProductType.Frozen) is not null)
+                    {
+                        <li>@Icons.Get("check") <span>Fragile, fresh and frozen goods carried with care</span></li>
                     }
                 </ul>
             </div>

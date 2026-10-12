@@ -4,20 +4,25 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Delivery.Pickups;
 using Domain.Common;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.CreateParcel;
 
 /// <summary>
 /// Books a parcel for the calling merchant: validate, resolve the route and the charges, save it with its first
-/// tracking line. A retry with the same Idempotency-Key answers with the first parcel; the same key with another body is
-/// refused. Only an active merchant books.
+/// tracking line, and put its pickup point on the pickup list of the day it goes with. A retry with the same
+/// Idempotency-Key answers with the first parcel; the same key with another body is refused. Only an active merchant
+/// books.
 /// </summary>
 public class CreateParcelHandler(
     IAppDbContext db,
     ICurrentUser currentUser,
+    ITenantContext tenantContext,
     ParcelBooking booking,
+    PickupSchedule pickups,
     IValidator<CreateParcelCommand> validator)
 {
     public static readonly Error MerchantRequired =
@@ -71,7 +76,9 @@ public class CreateParcelHandler(
             return winner;
         }
 
-        return Describe(parcel, area, hub);
+        await pickups.ScheduleAsync([parcel], cancellationToken);
+
+        return Describe(parcel, area, hub, tenantContext.Require());
     }
 
     /// <summary>
@@ -105,6 +112,8 @@ public class CreateParcelHandler(
             command.AreaId,
             command.Area,
             command.WeightGrams,
+            command.Speed ?? DeliverySpeed.Regular,
+            command.ProductType ?? ProductType.General,
             cancellationToken);
         if (route.IsFailure)
         {
@@ -126,7 +135,10 @@ public class CreateParcelHandler(
                 command.WeightGrams,
                 command.ItemDescription,
                 command.Note,
-                resolved.Charges))
+                resolved.Charges)
+            {
+                Pin = GeoPoint.From(command.RecipientLatitude, command.RecipientLongitude).Value
+            })
         {
             MerchantReference = command.MerchantReference,
             IdempotencyKey = command.IdempotencyKey,
@@ -138,7 +150,7 @@ public class CreateParcelHandler(
             : created.Error!;
     }
 
-    public static CreateParcelResult Describe(Parcel parcel, string area, string hub)
+    public static CreateParcelResult Describe(Parcel parcel, string area, string hub, TenantInfo tenant)
     {
         return new CreateParcelResult(
             parcel.TrackingCode,
@@ -151,7 +163,12 @@ public class CreateParcelHandler(
             parcel.DeliveryCharge,
             parcel.Charges.CodChargeOn(parcel.CodAmount),
             parcel.TotalCharge,
-            parcel.Created);
+            parcel.Created,
+            parcel.Speed,
+            parcel.ProductType,
+            parcel.SpeedCharge,
+            parcel.ProductCharge,
+            parcel.Status == ParcelStatus.Pending ? tenant.PickupDayFor(parcel.Created) : null);
     }
 
     private async Task<Result<CreateParcelResult>?> FindReplayAsync(
@@ -185,6 +202,6 @@ public class CreateParcelHandler(
                 "This Idempotency-Key was already used for a different parcel.");
         }
 
-        return Describe(previous.Parcel, previous.Area, previous.Hub) with { Replayed = true };
+        return Describe(previous.Parcel, previous.Area, previous.Hub, tenantContext.Require()) with { Replayed = true };
     }
 }

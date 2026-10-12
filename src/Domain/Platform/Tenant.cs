@@ -41,6 +41,15 @@ public class Tenant : AuditedEntity, IArchivable
     /// </summary>
     public TimeOnly? RiderReturnTime { get; private set; }
 
+    /// <summary>
+    /// The day's pickup cut-off (the tenant's clock): a parcel booked before it is collected that day, one booked
+    /// after it the next day. Null when the courier sets none: a parcel is collected the day it is booked.
+    /// </summary>
+    public TimeOnly? PickupCutoff { get; private set; }
+
+    /// <summary>When the day's pickup leaves the hub to collect from merchants, as told to them. Null when not said.</summary>
+    public TimeOnly? PickupTime { get; private set; }
+
     /// <summary>How many businesses a merchant account may add besides its main profile. Null when the courier sets no limit.</summary>
     public int? MaxBusinessesPerAccount { get; private set; }
 

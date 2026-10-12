@@ -34,7 +34,15 @@ public class MerchantModel(AdminMerchantsHandler merchants, ParcelListHandler pa
 
     public async Task<IActionResult> OnPostApproveAsync(long id, CancellationToken cancellationToken)
     {
-        return Answer(id, await merchants.ApproveAsync(id, cancellationToken), "Approved: the merchant can book parcels now.");
+        var approved = await merchants.ApproveAsync(id, cancellationToken);
+        var waiting = approved.IsSuccess ? (await merchants.ListAsync(MerchantStatus.Pending, null, cancellationToken)).Count : 0;
+        if (waiting > 0)
+        {
+            TempData["DoneLink"] = "/Admin/Merchants?status=Pending";
+            TempData["DoneLinkText"] = $"Next sign-up ({waiting} waiting)";
+        }
+
+        return Answer(id, approved, "Approved: the merchant can book parcels now.");
     }
 
     public async Task<IActionResult> OnPostSuspendAsync(long id, CancellationToken cancellationToken)

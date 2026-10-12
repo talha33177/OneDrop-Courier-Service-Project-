@@ -53,7 +53,7 @@ public class CoverageModel(CoverageHandler coverage, CoverageAdminHandler admin)
     {
         var added = await admin.AddHubAsync(new NewHub(code, name, address, phone), cancellationToken);
 
-        return Answer(added, $"{name} is open. Give it a zone to serve next.");
+        return Answer(added, $"{name} is open. Give it a zone to serve next.", ("/Admin/Coverage?tab=Zones", "Draw a zone on it"));
     }
 
     public async Task<IActionResult> OnPostEditHubAsync(
@@ -84,7 +84,7 @@ public class CoverageModel(CoverageHandler coverage, CoverageAdminHandler admin)
     {
         var added = await admin.AddZoneAsync(new NewZone(code, name, hubId, city, isSuburb), cancellationToken);
 
-        return Answer(added, $"{name} is on the map. Add its areas next.");
+        return Answer(added, $"{name} is on the map. Add its areas next.", ("/Admin/Coverage?tab=Areas", "Add its areas"));
     }
 
     public async Task<IActionResult> OnPostEditZoneAsync(
@@ -125,7 +125,8 @@ public class CoverageModel(CoverageHandler coverage, CoverageAdminHandler admin)
             active ? "Area back on the map." : "Area taken off the map. No new address can be booked to it.");
     }
 
-    private IActionResult Answer(Result result, string done)
+    /// <summary>Back to the tab, with what happened; <paramref name="next"/> is the step the toast offers after a success.</summary>
+    private IActionResult Answer(Result result, string done, (string Link, string Text)? next = null)
     {
         if (result.IsFailure && result.Error!.Type == ErrorType.NotFound)
         {
@@ -133,6 +134,11 @@ public class CoverageModel(CoverageHandler coverage, CoverageAdminHandler admin)
         }
 
         TempData[result.IsSuccess ? "Done" : "Problem"] = result.IsSuccess ? done : result.Error!.Message;
+        if (result.IsSuccess && next is { } step)
+        {
+            TempData["DoneLink"] = step.Link;
+            TempData["DoneLinkText"] = step.Text;
+        }
 
         return RedirectToPage(new { tab = Tab, zoneId = ZoneId });
     }

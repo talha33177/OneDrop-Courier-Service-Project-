@@ -17,9 +17,23 @@ public class TenancyOptions
     /// </summary>
     public string? HomeCourier { get; set; }
 
+    /// <summary>
+    /// One address that serves <see cref="HomeCourier"/> by itself (a hosting platform's own address, or any name such as
+    /// courier.example.com), for a live site where couriers are not subdomains of <see cref="RootDomain"/>. Empty: the
+    /// home courier is {slug}.{RootDomain} like any other.
+    /// </summary>
+    public string? HomeCourierHost { get; set; }
+
     /// <summary>The tenant slug in a host name, or null for the root domain and anything unrelated.</summary>
     public string? SlugFromHost(string host)
     {
+        if (HomeCourierHost is { Length: > 0 } &&
+            HomeCourier is { Length: > 0 } &&
+            string.Equals(host, HomeCourierHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return HomeCourier;
+        }
+
         var suffix = "." + RootDomain;
         if (!host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
         {
@@ -40,7 +54,9 @@ public class TenancyOptions
     {
         var port = request.Host.Port.HasValue ? $":{request.Host.Port}" : "";
 
-        return $"{request.Scheme}://{slug}.{RootDomain}{port}/";
+        return HomeCourierHost is { Length: > 0 } && string.Equals(slug, HomeCourier, StringComparison.OrdinalIgnoreCase)
+            ? $"{request.Scheme}://{HomeCourierHost}{port}/"
+            : $"{request.Scheme}://{slug}.{RootDomain}{port}/";
     }
 
     public string PlatformUrl(HttpRequest request)

@@ -65,6 +65,10 @@ else
                             {
                                 <div class="mt-xs">@Statuses.Badge(issue)</div>
                             }
+                            @if (row.Speed != Domain.Pricing.DeliverySpeed.Regular || row.ProductType != Domain.Pricing.ProductType.General)
+                            {
+                                <div class="tag-row">@Statuses.Tags(row.Speed, row.ProductType)</div>
+                            }
                             @if (row.Attempts > 0)
                             {
                                 <div class="cell-sub">@row.Attempts attempt@(row.Attempts == 1 ? "" : "s")</div>

@@ -1,9 +1,29 @@
 @using Application.Network.ListAreas
 @using Application.Merchants.Admin
+@using Domain.Pricing
 @model (ParcelForm Form, IReadOnlyList<AreaItem> Areas, IReadOnlyList<PickupPointView> Points, bool Editing)
+@inject MapsOptions Maps
+@inject ITenantContext TenantContext
 @* The booking form's fields; the summary on the right is filled in by the page's script from the quote *@
 @{
     var f = Model.Form;
+    var tenant = TenantContext.Require();
+    var utcNow = DateTime.UtcNow;
+    var pickupDay = tenant.PickupDayFor(utcNow);
+    var today = tenant.Today(utcNow);
+    (DeliverySpeed Value, string Icon, string Hint)[] speeds =
+    [
+        (DeliverySpeed.Regular, "truck", "The usual delivery time"),
+        (DeliverySpeed.Express, "zap", "Sooner, and first on the rider's run")
+    ];
+    (ProductType Value, string Hint)[] products =
+    [
+        (ProductType.General, "Clothes, books, boxed goods"),
+        (ProductType.Liquid, "Bottles: sealed and kept upright"),
+        (ProductType.Fragile, "Glass, ceramics, screens"),
+        (ProductType.FreshFood, "Cakes, fruit, cooked food"),
+        (ProductType.Frozen, "Carried in a cold box")
+    ];
 }
 <div class="grid grid-side">
     <div class="stack">
@@ -45,6 +65,40 @@
                         </div>
                     }
                 </div>
+
+                <div class="pin-box mt" data-pin data-pin-url="@Url.Page("/Merchant/NewParcel", "Pin")" data-maps="@(Maps.Configured ? "on" : null)">
+                    <input type="hidden" id="Input_RecipientLatitude" name="Input.RecipientLatitude" value="@f.RecipientLatitude?.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)" data-pin-lat />
+                    <input type="hidden" id="Input_RecipientLongitude" name="Input.RecipientLongitude" value="@f.RecipientLongitude?.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)" data-pin-lng />
+                    <div class="pin-head">
+                        <div>
+                            <strong>@Icons.Get("map-pin") The door on the map</strong>
+                            <span class="hint">Optional. A pin guides the rider straight to the door with Google Maps.</span>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" data-pin-clear hidden>@Icons.Get("x") Remove the pin</button>
+                    </div>
+                    @if (Maps.Configured)
+                    {
+                        <div class="pin-search" data-pin-search></div>
+                        <div class="pin-map" data-pin-map role="application" aria-label="Map: click or drag the pin to the recipient's door"></div>
+                        <div class="pin-actions">
+                            <button type="button" class="btn btn-outline btn-sm" data-pin-find>@Icons.Get("search") Find the address on the map</button>
+                            <span class="hint">Or click the map where the door is, and drag the pin to correct it.</span>
+                        </div>
+                    }
+                    <div class="pin-paste">
+                        <label for="pin-link" class="hint">Paste the location the customer sent you: a Google Maps link or coordinates</label>
+                        <div class="input-group">
+                            <input type="text" id="pin-link" data-pin-link placeholder="https://maps.app.goo.gl/… or 23.8103, 90.4125" autocomplete="off" />
+                            <button type="button" class="btn btn-outline" data-pin-use>Use it</button>
+                        </div>
+                        @if (!Maps.Configured)
+                        {
+                            <a class="hint" data-pin-open target="_blank" rel="noopener" href="https://www.google.com/maps">@Icons.Get("map-pin") Open Google Maps to find the door, then paste its link here</a>
+                        }
+                    </div>
+                    <p class="pin-status" data-pin-status aria-live="polite"></p>
+                    @Html.ValidationMessage("Input.RecipientLatitude", null, new { @class = "field-error" })
+                </div>
             </div>
         </div>
 
@@ -69,8 +123,43 @@
                         </div>
                         @Html.ValidationMessage("Input.WeightKg", null, new { @class = "field-error" })
                     </div>
+                    <fieldset class="option-group field-full">
+                        <legend>Delivery speed</legend>
+                        <div class="option-cards">
+                            @foreach (var speed in speeds)
+                            {
+                                <label class="option-card" data-option="@speed.Value">
+                                    <input type="radio" name="Input.Speed" value="@speed.Value" checked="@(f.Speed == speed.Value)" />
+                                    <span class="option-card-body">
+                                        <span class="option-card-title">@Icons.Get(speed.Icon) @speed.Value.DisplayName()</span>
+                                        <small data-option-hint>@speed.Hint</small>
+                                        <span class="option-card-price" data-option-price></span>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                        @Html.ValidationMessage("Input.Speed", null, new { @class = "field-error" })
+                    </fieldset>
+                    <fieldset class="option-group field-full">
+                        <legend>What is inside</legend>
+                        <div class="option-cards option-cards-wide">
+                            @foreach (var product in products)
+                            {
+                                <label class="option-card" data-option="@product.Value">
+                                    <input type="radio" name="Input.ProductType" value="@product.Value" checked="@(f.ProductType == product.Value)" />
+                                    <span class="option-card-body">
+                                        <span class="option-card-title">@Icons.Get(Statuses.Icon(product.Value)) @product.Value.DisplayName()</span>
+                                        <small data-option-hint>@product.Hint</small>
+                                        <span class="option-card-price" data-option-price></span>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                        <span class="hint">Choose how it should be handled. Each kind costs a little extra for the care it needs.</span>
+                        @Html.ValidationMessage("Input.ProductType", null, new { @class = "field-error" })
+                    </fieldset>
                     <div class="field">
-                        <label for="Input_ItemDescription">What is inside</label>
+                        <label for="Input_ItemDescription">Item description</label>
                         <input type="text" id="Input_ItemDescription" name="Input.ItemDescription" value="@f.ItemDescription" maxlength="200" placeholder="e.g. 2 T-shirts" />
                     </div>
                     <div class="field">
@@ -93,11 +182,27 @@
                 <div class="money-list">
                     <div><span class="muted">Service</span><span data-q="area">Choose an area</span></div>
                     <div><span class="muted">Delivery charge</span><span data-q="delivery">—</span></div>
+                    <div data-q-row="speed" hidden><span class="muted">incl. express</span><span data-q="speed"></span></div>
+                    <div data-q-row="product" hidden><span class="muted" data-q="productName">incl. care</span><span data-q="product"></span></div>
                     <div><span class="muted">COD charge</span><span data-q="cod">—</span></div>
                     <div class="total"><span>You pay</span><span data-q="total">—</span></div>
                 </div>
+                <div class="alert alert-warning mt" data-q="problem" hidden></div>
                 <p class="hint mt" data-q="hub"></p>
                 <p class="hint">Charges are taken from the cash we collect. A returned parcel costs the delivery charge plus <span data-q="return">the return charge</span>.</p>
+                @if (!Model.Editing)
+                {
+                    <p class="pickup-note">
+                        @Icons.Get("truck")
+                        <span>
+                            Goes @Statuses.PickupWith(pickupDay, today, tenant.PickupTime).
+                            @if (tenant.PickupCutoff is { } cutoff)
+                            {
+                                @(pickupDay > today ? $"Today's pickup closed at {Statuses.Clock(cutoff)}." : $"Book before {Statuses.Clock(cutoff)} to go today.")
+                            }
+                        </span>
+                    </p>
+                }
                 <div class="form-actions" style="flex-direction:column;align-items:stretch">
                     <button class="btn btn-primary btn-lg btn-block" type="submit" name="next" value="">@(Model.Editing ? "Save changes" : "Book parcel")</button>
                     @if (!Model.Editing)
@@ -115,6 +220,7 @@
     const form = document.currentScript.closest("form");
     const out = name => form.querySelector(`[data-q="${name}"]`);
     const taka = n => "৳" + Math.round(n).toLocaleString("en-US");
+    const options = form.querySelectorAll("[data-option]");
     let timer;
     const quote = async () => {
         const area = form.querySelector("[name='Input.AreaId']").value;
@@ -127,7 +233,9 @@
             areaId: area,
             weightKg: form.querySelector("[name='Input.WeightKg']").value || "0.5",
             codAmount: form.querySelector("[name='Input.CodAmount']").value || "0",
-            pickupPointId: form.querySelector("[name='Input.PickupPointId']")?.value ?? ""
+            pickupPointId: form.querySelector("[name='Input.PickupPointId']")?.value ?? "",
+            speed: form.querySelector("[name='Input.Speed']:checked")?.value ?? "Regular",
+            productType: form.querySelector("[name='Input.ProductType']:checked")?.value ?? "General"
         });
         const response = await fetch("@Url.Page("/Merchant/NewParcel")?" + params, { credentials: "same-origin" });
         if (!response.ok) {
@@ -148,8 +256,27 @@
         show("delivery", taka(q.deliveryCharge));
         show("cod", taka(q.codCharge));
         show("total", taka(q.total));
+        form.querySelector("[data-q-row=speed]").hidden = !q.speedCharge;
+        out("speed").textContent = taka(q.speedCharge);
+        form.querySelector("[data-q-row=product]").hidden = !q.productCharge;
+        out("productName").textContent = "incl. " + q.productName.toLowerCase();
+        out("product").textContent = taka(q.productCharge);
         out("return").textContent = taka(q.returnCharge);
         out("hub").textContent = "Delivered from " + q.deliveryHub + (q.when ? ", " + q.when : "") + ".";
+        out("problem").textContent = q.problem ?? "";
+        out("problem").hidden = !q.problem;
+
+        // Each speed and kind of contents shows what it adds on this route, or that the route does not take it
+        options.forEach(option => {
+            const value = option.dataset.option;
+            const extra = value === "Regular" ? 0 : value === "Express" ? q.express : q.products[value];
+            const price = option.querySelector("[data-option-price]");
+            option.classList.toggle("unavailable", extra === null || extra === undefined);
+            price.textContent = extra === null || extra === undefined ? "Not offered here" : extra === 0 ? "No extra" : "+" + taka(extra);
+            if (value === "Express" && q.express !== null && q.expressWhen) {
+                option.querySelector("[data-option-hint]").textContent = "Delivered " + q.expressWhen + ", first on the rider's run";
+            }
+        });
     };
     // A full mobile number gets a link to its delivery record, before cash on delivery is sent to it
     const phone = form.querySelector("[name='Input.RecipientPhone']");
@@ -162,10 +289,19 @@
     phone.addEventListener("input", checkLink);
     checkLink();
 
-    form.addEventListener("input", () => {
+    form.addEventListener("input", event => {
+        if (event.target.closest("[data-pin]")) {
+            return;
+        }
+
         clearTimeout(timer);
         timer = setTimeout(quote, 250);
     });
     quote();
 })();
 </script>
+<script src="~/js/recipient-map.js" asp-append-version="true"></script>
+@if (Maps.Configured)
+{
+    <script async src="https://maps.googleapis.com/maps/api/js?key=@Uri.EscapeDataString(Maps.ApiKey!)&loading=async&libraries=places&region=BD&language=en&callback=initRecipientMap"></script>
+}

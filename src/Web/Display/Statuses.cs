@@ -7,6 +7,7 @@ using Domain.Delivery;
 using Domain.Merchants;
 using Domain.Parcels;
 using Domain.Payments;
+using Domain.Pricing;
 
 namespace Web.Display;
 
@@ -55,11 +56,72 @@ public static class Statuses
     {
         return status switch
         {
-            PickupStatus.Requested => Pill("pending", "Requested"),
+            PickupStatus.Scheduled => Pill("pending", "Waiting for a rider"),
             PickupStatus.Assigned => Pill("out", "Rider assigned"),
             PickupStatus.Completed => Pill("done", "Picked up"),
-            _ => Pill("cancel", "Cancelled")
+            _ => Pill("cancel", "Called off")
         };
+    }
+
+    /// <summary>
+    /// The tags a parcel carries in lists, labels and the rider's app: express, and how to handle what is inside.
+    /// Nothing for a regular parcel of general goods.
+    /// </summary>
+    public static IHtmlContent Tags(DeliverySpeed speed, ProductType product)
+    {
+        var tags = new List<string>();
+        if (speed == DeliverySpeed.Express)
+        {
+            tags.Add(Tag("express", "zap", "Express"));
+        }
+
+        if (product != ProductType.General)
+        {
+            tags.Add(Tag(product.ToString().ToLowerInvariant(), Icon(product), product.DisplayName()));
+        }
+
+        return new HtmlString(string.Concat(tags));
+    }
+
+    public static string Icon(ProductType product)
+    {
+        return product switch
+        {
+            ProductType.Liquid => "droplet",
+            ProductType.Fragile => "glass",
+            ProductType.FreshFood => "apple",
+            ProductType.Frozen => "snowflake",
+            _ => "package"
+        };
+    }
+
+    /// <summary>The day a pickup collects, as merchants read it: "today", "tomorrow", "on Sat 11 Oct".</summary>
+    public static string PickupDay(DateOnly day, DateOnly today)
+    {
+        return day <= today ? "today" : day == today.AddDays(1) ? "tomorrow" : $"on {day:ddd d MMM}";
+    }
+
+    /// <summary>A time of day as people read it: "3:30 pm", "3 pm".</summary>
+    public static string Clock(TimeOnly time)
+    {
+        return time.ToString(time.Minute == 0 ? "h tt" : "h:mm tt", CultureInfo.InvariantCulture).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// When a parcel booked now is collected, in a sentence's middle: "with today's pickup (the truck leaves the hub at
+    /// 3:30 pm)", "with tomorrow's pickup".
+    /// </summary>
+    public static string PickupWith(DateOnly day, DateOnly today, TimeOnly? leavesAt)
+    {
+        var when = PickupDay(day, today);
+        var pickup = when is "today" or "tomorrow" ? $"with {when}'s pickup" : $"with the pickup {when}";
+
+        return leavesAt is { } time ? $"{pickup} (the truck leaves the hub at {Clock(time)})" : pickup;
+    }
+
+    private static string Tag(string kind, string icon, string text)
+    {
+        return $"""<span class="tag tag-{kind}">{Icons.Get(icon)}{WebUtility.HtmlEncode(text)}</span>""";
     }
 
     public static IHtmlContent Badge(ParcelRequestStatus status)

@@ -11,7 +11,8 @@ namespace Application.Notifications.Bell;
 /// <summary>
 /// The admin panel's bell: what is waiting for the courier's admin, worked out when asked from what the courier already
 /// keeps. Sign-ups to approve, requests to answer, parcels a hub flagged, messages that failed, payouts the gateway
-/// refused, online payments the gateway held for a check and merchants owed money with no payout account are listed
+/// refused, merchants asking to be paid now, online payments the gateway held for a check and merchants owed money with
+/// no payout account are listed
 /// while they wait, each as one line with its count;
 /// riders who handed in less cash than they collected and notes merchants left on return lists are listed for the last
 /// week. A notice's time is that of the newest thing in it, so it shows as new when something joined it since the bell
@@ -96,6 +97,21 @@ public class AdminBellHandler(IAppDbContext db, TimeProvider time)
                 NoticeTone.Problem,
                 "wallet",
                 $"{Plural(stuck.Count, "payout")} of ৳{stuck.Amount:N0} refused by the gateway",
+                "/Admin/Payouts"));
+        }
+
+        var asking = await db.PayoutRequests
+            .Where(r => r.Status == PayoutRequestStatus.Open)
+            .GroupBy(r => 1)
+            .Select(g => new { Count = g.Count(), Latest = g.Max(r => r.Created) })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (asking is not null)
+        {
+            notices.Add(new Notice(
+                asking.Latest,
+                NoticeTone.Attention,
+                "send",
+                $"{Plural(asking.Count, "merchant")} asking to be paid now",
                 "/Admin/Payouts"));
         }
 

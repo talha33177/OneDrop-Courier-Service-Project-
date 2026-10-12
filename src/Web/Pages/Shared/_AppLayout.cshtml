@@ -137,8 +137,16 @@
             {
                 <div class="sidebar-help">
                     <strong>@Icons.Get("bulb") How it works</strong>
-                    Book a parcel, ask for a pickup, and we deliver it. The cash we collect is paid to you the next day.
+                    Book a parcel and our daily pickup collects it; we deliver it, and the cash we collect is paid to you the next day.
                     <a asp-page="/Merchant/Pricing">See the rates</a>
+                </div>
+            }
+            else if (isAdmin)
+            {
+                <div class="sidebar-help">
+                    <strong>@Icons.Get("bulb") Not sure where to go?</strong>
+                    Start on the dashboard: what needs you is on top, then each step of the parcels' day.
+                    <a asp-page="/Admin/Guide">How it all fits together</a>
                 </div>
             }
             else if (isHub && !isAdmin)
