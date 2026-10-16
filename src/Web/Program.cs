@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Application;
 using Hangfire;
 using Infrastructure;
@@ -113,13 +114,28 @@ builder.Services.AddRazorPages(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Seed:DemoData"))
+// Made-up merchants, riders and parcels are a developer's, never a live site's: a site that serves its courier on an
+// address of its own (Tenancy:HomeCourierHost, or a host in Tenancy:Domains) never seeds them, however its environment
+// is set, because a live site that was started as Development seeded them again at every start and its admin could not
+// clear them from the panel
+var tenancy = app.Services.GetRequiredService<IOptions<TenancyOptions>>().Value;
+var ownAddress = tenancy.HomeCourierHost is { Length: > 0 } ? tenancy.HomeCourierHost : tenancy.Domains.Keys.FirstOrDefault();
+if (app.Configuration.GetValue<bool>("Seed:DemoData") && app.Environment.IsDevelopment())
 {
-    await app.Services
-        .GetRequiredService<DemoDataSeeder>()
-        .SeedAsync(
-            app.Configuration["Seed:Password"] ?? throw new InvalidOperationException("Seed:Password is not set."),
-            app.Configuration.GetValue<bool>("Seed:DemoActivity"));
+    if (ownAddress is { Length: > 0 })
+    {
+        app.Logger.LogWarning(
+            "Seed:DemoData is on, but this site serves a courier at {Address}, so no demo data was made",
+            ownAddress);
+    }
+    else
+    {
+        await app.Services
+            .GetRequiredService<DemoDataSeeder>()
+            .SeedAsync(
+                app.Configuration["Seed:Password"] ?? throw new InvalidOperationException("Seed:Password is not set."),
+                app.Configuration.GetValue<bool>("Seed:DemoActivity"));
+    }
 }
 
 // A live courier's first admin: a database deployed from nothing has nobody who can sign in (see AdminSetup). With no

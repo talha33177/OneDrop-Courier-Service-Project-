@@ -330,6 +330,7 @@ New ones are added there and dated here.
 | 2026-10-13 | The van takes whatever is waiting when it reaches a merchant and visits each pickup point once a day: no pickup cut-off; a parcel booked after the day's visit goes with the next day's pickup (owner) |
 | 2026-10-13 | Only a pickup van collects from merchants (bicycles and motorbikes deliver); a collected parcel stays on the van until the hub scans it in; every hand-over — pickup, delivery run, return list — is checked against what the rider already carries, at the hub's weighed weight (owner) |
 | 2026-10-16 | A live start with no admin named makes the demo admin (`admin@onedrop.test`), so a fresh server can always be signed in to; a named admin never falls back to it. The demo password is public until changed (owner) |
+| 2026-10-16 | Demo data is never made on a site that serves a courier at an address of its own, whatever its environment; the live site's own database is emptied once by `Scripts/2026/014` and its app pool set to Production by the deploy (owner) |
 | 2026-10-16 | Wrong passwords no longer lock a login; a stopped login is still refused and says it was stopped. Nothing now slows guessing at a sign-in password (owner) |
 
 ---
@@ -379,6 +380,33 @@ Newest first.
   that was not stopped (`Archived = 0`); a stopped one keeps its lock, which is what stopping is. Tested:
   `SignInTests` 2 of 2 (new: a login locked as the old rule left it is refused, the script lets it in, a stopped one
   stays out) and `publish.ps1 -Database OneDrop-Test` ran 013 through DbUp (exit 0).
+- **Then (owner): the live site is full of demo data.** Its `/Admin/Riders` listed `rider@onedrop.test` and the rest,
+  which the panel cannot clear (a rider holding a parcel cannot be stopped, and their password is the server's
+  `Seed__Password`). **The cause:** the site runs as **Development with `Seed:DemoData` on**, so the seeder made them
+  again at every start — and left the `/Dev` pages (texts, emails, payouts, the test payment page) open to anyone.
+  Emptying the database alone would have filled it back up on the next deploy. The owner asked for the teammate to
+  run one file and nothing else.
+- **Done:** `Program.cs` never seeds demo data on a site that serves a courier at an address of its own
+  (`Tenancy:HomeCourierHost` or `Tenancy:Domains`), logging why instead; `Deploy-Iis.ps1` (the teammate's one file)
+  now also sets the live app pool to Production with the demo seed off, in a step that reports and carries on if IIS
+  refuses, so it can never stop an update; `Scripts/2026/014_EmptyTheLiveSite.sql` empties the live database once
+  (guarded by `DB_NAME() = 'Delyvo'`), keeping the courier, its map, rate card, delivery types, vehicles and super
+  admins, and refusing if no super admin would be left. `sql/EmptyTheCourier.sql` does the same by hand for any
+  courier, and is never deployed.
+- **Tested end to end on a throwaway `Delyvo` database on LocalDB** (`ras-x2` was refusing the `sa` login all evening,
+  and the Docker stack's dacpac publish kept timing out, so neither database suite could run): deployed from nothing
+  (all 14 scripts), seeded the demo data as the live site has it, then filled every table the cleanup touches by hand
+  (parcels, events, requests, runs, attempts, pickups, return lists, ledger, payouts, payout requests, online
+  payments, outbox, moderators, payout accounts, pictures, staff). The cleanup through DbUp left **0** of each and
+  kept 16 hubs, 74 zones, 956 areas, 3 rates, 7 delivery types, 3 vehicles and the one super admin. On a second
+  database (`OneDropCheck`) a planted row **survived**, so the development and test databases are untouched. The app
+  then signed in at `admin@onedrop.test` / `OneDrop#2026` (302), `/Admin` answered 200 as Super admin, and
+  `/Admin/Riders` and `/Admin/Merchants` showed no demo rows **with `Seed:DemoData` still on**. Both throwaway
+  databases were dropped afterwards. Build 0 warnings; domain 262, architecture 6. **Not run:** the integration suite
+  (no reachable test database).
+- **The bug the test caught:** `PRINT` takes no subquery, so the first version of the cleanup failed to run at all
+  (error 1046). Counts go into variables first. Had it shipped, the deploy would have stopped with the site on its
+  "updating" page.
 
 ### 2026-10-16 (places of Bangladesh and the step-by-step area picker)
 - **Owner's request:** the delivery area was one long dropdown; make it Division, then Zone (Dhaka >), then Area (Dhaka > Mirpur >), with every place in Bangladesh.

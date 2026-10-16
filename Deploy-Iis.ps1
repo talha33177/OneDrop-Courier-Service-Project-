@@ -108,6 +108,35 @@ $Connection = (Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
     Where-Object { $_.name -eq 'ConnectionStrings__Database' }).value
 if (-not $Connection) { throw "The $Site app pool has no ConnectionStrings__Database setting." }
 
+# --- 2b. A live site's settings -----------------------------------------------------------------------
+# The site was started as Development with the demo seeder on, which made up merchants, riders and parcels at every
+# start and left the /Dev pages (texts, emails, payouts, the test payment page) open to anyone. Production is what a
+# live site runs as. Nothing here can stop the update: a setting that cannot be written is reported and the deploy
+# carries on, and the app refuses to make demo data on a site with an address of its own whatever these say.
+$PoolFilter = "system.applicationHost/applicationPools/add[@name='$Site']/environmentVariables"
+try {
+    $pool = Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter $PoolFilter -Name Collection
+    foreach ($wanted in @{ Name = 'ASPNETCORE_ENVIRONMENT'; Value = 'Production' },
+                        @{ Name = 'Seed__DemoData';         Value = 'false' },
+                        @{ Name = 'Seed__DemoActivity';     Value = 'false' }) {
+        $have = $pool | Where-Object { $_.name -eq $wanted.Name }
+        if (-not $have) {
+            Add-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' -Filter $PoolFilter -Name '.' `
+                -Value @{ name = $wanted.Name; value = $wanted.Value }
+            Write-Host "  $($wanted.Name) set to $($wanted.Value)." -ForegroundColor Yellow
+        }
+        elseif ($have.value -ne $wanted.Value) {
+            Set-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST' `
+                -Filter "$PoolFilter/add[@name='$($wanted.Name)']" -Name 'value' -Value $wanted.Value
+            Write-Host "  $($wanted.Name) was $($have.value), now $($wanted.Value)." -ForegroundColor Yellow
+        }
+    }
+}
+catch {
+    Write-Host "  Could not read or write the $Site app pool's settings: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  Set ASPNETCORE_ENVIRONMENT to Production on that app pool by hand in IIS Manager." -ForegroundColor Red
+}
+
 # --- 3. Offline ---------------------------------------------------------------------------------------
 Write-Step "Taking the site offline for the update"
 $Offline = Join-Path $SitePath "app_offline.htm"
