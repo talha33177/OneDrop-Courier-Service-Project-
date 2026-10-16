@@ -17,9 +17,25 @@ public class TenancyOptions
     /// </summary>
     public string? HomeCourier { get; set; }
 
+    /// <summary>
+    /// Whole host names that select a courier by themselves, host to slug, for a courier whose address is not a
+    /// subdomain of <see cref="RootDomain"/> (for example "delyvo.octopi-digital.com": "onedrop"). Checked before the
+    /// subdomain rule, so a host listed here is the courier's site even when it is the root domain itself; platform
+    /// staff then sign in on a reserved subdomain such as admin.{root domain}.
+    /// </summary>
+    public Dictionary<string, string> Domains { get; set; } = [];
+
     /// <summary>The tenant slug in a host name, or null for the root domain and anything unrelated.</summary>
     public string? SlugFromHost(string host)
     {
+        foreach (var (domain, slug) in Domains)
+        {
+            if (string.Equals(domain, host, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(slug))
+            {
+                return slug.ToLowerInvariant();
+            }
+        }
+
         var suffix = "." + RootDomain;
         if (!host.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
         {
