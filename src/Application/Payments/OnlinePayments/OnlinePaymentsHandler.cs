@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Application.Abstractions;
 using Application.Common;
 using Domain.Common;
+using Domain.Parcels;
 using Domain.Payments;
 
 namespace Application.Payments.OnlinePayments;
@@ -20,7 +21,17 @@ public sealed record OnlinePaymentRow(
     string? BankTransactionId,
     string? Note,
     DateTime Created,
-    DateTime? ConfirmedOn);
+    DateTime? ConfirmedOn)
+{
+    /// <summary>The parcel a recipient paid for; null for a merchant paying what it owes.</summary>
+    public string? TrackingCode { get; init; }
+
+    /// <summary>Owed back to the payer, and the gateway refused the last ask: the courier may refund it by hand.</summary>
+    public bool RefundRefused { get; init; }
+}
+
+/// <summary>Where a payer coming back from the gateway lands: a recipient on its parcel's page, a merchant on its payments.</summary>
+public sealed record PaymentReturned(string Number, string? TrackingCode);
 
 /// <summary>The gateway's page to send the merchant to, for payment <paramref name="Number"/>.</summary>
 public sealed record PaymentStarted(string Number, string PaymentPageUrl);
@@ -28,8 +39,18 @@ public sealed record PaymentStarted(string Number, string PaymentPageUrl);
 /// <summary>What the merchant's payments page needs to offer paying online: the gateway, its limits and the latest payments.</summary>
 public sealed record MerchantOnlinePayments(string Gateway, bool Available, PaymentLimits Limits, IReadOnlyList<OnlinePaymentRow> Recent);
 
-/// <summary>The courier's view: payments held for a check, and the latest ones.</summary>
-public sealed record AdminOnlinePayments(string Gateway, bool Available, IReadOnlyList<OnlinePaymentRow> ToCheck, IReadOnlyList<OnlinePaymentRow> Recent);
+/// <summary>
+/// The courier's view: payments held for a check, recipients' payments owed back (refunded by the check job, or by hand
+/// when the gateway refuses), and the latest payments of both kinds.
+/// </summary>
+public sealed record AdminOnlinePayments(
+    string Gateway,
+    bool Available,
+    IReadOnlyList<OnlinePaymentRow> ToCheck,
+    IReadOnlyList<OnlinePaymentRow> Recent)
+{
+    public IReadOnlyList<OnlinePaymentRow> RefundsDue { get; init; } = [];
+}
 
 /// <summary>
 /// A merchant pays the courier what it owes, online. <see cref="StartAsync"/> opens a payment for the balance owed now
@@ -61,7 +82,7 @@ public class OnlinePaymentsHandler(
 
     public async Task<MerchantOnlinePayments> ForMerchantAsync(CancellationToken cancellationToken = default)
     {
-        var recent = await RowsAsync(db.OnlinePayments.OrderByDescending(p => p.Id).Take(10), cancellationToken);
+        var recent = await RowsAsync(db.OnlinePayments.Where(p => p.ParcelId == null).OrderByDescending(p => p.Id).Take(10), cancellationToken);
 
         return new MerchantOnlinePayments(gateway.Name, gateway.IsAvailable, gateway.Limits, recent);
     }
@@ -72,7 +93,7 @@ public class OnlinePaymentsHandler(
     /// </summary>
     public async Task<OnlinePaymentRow?> PaymentAsync(string? number, CancellationToken cancellationToken = default)
     {
-        var payment = await db.OnlinePayments.SingleOrDefaultAsync(p => p.Number == number, cancellationToken);
+        var payment = await db.OnlinePayments.SingleOrDefaultAsync(p => p.Number == number && p.ParcelId == null, cancellationToken);
         if (payment is null)
         {
             return null;
@@ -160,9 +181,10 @@ public class OnlinePaymentsHandler(
     /// The payer's browser came back from the payment page, as <paramref name="outcome"/> (success, fail or cancel), with
     /// the gateway's <paramref name="validationId"/> on success. Nothing it brings is believed: the gateway is asked. The
     /// browser comes back without the merchant's sign-in (it is a post from the gateway's site), so the payment is found
-    /// by its transaction, whichever business is open. Returns the payment's number, or null for an unknown transaction.
+    /// by its transaction, whichever business is open. Returns the payment's number and, for a recipient's payment, the
+    /// parcel's tracking code; null for an unknown transaction.
     /// </summary>
-    public async Task<string?> ReturnedAsync(string transactionId, string outcome, string? validationId, CancellationToken cancellationToken = default)
+    public async Task<PaymentReturned?> ReturnedAsync(string transactionId, string outcome, string? validationId, CancellationToken cancellationToken = default)
     {
         var payment = await ByTransactionAsync(transactionId, cancellationToken);
         if (payment is null)
@@ -181,7 +203,15 @@ public class OnlinePaymentsHandler(
             },
             cancellationToken);
 
-        return payment.Number;
+        var trackingCode = payment.ParcelId is { } parcelId
+            ? await db.Parcels
+                .IgnoreQueryFilters([QueryFilters.Merchant])
+                .Where(p => p.Id == parcelId)
+                .Select(p => p.TrackingCode)
+                .SingleAsync(cancellationToken)
+            : null;
+
+        return new PaymentReturned(payment.Number, trackingCode);
     }
 
     /// <summary>The gateway's own notice of a payment, server to server. Checked with the gateway like a return.</summary>
@@ -229,9 +259,82 @@ public class OnlinePaymentsHandler(
         }
 
         logger.LogInformation("Checked {Count} online payments with {Gateway}: {Credited} credited", open.Count, gateway.Name, credited);
+        await RefundAsync(now, cancellationToken);
 
         return credited;
     }
+
+    /// <summary>
+    /// The refunds part of the check: a recipient's payment whose parcel was cancelled or came back is owed back, and
+    /// every payment owed back is refunded through the gateway, or asked about while the gateway is making the refund.
+    /// One the gateway refused is asked for again after <see cref="RetryRefusedRefundAfter"/>; the courier sees it meanwhile.
+    /// </summary>
+    private async Task RefundAsync(DateTime now, CancellationToken cancellationToken)
+    {
+        var undelivered = await (
+            from payment in db.OnlinePayments.IgnoreQueryFilters([QueryFilters.Merchant])
+            join parcel in db.Parcels.IgnoreQueryFilters([QueryFilters.Merchant]) on payment.ParcelId equals parcel.Id
+            where payment.Status == OnlinePaymentStatus.Paid &&
+                (parcel.Status == ParcelStatus.Cancelled || parcel.Status == ParcelStatus.Returned)
+            select new { payment, parcel.TrackingCode, parcel.Status })
+            .ToListAsync(cancellationToken);
+        foreach (var owed in undelivered)
+        {
+            owed.payment.OweBack(
+                $"{owed.TrackingCode} was {(owed.Status == ParcelStatus.Cancelled ? "cancelled" : "returned to the merchant")}, so the payment goes back to the recipient.");
+        }
+
+        if (undelivered.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var retryBefore = now - RetryRefusedRefundAfter;
+        var due = await db.OnlinePayments
+            .IgnoreQueryFilters([QueryFilters.Merchant])
+            .Where(p => p.Status == OnlinePaymentStatus.RefundDue &&
+                (p.RefundReference != null || p.RefundTriedOn == null || p.RefundTriedOn < retryBefore))
+            .OrderBy(p => p.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var payment in due)
+        {
+            if (payment.BankTransactionId is not { } bankTransaction)
+            {
+                payment.RefundAnswered(RefundState.Refused, null, "the gateway gave no id for the payment; refund it from the gateway's panel", now);
+                await db.SaveChangesAsync(cancellationToken);
+
+                continue;
+            }
+
+            RefundAnswer answer;
+            try
+            {
+                answer = payment.RefundReference is { } reference
+                    ? await gateway.RefundStatusAsync(reference, cancellationToken)
+                    : await gateway.RefundAsync(
+                        bankTransaction,
+                        payment.PaidAmount ?? payment.Amount,
+                        payment.Number,
+                        $"{tenantContext.Require().Name}: {payment.Note}",
+                        cancellationToken);
+            }
+            catch (PaymentGatewayException exception)
+            {
+                // Not knowing whether it was made, nothing is recorded: the next check asks again, and the gateway refuses
+                // to refund more than was paid
+                logger.LogWarning(exception, "Could not ask {Gateway} to refund payment {Number}", gateway.Name, payment.Number);
+
+                continue;
+            }
+
+            payment.RefundAnswered(answer.State, answer.Reference, answer.Reason, now);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Refund of payment {Number}: {State}", payment.Number, answer.State);
+        }
+    }
+
+    /// <summary>A refund the gateway refused is asked for again after this long.</summary>
+    private static readonly TimeSpan RetryRefusedRefundAfter = TimeSpan.FromHours(1);
 
     public async Task<AdminOnlinePayments> ForCourierAsync(CancellationToken cancellationToken = default)
     {
@@ -239,7 +342,10 @@ public class OnlinePaymentsHandler(
             gateway.Name,
             gateway.IsAvailable,
             await RowsAsync(db.OnlinePayments.Where(p => p.Status == OnlinePaymentStatus.Review), cancellationToken),
-            await RowsAsync(db.OnlinePayments.OrderByDescending(p => p.Id).Take(15), cancellationToken));
+            await RowsAsync(db.OnlinePayments.OrderByDescending(p => p.Id).Take(15), cancellationToken))
+        {
+            RefundsDue = await RowsAsync(db.OnlinePayments.Where(p => p.Status == OnlinePaymentStatus.RefundDue), cancellationToken)
+        };
     }
 
     /// <summary>The courier checked a payment the gateway took but held, and credits it to the merchant.</summary>
@@ -254,13 +360,17 @@ public class OnlinePaymentsHandler(
         var accepted = payment.Accept(tenantContext.Require().Today(time.GetUtcNow().UtcDateTime));
         if (accepted.IsSuccess)
         {
+            await ToParcelAsync(payment, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
 
         return accepted;
     }
 
-    /// <summary>The courier refunded a held payment through the gateway's own panel, and records it here instead of crediting it.</summary>
+    /// <summary>
+    /// The courier refunded a held payment, or one owed back that the gateway would not refund, through the gateway's
+    /// own panel, and records it here.
+    /// </summary>
     public async Task<Result> RefundAsync(string? number, string? note, CancellationToken cancellationToken = default)
     {
         var payment = await db.OnlinePayments.SingleOrDefaultAsync(p => p.Number == number, cancellationToken);
@@ -269,7 +379,7 @@ public class OnlinePaymentsHandler(
             return NotFound;
         }
 
-        var refunded = payment.Refund(note);
+        var refunded = payment.Refund(note, time.GetUtcNow().UtcDateTime);
         if (refunded.IsSuccess)
         {
             await db.SaveChangesAsync(cancellationToken);
@@ -285,7 +395,7 @@ public class OnlinePaymentsHandler(
     /// <paramref name="failure"/> is what the payment page said when it sent the payer back without paying, recorded when
     /// the gateway confirms nothing. A gateway that cannot be reached changes nothing: the check job asks again.
     /// </summary>
-    private async Task SettleAsync(OnlinePayment payment, string? validationId, string? failure, CancellationToken cancellationToken)
+    internal async Task SettleAsync(OnlinePayment payment, string? validationId, string? failure, CancellationToken cancellationToken)
     {
         if (payment.Status is not (OnlinePaymentStatus.Started or OnlinePaymentStatus.Failed))
         {
@@ -312,6 +422,7 @@ public class OnlinePaymentsHandler(
         {
             case GatewayState.Paid:
                 payment.Confirm(answer.Receipt!, tenantContext.Require().Today(now), now);
+                await ToParcelAsync(payment, cancellationToken);
                 break;
             case GatewayState.Failed:
                 payment.Fail(answer.Reason ?? failure);
@@ -336,6 +447,16 @@ public class OnlinePaymentsHandler(
                 db.Entry(line).State = EntityState.Detached;
             }
 
+            if (payment.ParcelId is { } parcelId && db.Parcels.Local.SingleOrDefault(p => p.Id == parcelId) is { } parcel)
+            {
+                foreach (var added in parcel.Events.Where(e => db.Entry(e).State == EntityState.Added).ToList())
+                {
+                    db.Entry(added).State = EntityState.Detached;
+                }
+
+                db.Entry(parcel).State = EntityState.Detached;
+            }
+
             db.Entry(payment).State = EntityState.Detached;
 
             return;
@@ -344,6 +465,29 @@ public class OnlinePaymentsHandler(
         if (payment.Status == OnlinePaymentStatus.Paid)
         {
             logger.LogInformation("Payment {Number} of {Amount} credited to merchant {MerchantId}", payment.Number, payment.Amount, payment.MerchantId);
+        }
+    }
+
+    /// <summary>
+    /// A recipient's payment the gateway has just confirmed goes to its parcel, which the rider then delivers without
+    /// collecting; when the parcel can no longer take it (paid at the door first, cancelled, returned), it is owed back.
+    /// Saved with the payment, so the two never disagree.
+    /// </summary>
+    private async Task ToParcelAsync(OnlinePayment payment, CancellationToken cancellationToken)
+    {
+        if (payment is not { ParcelId: { } parcelId, Status: OnlinePaymentStatus.Paid })
+        {
+            return;
+        }
+
+        // The payer is not the merchant: the parcel is found by the payment, whoever is signed in
+        var parcel = await db.Parcels
+            .IgnoreQueryFilters([QueryFilters.Merchant])
+            .SingleAsync(p => p.Id == parcelId, cancellationToken);
+        var taken = parcel.TakeOnlinePayment(payment.PaidAmount ?? payment.Amount, payment.Number);
+        if (taken.IsFailure)
+        {
+            payment.OweBack(taken.Error!.Message + " The payment goes back to the recipient.");
         }
     }
 
@@ -378,7 +522,11 @@ public class OnlinePaymentsHandler(
                 payment.BankTransactionId,
                 payment.Note,
                 payment.Created,
-                payment.ConfirmedOn))
+                payment.ConfirmedOn)
+            {
+                TrackingCode = db.Parcels.Where(p => p.Id == payment.ParcelId).Select(p => p.TrackingCode).FirstOrDefault(),
+                RefundRefused = payment.Status == OnlinePaymentStatus.RefundDue && payment.RefundReference == null && payment.RefundTriedOn != null
+            })
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 

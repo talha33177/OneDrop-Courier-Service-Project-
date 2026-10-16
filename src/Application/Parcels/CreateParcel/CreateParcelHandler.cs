@@ -4,20 +4,24 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Delivery.Pickups;
 using Domain.Common;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.CreateParcel;
 
 /// <summary>
 /// Books a parcel for the calling merchant: validate, resolve the route and the charges, save it with its first
-/// tracking line. A retry with the same Idempotency-Key answers with the first parcel; the same key with another body is
-/// refused. Only an active merchant books.
+/// tracking line, and put its pickup point on the pickup list of the day it goes with. A retry with the same
+/// Idempotency-Key answers with the first parcel; the same key with another body is refused. Only an active merchant
+/// books.
 /// </summary>
 public class CreateParcelHandler(
     IAppDbContext db,
     ICurrentUser currentUser,
     ParcelBooking booking,
+    PickupSchedule pickups,
     IValidator<CreateParcelCommand> validator)
 {
     public static readonly Error MerchantRequired =
@@ -52,7 +56,7 @@ public class CreateParcelHandler(
             return prepared.Error!;
         }
 
-        var (parcel, area, hub) = prepared.Value;
+        var parcel = prepared.Value.Parcel;
         db.Parcels.Add(parcel);
         try
         {
@@ -71,14 +75,16 @@ public class CreateParcelHandler(
             return winner;
         }
 
-        return Describe(parcel, area, hub);
+        var days = await pickups.ScheduleAsync([parcel], cancellationToken);
+
+        return Describe(prepared.Value, days.TryGetValue(parcel.PickupPointId, out var day) ? day : null);
     }
 
     /// <summary>
     /// A parcel ready to save, with its area and delivering hub's names, or why it cannot be booked. A bulk upload checks
     /// every row this way before saving any.
     /// </summary>
-    public async Task<Result<(Parcel Parcel, string Area, string Hub)>> PrepareAsync(
+    public async Task<Result<PreparedParcel>> PrepareAsync(
         CreateParcelCommand command,
         byte[]? requestHash,
         CancellationToken cancellationToken = default)
@@ -105,6 +111,8 @@ public class CreateParcelHandler(
             command.AreaId,
             command.Area,
             command.WeightGrams,
+            command.Speed,
+            command.ProductType,
             cancellationToken);
         if (route.IsFailure)
         {
@@ -126,7 +134,10 @@ public class CreateParcelHandler(
                 command.WeightGrams,
                 command.ItemDescription,
                 command.Note,
-                resolved.Charges))
+                resolved.Charges)
+            {
+                Pin = GeoPoint.From(command.RecipientLatitude, command.RecipientLongitude).Value
+            })
         {
             MerchantReference = command.MerchantReference,
             IdempotencyKey = command.IdempotencyKey,
@@ -134,24 +145,34 @@ public class CreateParcelHandler(
         });
 
         return created.IsSuccess
-            ? (created.Value, resolved.Area.Name, resolved.DeliveryHub.Name)
+            ? new PreparedParcel(
+                created.Value, resolved.Area.Name, resolved.DeliveryHub.Name, resolved.Speed.Code, resolved.ProductType.Code)
             : created.Error!;
     }
 
-    public static CreateParcelResult Describe(Parcel parcel, string area, string hub)
+    /// <param name="prepared">The parcel booked.</param>
+    /// <param name="pickupOn">The day its pickup point's pickup collects it, once the point is on that day's list.</param>
+    public static CreateParcelResult Describe(PreparedParcel prepared, DateOnly? pickupOn)
     {
+        var parcel = prepared.Parcel;
+
         return new CreateParcelResult(
             parcel.TrackingCode,
             parcel.MerchantReference,
             parcel.Status,
-            area,
-            hub,
+            prepared.Area,
+            prepared.Hub,
             parcel.ServiceArea,
             parcel.CodAmount,
             parcel.DeliveryCharge,
             parcel.Charges.CodChargeOn(parcel.CodAmount),
             parcel.TotalCharge,
-            parcel.Created);
+            parcel.Created,
+            prepared.Speed,
+            prepared.ProductType,
+            parcel.SpeedCharge,
+            parcel.ProductCharge,
+            pickupOn);
     }
 
     private async Task<Result<CreateParcelResult>?> FindReplayAsync(
@@ -170,7 +191,7 @@ public class CreateParcelHandler(
             join area in db.Areas on parcel.AreaId equals area.Id
             join hub in db.Hubs on parcel.DeliveryHubId equals hub.Id
             where parcel.MerchantId == merchantId && parcel.IdempotencyKey == idempotencyKey
-            select new { Parcel = parcel, Area = area.Name, Hub = hub.Name })
+            select new PreparedParcel(parcel, area.Name, hub.Name, parcel.Speed!.Code, parcel.ProductType!.Code))
             .AsNoTracking()
             .FirstOrDefaultAsync(cancellationToken);
         if (previous is null)
@@ -185,6 +206,13 @@ public class CreateParcelHandler(
                 "This Idempotency-Key was already used for a different parcel.");
         }
 
-        return Describe(previous.Parcel, previous.Area, previous.Hub) with { Replayed = true };
+        var pickupOn = previous.Parcel.Status == ParcelStatus.Pending
+            ? await pickups.DayForAsync(previous.Parcel.PickupPointId, cancellationToken)
+            : (DateOnly?)null;
+
+        return Describe(previous, pickupOn) with { Replayed = true };
     }
 }
+
+/// <summary>A parcel ready to save, with the names of its area and delivering hub and the codes of its speed and contents.</summary>
+public sealed record PreparedParcel(Parcel Parcel, string Area, string Hub, string Speed, string ProductType);

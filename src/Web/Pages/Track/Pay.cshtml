@@ -1,0 +1,86 @@
+@page "{code}"
+@using Domain.Payments
+@model Web.Pages.Track.PayModel
+@{
+    ViewData["Title"] = $"Pay for parcel {Model.Code}";
+}
+
+<section class="hero">
+    <div class="site-section" style="max-width:780px">
+        <span class="eyebrow">Pay before it arrives</span>
+        <h1>Pay for your parcel</h1>
+        <p class="lead">Pay the cash on delivery for <span class="mono">@Model.Code</span> online, and give the rider nothing at the door.</p>
+    </div>
+</section>
+
+<section class="site-section" style="max-width:780px;padding-top:32px">
+    @if (Model.Problem is not null)
+    {
+        <div class="alert alert-error" role="alert">@Icons.Get("alert")<div>@Model.Problem</div></div>
+    }
+
+    @if (Model.Payment is { } payment)
+    {
+        var (tone, icon, text) = payment.Status switch
+        {
+            OnlinePaymentStatus.Paid => ("alert-success", "check-circle", "Paid. Thank you: there is nothing to pay the rider."),
+            OnlinePaymentStatus.Review => ("alert-info", "clock", "The payment went through and is being checked. If it is not confirmed, it is refunded and you pay the rider instead."),
+            OnlinePaymentStatus.RefundDue or OnlinePaymentStatus.Refunded => ("alert-info", "return", $"This payment could not be used for the parcel, so it is refunded to you. {payment.Note}"),
+            OnlinePaymentStatus.Failed => ("alert-error", "x-circle", $"Not paid. {payment.Note} You can try again or pay the rider in cash."),
+            _ => ("alert-info", "clock", "We are still waiting for the payment's answer. This page shows it once it comes; you can refresh it in a minute.")
+        };
+        <div class="alert @tone" role="status">@Icons.Get(icon)<div><strong>@payment.Number.</strong> @text</div></div>
+    }
+
+    <div class="card">
+        @if (Model.Parcel is { } parcel)
+        {
+            <div class="card-head">
+                <div>
+                    <h2 class="mono">@parcel.TrackingCode</h2>
+                    <p>From @parcel.Merchant to @parcel.RecipientName</p>
+                </div>
+            </div>
+            <div class="card-body">
+                @if (parcel.Paid)
+                {
+                    <div class="alert alert-success" style="margin-bottom:0">@Icons.Get("check-circle")<div><strong>Already paid.</strong> There is nothing to pay the rider.</div></div>
+                }
+                else if (parcel.CannotPay is { } why)
+                {
+                    <div class="alert alert-info" style="margin-bottom:0">@Icons.Get("info")<div>@why</div></div>
+                }
+                else
+                {
+                    <dl class="kv">
+                        <dt>Cash on delivery</dt><dd class="strong" style="font-size:20px">@Money.Taka(parcel.Amount)</dd>
+                    </dl>
+                    <form method="post" asp-page-handler="Start" class="mt">
+                        <input type="hidden" name="Phone" value="@Model.Phone" />
+                        <div class="field">
+                            <label for="Email">Your email address</label>
+                            <input type="email" id="Email" name="Email" value="@Model.Email" maxlength="100" autocomplete="email" required />
+                            <span class="hint">@parcel.Gateway sends the receipt there.</span>
+                        </div>
+                        <button class="btn btn-primary" type="submit">@Icons.Get("wallet") Pay @Money.Taka(parcel.Amount)</button>
+                        <p class="hint mt">You go to @parcel.Gateway's page to pay with bKash, Nagad, Rocket or a card. If the parcel is cancelled or comes back to the shop, the payment is refunded to you.</p>
+                    </form>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="card-head"><div><h2>Which parcel?</h2><p>Enter the mobile number the parcel is for, as the rider would ask at the door.</p></div></div>
+            <div class="card-body">
+                <form method="post" asp-page-handler="Check">
+                    <div class="field">
+                        <label for="Phone">Your mobile number</label>
+                        <input type="tel" id="Phone" name="Phone" value="@Model.Phone" placeholder="01XXXXXXXXX" autocomplete="tel" inputmode="tel" required />
+                    </div>
+                    <button class="btn btn-primary" type="submit">Continue</button>
+                    <a class="btn btn-ghost" href="/Track?code=@Uri.EscapeDataString(Model.Code ?? "")">Back to tracking</a>
+                </form>
+            </div>
+        }
+    </div>
+</section>

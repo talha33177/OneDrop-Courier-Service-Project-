@@ -1,6 +1,6 @@
 @using Domain.Common
 @model (PeriodKind Kind, DateOnly? From, DateOnly? To)
-@* The period a merchant reads its parcels over: four named ones, or its own days in the form beside them. The days
+@* The period a page is read over: four named ones, or one's own days in the form beside them. The days
    shown in the form are the period's, so changing one end keeps the other *@
 @{
     (PeriodKind Kind, string Name)[] periods =

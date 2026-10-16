@@ -35,6 +35,11 @@ public class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
 
     public long? AccountId => UserId is null ? null : Read(AppClaims.MerchantId);
 
+    public bool IsInRole(string role)
+    {
+        return accessor.HttpContext?.User.IsInRole(role) == true;
+    }
+
     private long? Read(string claimType)
     {
         var value = accessor.HttpContext?.User.FindFirstValue(claimType);

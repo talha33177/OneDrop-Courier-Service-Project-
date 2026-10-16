@@ -20,6 +20,11 @@ public sealed record CreateParcelCommand
 
     public string? RecipientAddress { get; init; }
 
+    /// <summary>Optional: the door pinned on a map, in degrees (23.810331), with <see cref="RecipientLongitude"/>.</summary>
+    public decimal? RecipientLatitude { get; init; }
+
+    public decimal? RecipientLongitude { get; init; }
+
     /// <summary>Give either AreaId or the Area name, from GET /api/v1/areas.</summary>
     public long? AreaId { get; init; }
 
@@ -32,6 +37,18 @@ public sealed record CreateParcelCommand
     public decimal CodAmount { get; init; }
 
     public decimal WeightKg { get; init; }
+
+    /// <summary>
+    /// The speed's code from the courier's delivery types (regular, express and so on), where the route offers it.
+    /// Left out, the courier's default.
+    /// </summary>
+    public string? Speed { get; init; }
+
+    /// <summary>
+    /// What is inside, by its code from the courier's delivery types (general, liquid, fragile, fresh-food, frozen
+    /// and so on), where the route carries it. Left out, the courier's default.
+    /// </summary>
+    public string? ProductType { get; init; }
 
     public string? ItemDescription { get; init; }
 
@@ -46,7 +63,9 @@ public sealed record CreateParcelCommand
     public int WeightGrams => (int)Math.Round(WeightKg * 1000m, MidpointRounding.AwayFromZero);
 }
 
+/// <param name="DeliveryCharge">The weight's charge plus <see cref="SpeedCharge"/> and <see cref="ProductCharge"/>.</param>
 /// <param name="TotalCharge">What the merchant pays if the parcel is delivered with the whole cash on delivery.</param>
+/// <param name="PickupOn">The day the courier collects it: today, or the next day once the pickup van has been to its pickup point today.</param>
 public sealed record CreateParcelResult(
     string TrackingCode,
     string? MerchantReference,
@@ -58,7 +77,12 @@ public sealed record CreateParcelResult(
     decimal DeliveryCharge,
     decimal CodCharge,
     decimal TotalCharge,
-    DateTime Created)
+    DateTime Created,
+    string Speed,
+    string ProductType,
+    decimal SpeedCharge,
+    decimal ProductCharge,
+    DateOnly? PickupOn)
 {
     /// <summary>True when this is an earlier parcel returned for a repeated Idempotency-Key.</summary>
     public bool Replayed { get; init; }

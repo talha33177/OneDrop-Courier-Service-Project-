@@ -43,6 +43,11 @@ public class RidersModel(AdminRidersHandler riders, HubDirectory hubs) : PageMod
         if (added.IsSuccess)
         {
             TempData["Done"] = $"{name} is added. They sign in with {email}.";
+            if ((await hubs.ListAsync(cancellationToken)).FirstOrDefault(hub => hub.Id == hubId) is { } home)
+            {
+                TempData["DoneLink"] = $"/Hub/Assign?hub={home.Code}";
+                TempData["DoneLinkText"] = $"Hand them parcels at {home.Name}";
+            }
 
             return RedirectToPage();
         }

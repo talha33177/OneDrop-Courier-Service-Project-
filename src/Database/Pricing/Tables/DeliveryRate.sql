@@ -4,11 +4,13 @@
 --          2 suburb, 3 outside city). The first IncludedWeightGrams cost BaseCharge, each started kg above it
 --          ExtraKgCharge; CodChargePercent is taken off the cash collected, ReturnCharge added for a parcel that comes
 --          back. DeliveryDays is how soon after pickup a parcel is delivered (0 the same day), NULL when the tenant
---          promises no time. A parcel keeps the charges and delivery time it was booked at. No defaults: every tenant
---          sets its own.
+--          promises no time. The extras for a parcel's speed and contents are in Pricing.DeliveryOptionCharge. A
+--          parcel keeps the charges and delivery time it was booked at. No defaults: every tenant sets its own.
 -- Author: Courier team
 -- Date: 2026-10-04
 --       2026-10-05 DeliveryDays
+--       2026-10-09 ExpressCharge, ExpressDays, LiquidCharge, FragileCharge, FreshFoodCharge, FrozenCharge
+--       2026-10-13 the extras moved to Pricing.DeliveryOptionCharge, so the courier's admin can add its own
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Pricing].[DeliveryRate] (
     [Id]                  BIGINT          IDENTITY (1, 1) NOT NULL,
@@ -20,7 +22,7 @@ CREATE TABLE [Pricing].[DeliveryRate] (
     [CodChargePercent]    DECIMAL (5, 2)  NOT NULL,
     [ReturnCharge]        DECIMAL (10, 2) NOT NULL,
     [DeliveryDays]        INT             NULL,
-    [UpdatedId]          BIGINT          NULL,
+    [UpdatedId]           BIGINT          NULL,
     [UpdatedOn]           DATETIME2 (7)   DEFAULT (getutcdate()) NOT NULL,
     [Created]             DATETIME2 (0)   DEFAULT (getutcdate()) NOT NULL,
     PRIMARY KEY CLUSTERED ([Id] ASC),

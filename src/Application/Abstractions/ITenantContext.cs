@@ -11,7 +11,9 @@ public sealed record TenantInfo(
     string SupportPhone,
     int MaxDeliveryAttempts,
     TimeOnly? RiderReturnTime,
-    int? MaxBusinessesPerAccount);
+    int? MaxBusinessesPerAccount,
+    TimeOnly? PickupTime,
+    int? StuckAfterDays);
 
 /// <summary>
 /// The tenant the current request or job runs for. Resolved once per request from the subdomain or the merchant's API
@@ -34,4 +36,7 @@ public interface ITenantCatalog
     Task<TenantInfo?> FindByIdAsync(long id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<TenantInfo>> ListAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Drops the cached list, so a courier's changed settings are read again on the next request.</summary>
+    void Forget();
 }

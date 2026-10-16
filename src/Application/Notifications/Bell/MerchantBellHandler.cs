@@ -32,7 +32,8 @@ public sealed record Bell(IReadOnlyList<Notice> Notices, int Unread)
 /// <summary>
 /// The merchant panel's bell, worked out when asked from what the courier already keeps, so nothing new is written as
 /// parcels move: parcels delivered (a line a day), partly delivered, held, refused at the door or back with the
-/// merchant; problems a hub flagged; return lists to confirm; answered requests; and payouts sent, over the last week.
+/// merchant; problems a hub flagged; return lists to confirm; answered requests; payouts sent and requests to be paid
+/// now that were refused, over the last week.
 /// A moderator is told only about what their permissions show. The merchant's own (the merchant filter).
 /// </summary>
 public class MerchantBellHandler(IAppDbContext db, ITenantContext tenantContext, TimeProvider time)
@@ -161,12 +162,26 @@ public class MerchantBellHandler(IAppDbContext db, ITenantContext tenantContext,
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        return payouts.Select(p => new Notice(
-            p.PaidOn,
-            NoticeTone.Money,
-            "wallet",
-            $"Payout {p.Number} of ৳{p.Amount:N0} was sent to {p.Method.DisplayName()} " +
-                (p.Method != PayoutMethod.Bank && PhoneNumber.Parse(p.Account) is { IsSuccess: true } phone ? phone.Value.Local : p.Account),
-            $"/Merchant/Payment/{p.Number}"));
+        // A request to be paid now that the courier paid shows as its payout; one it refused, with why
+        var refused = await db.PayoutRequests
+            .Where(r => r.Status == PayoutRequestStatus.Refused && r.AnsweredOn >= since)
+            .Select(r => new { AnsweredOn = r.AnsweredOn!.Value, r.Answer })
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return payouts
+            .Select(p => new Notice(
+                p.PaidOn,
+                NoticeTone.Money,
+                "wallet",
+                $"Payout {p.Number} of ৳{p.Amount:N0} was sent to {p.Method.DisplayName()} " +
+                    (p.Method != PayoutMethod.Bank && PhoneNumber.Parse(p.Account) is { IsSuccess: true } phone ? phone.Value.Local : p.Account),
+                $"/Merchant/Payment/{p.Number}"))
+            .Concat(refused.Select(r => new Notice(
+                r.AnsweredOn,
+                NoticeTone.Problem,
+                "message",
+                $"The courier did not pay your request early: {r.Answer}",
+                "/Merchant/Payments")));
     }
 }

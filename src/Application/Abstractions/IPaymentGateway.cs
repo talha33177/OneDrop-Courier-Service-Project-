@@ -63,7 +63,24 @@ public interface IPaymentGateway
 
     /// <summary>Asks the gateway what became of <paramref name="transactionId"/>.</summary>
     Task<GatewayLookup> LookUpAsync(string transactionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Asks the gateway to send a confirmed payment back to the payer: <paramref name="bankTransactionId"/> is the
+    /// gateway's id for the payment, <paramref name="reference"/> ours (the payment's number).
+    /// </summary>
+    Task<RefundAnswer> RefundAsync(
+        string bankTransactionId,
+        decimal amount,
+        string reference,
+        string remarks,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>What became of a refund the gateway said it was making, by the reference it gave.</summary>
+    Task<RefundAnswer> RefundStatusAsync(string refundReference, CancellationToken cancellationToken = default);
 }
+
+/// <summary>The gateway's answer about a refund, with its reference for it and, when refused, why.</summary>
+public sealed record RefundAnswer(RefundState State, string? Reference = null, string? Reason = null);
 
 /// <summary>The gateway refused or could not be reached; <see cref="Exception.Message"/> says why, in words a person can act on.</summary>
 public class PaymentGatewayException(string message, Exception? inner = null) : Exception(message, inner);

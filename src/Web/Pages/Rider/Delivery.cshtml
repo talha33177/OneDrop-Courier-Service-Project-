@@ -1,6 +1,7 @@
 @page "{code}"
 @model Web.Pages.Rider.DeliveryModel
 @inject ITenantContext TenantContext
+@inject MapsOptions Maps
 @{
     ViewData["Title"] = Model.Parcel.TrackingCode;
     var d = Model.Parcel;
@@ -22,6 +23,14 @@
             </div>
             <div class="text-right"><div class="task-cod">@Money.Taka(d.CodAmount)</div><div class="muted" style="font-size:12px">@(d.CodAmount == 0 ? "already paid" : "to collect")</div></div>
         </div>
+        @if (d.Tags.Any)
+        {
+            <div class="tag-row">@Statuses.Tags(d.Tags)</div>
+            @if (d.Tags.Handling is { } handling)
+            {
+                <p class="handling">@handling</p>
+            }
+        }
         <div class="task-meta">
             <div>@Icons.Get("map-pin") <span>@d.RecipientAddress, <strong>@d.Area</strong></span></div>
             <div>@Icons.Get("phone") <a href="tel:@Money.Phone(d.RecipientPhone)">@Money.Phone(d.RecipientPhone)</a></div>
@@ -31,10 +40,25 @@
                 <div>@Icons.Get("message") <span>@d.Note</span></div>
             }
         </div>
+        @if (d.Pin is { } pin && Maps.Configured)
+        {
+            <iframe class="map-embed" title="The door on the map" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="@MapLinks.Embed(Maps.ApiKey!, pin)"></iframe>
+        }
         <div class="task-actions">
             <a class="btn btn-outline" href="tel:@Money.Phone(d.RecipientPhone)">@Icons.Get("phone") Call</a>
-            <a class="btn btn-outline" href="https://www.google.com/maps/search/?api=1&query=@Uri.EscapeDataString(place)" target="_blank" rel="noopener">@Icons.Get("map-pin") Map</a>
+            @if (d.Pin is { } door)
+            {
+                <a class="btn btn-primary" href="@MapLinks.Directions(door)" target="_blank" rel="noopener">@Icons.Get("navigation") Navigate</a>
+            }
+            else
+            {
+                <a class="btn btn-outline" href="@MapLinks.Search(place)" target="_blank" rel="noopener">@Icons.Get("map-pin") Map</a>
+            }
         </div>
+        @if (d.Pin is not null)
+        {
+            <p class="hint">The merchant pinned the door: Navigate opens Google Maps with directions to it.</p>
+        }
     </div>
 
     @if (Model.Problem is not null)

@@ -21,10 +21,17 @@ public sealed record TrackingView(
     string City,
     DateTime Booked,
     DateOnly? ExpectedBy,
-    IReadOnlyList<TrackingStep> Steps);
+    IReadOnlyList<TrackingStep> Steps)
+{
+    /// <summary>The recipient may pay the cash on delivery online now (the amount shows only on the pay page).</summary>
+    public bool PayOnline { get; init; }
+
+    /// <summary>The cash on delivery was paid online: nothing is collected at the door.</summary>
+    public bool PaidOnline { get; init; }
+}
 
 /// <summary>The public tracking page, open to everyone on the courier's site.</summary>
-public class TrackHandler(IAppDbContext db, ITenantContext tenantContext)
+public class TrackHandler(IAppDbContext db, ITenantContext tenantContext, IPaymentGateway gateway)
 {
     public static readonly Error NotFound =
         Error.NotFound("track.notFound", "We could not find a parcel with that tracking code. Check it and try again.");
@@ -45,7 +52,7 @@ public class TrackHandler(IAppDbContext db, ITenantContext tenantContext)
             join area in db.Areas on parcel.AreaId equals area.Id
             join zone in db.Zones on area.ZoneId equals zone.Id
             where parcel.TrackingCode == code
-            select new { parcel.Id, parcel.TrackingCode, parcel.Status, Merchant = merchant.Name, Area = area.Name, zone.City, parcel.Created, parcel.DueOn })
+            select new { parcel.Id, parcel.TrackingCode, parcel.Status, Merchant = merchant.Name, Area = area.Name, zone.City, parcel.Created, parcel.DueOn, Parcel = parcel })
             .AsNoTracking()
             .FirstOrDefaultAsync(cancellationToken);
         if (found is null)
@@ -75,6 +82,10 @@ public class TrackHandler(IAppDbContext db, ITenantContext tenantContext)
             {
                 When = tenant.Local(step.When),
                 Note = step.Status == ParcelStatus.OnHold ? step.Note : step.Status.DisplayName()
-            })]);
+            })])
+        {
+            PayOnline = gateway.IsAvailable && found.Parcel.CanBePaidOnline().IsSuccess,
+            PaidOnline = found.Parcel.PaidOnline is not null
+        };
     }
 }

@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Application;
 using Hangfire;
@@ -10,7 +12,9 @@ using Infrastructure;
 using Infrastructure.Jobs;
 using Infrastructure.Seeding;
 using Application.Abstractions;
+using Application.Common;
 using Web.Authentication;
+using Web.Display;
 using Web.Live;
 using Web.MultiTenancy;
 using Web.Pages.Dev;
@@ -32,6 +36,7 @@ builder.Services.AddSerilog((services, logger) => logger
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Tenant} {Message:lj}{NewLine}{Exception}"));
 
 builder.Services.Configure<TenancyOptions>(builder.Configuration.GetSection("Tenancy"));
+builder.Services.AddSingleton(builder.Configuration.GetSection("GoogleMaps").Get<MapsOptions>() ?? new MapsOptions());
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 var runJobs = builder.Configuration.GetValue<bool>("Jobs:Server");
@@ -48,6 +53,18 @@ builder.Services.ConfigureApplicationCookie(options =>
     // An API caller gets a status code, not the login page
     options.Events.OnRedirectToLogin = context => ApiAwareRedirect(context, StatusCodes.Status401Unauthorized);
     options.Events.OnRedirectToAccessDenied = context => ApiAwareRedirect(context, StatusCodes.Status403Forbidden);
+
+    // A cookie shown on another courier's host is refused outright by TenantUserGuardMiddleware. Checking its security
+    // stamp here would look the login up at the wrong courier, find nobody and quietly sign the visitor out instead
+    options.Events.OnValidatePrincipal = context =>
+    {
+        var current = context.HttpContext.RequestServices.GetRequiredService<ITenantContext>().TenantId;
+        var claimed = context.Principal?.FindFirst(AppClaims.TenantId)?.Value;
+
+        return claimed == current?.ToString(CultureInfo.InvariantCulture)
+            ? SecurityStampValidator.ValidatePrincipalAsync(context)
+            : Task.CompletedTask;
+    };
 });
 builder.Services
     .AddAuthentication()
@@ -72,12 +89,21 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<IOperationsFeed, OperationsFeed>();
 builder.Services.AddSingleton<ReceivedWebhooks>();
 builder.Services.AddScoped<MerchantPermissionFilter>();
+builder.Services.AddScoped<StaffPermissionFilter>();
 builder.Services.AddRazorPages(options =>
 {
     options.Conventions.AuthorizeFolder("/Merchant", Policies.MerchantPortal);
     options.Conventions.AuthorizeFolder("/Platform", Policies.PlatformAdmin);
     options.Conventions.AuthorizeFolder("/Hub", Policies.Operations);
-    options.Conventions.AuthorizeFolder("/Admin", Policies.OperatorAdmin);
+    options.Conventions.AuthorizeFolder("/Admin", Policies.Operations);
+
+    // The staff filter goes first: it leaves the person's rights on the request, which RememberHub reads
+    options.Conventions.AddFolderApplicationModelConvention(
+        "/Hub",
+        model => model.Filters.Add(new ServiceFilterAttribute(typeof(StaffPermissionFilter))));
+    options.Conventions.AddFolderApplicationModelConvention(
+        "/Admin",
+        model => model.Filters.Add(new ServiceFilterAttribute(typeof(StaffPermissionFilter))));
     options.Conventions.AddFolderApplicationModelConvention("/Hub", model => model.Filters.Add(new RememberHub()));
     options.Conventions.AddFolderApplicationModelConvention(
         "/Merchant",
@@ -96,6 +122,20 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Seed:De
             app.Configuration.GetValue<bool>("Seed:DemoActivity"));
 }
 
+// A live courier's first admin: a database deployed from nothing has nobody who can sign in (see AdminSetup)
+if (app.Configuration["Setup:AdminEmail"] is { Length: > 0 } adminEmail)
+{
+    await app.Services
+        .GetRequiredService<AdminSetup>()
+        .EnsureCourierAdminAsync(
+            app.Configuration["Tenancy:HomeCourier"] is { Length: > 0 } courier
+                ? courier
+                : throw new InvalidOperationException("Setup:AdminEmail needs Tenancy:HomeCourier, the courier to admin."),
+            adminEmail,
+            app.Configuration["Setup:AdminName"] is { Length: > 0 } adminName ? adminName : "Courier admin",
+            app.Configuration["Setup:AdminPassword"]);
+}
+
 if (runJobs)
 {
     app.Services.ScheduleJobs(app.Configuration);
@@ -107,7 +147,13 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseStatusCodePages();
+// An empty error answer (a mistyped address, too many tries): a page for people, problem details for API callers
+app.UseWhen(
+    context => context.Request.Path.StartsWithSegments("/api"),
+    api => api.UseStatusCodePages());
+app.UseWhen(
+    context => !context.Request.Path.StartsWithSegments("/api"),
+    pages => pages.UseStatusCodePagesWithReExecute("/Error"));
 app.UseSerilogRequestLogging();
 app.MapStaticAssets();
 app.UseRouting();

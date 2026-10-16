@@ -12,7 +12,10 @@
         <p>@p.Merchant · booked @p.Booked.ToString("d MMM yyyy, h:mm tt")@(p.MerchantReference is null ? "" : $" · invoice {p.MerchantReference}")</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-outline" asp-page="/Hub/Labels" asp-route-codes="@p.TrackingCode">@Icons.Get("printer") Reprint label</a>
+        @if (Model.MayOpen("/Hub/Labels"))
+        {
+            <a class="btn btn-outline" asp-page="/Hub/Labels" asp-route-codes="@p.TrackingCode">@Icons.Get("printer") Reprint label</a>
+        }
     </div>
 </div>
 
@@ -23,7 +26,7 @@
     <div class="alert alert-info">@Icons.Get("message")<div><strong>The merchant asked:</strong> @Statuses.Asked(request.Kind, request.CodAmount, request.NewCodAmount). "@request.Reason" An admin answers it under <a asp-page="/Admin/Requests">Requests</a>.</div></div>
 }
 
-@if (p.CanReweigh)
+@if (p.CanReweigh && Model.MayUse("Reweigh"))
 {
     <div class="card mb">
         <div class="card-head">
@@ -47,7 +50,7 @@
     </div>
 }
 
-@if (p.Issue is not null)
+@if (p.Issue is not null && Model.MayUse("ClearFlag"))
 {
     <div class="card mb">
         <div class="card-head">
@@ -64,7 +67,7 @@
         </div>
     </div>
 }
-else if (p.CanFlag)
+else if (p.Issue is null && p.CanFlag && Model.MayUse("Flag"))
 {
     <div class="card mb">
         <div class="card-body">
@@ -81,7 +84,7 @@ else if (p.CanFlag)
     </div>
 }
 
-@if (p.CanRequestReturn)
+@if (p.CanRequestReturn && Model.MayUse("Return"))
 {
     <div class="card mb">
         <div class="card-body">

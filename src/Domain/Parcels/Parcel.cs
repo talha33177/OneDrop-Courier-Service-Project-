@@ -14,7 +14,11 @@ public sealed record ParcelDetails(
     int WeightGrams,
     string? ItemDescription,
     string? Note,
-    ParcelCharges Charges);
+    ParcelCharges Charges)
+{
+    /// <summary>Where the door is, pinned on a map, so the rider can be guided to it; null when not pinned.</summary>
+    public GeoPoint? Pin { get; init; }
+}
 
 /// <summary>Everything needed to book a parcel.</summary>
 public sealed record NewParcel(long MerchantId, long PickupPointId, long PickupHubId, ParcelDetails Details)
@@ -33,7 +37,9 @@ public sealed record NewParcel(long MerchantId, long PickupPointId, long PickupH
 /// in three fields: <see cref="CurrentHubId"/> while at a hub, <see cref="TransferToHubId"/> while travelling between
 /// hubs and <see cref="RiderId"/> while a rider has it; at most one is set. Its charges and delivery time are worked
 /// out from the rate card when it is booked and never change after it is picked up; the day it is due
-/// (<see cref="DueOn"/>) is counted from the day the courier takes it. A hub can flag a problem on it
+/// (<see cref="DueOn"/>) is counted from the day the courier takes it. It goes at a speed
+/// (<see cref="SpeedId"/>) and says what is inside (<see cref="ProductTypeId"/>), each with its extra in the delivery charge,
+/// and may carry the door pinned on a map (<see cref="Pin"/>). A hub can flag a problem on it
 /// (<see cref="Issue"/>) for the courier to look at.
 /// </summary>
 public class Parcel : TenantEntity, IMerchantOwned
@@ -82,7 +88,30 @@ public class Parcel : TenantEntity, IMerchantOwned
 
     public string RecipientAddress { get; private set; } = "";
 
+    /// <summary>The door pinned on a map; both null when the merchant did not pin it.</summary>
+    public decimal? RecipientLatitude { get; private set; }
+
+    public decimal? RecipientLongitude { get; private set; }
+
+    public GeoPoint? Pin => GeoPoint.From(RecipientLatitude, RecipientLongitude) is { IsSuccess: true } point ? point.Value : null;
+
     public string? ItemDescription { get; private set; }
+
+    /// <summary>The speed it goes at (a <see cref="DeliveryOption"/>): regular, express, or another the courier sells.</summary>
+    public long SpeedId { get; private set; }
+
+    public DeliveryOption? Speed { get; private set; }
+
+    /// <summary>What is inside (a <see cref="DeliveryOption"/>), which says how to handle it (fragile, frozen and so on).</summary>
+    public long ProductTypeId { get; private set; }
+
+    public DeliveryOption? ProductType { get; private set; }
+
+    /// <summary>What the speed added when it was booked, part of <see cref="DeliveryCharge"/>; 0 for the default.</summary>
+    public decimal SpeedCharge { get; private set; }
+
+    /// <summary>The extra for what is inside it was booked at, part of <see cref="DeliveryCharge"/>; 0 for the default.</summary>
+    public decimal ProductCharge { get; private set; }
 
     /// <summary>What the merchant said the parcel weighs when booking it.</summary>
     public int WeightGrams { get; private set; }
@@ -144,14 +173,32 @@ public class Parcel : TenantEntity, IMerchantOwned
     /// <summary>When the problem was first flagged (UTC).</summary>
     public DateTime? IssueRaisedOn { get; private set; }
 
-    /// <summary>The cash collected at the door; set once delivered.</summary>
+    /// <summary>
+    /// What was collected for the merchant, set once delivered: the cash at the door plus what the recipient paid online
+    /// (<see cref="PaidOnline"/>). The rider's own cash is on the delivery attempt.
+    /// </summary>
     public decimal? CollectedAmount { get; private set; }
+
+    /// <summary>
+    /// The cash on delivery the recipient paid online before the parcel reached the door, as the gateway confirmed it;
+    /// null while it is to be paid at the door. Once paid, the cash on delivery no longer changes.
+    /// </summary>
+    public decimal? PaidOnline { get; private set; }
+
+    /// <summary>What the rider collects at the door: the cash on delivery less what was paid online.</summary>
+    public decimal AmountToCollect => CodAmount - (PaidOnline ?? 0);
 
     /// <summary>The COD charge on <see cref="CollectedAmount"/>; set once delivered.</summary>
     public decimal? CodCharge { get; private set; }
 
     /// <summary>When the parcel reached a final status: delivered, returned or cancelled (UTC).</summary>
     public DateTime? ClosedOn { get; private set; }
+
+    /// <summary>
+    /// When the status or where the parcel is (hub, between hubs, rider) last changed (UTC). Stamped on save, so a
+    /// note in its history, such as a flag or a weighing, does not count as a move.
+    /// </summary>
+    public DateTime MovedOn { get; private set; }
 
     public byte[] RowVersion { get; private set; } = [];
 
@@ -169,7 +216,13 @@ public class Parcel : TenantEntity, IMerchantOwned
     /// reaches a rate card that has changed since.
     /// </summary>
     public ParcelCharges Charges => new(
-        ServiceArea, DeliveryCharge, CodChargePercent, ReturnCharge, DeliveryDays, IncludedWeightGrams, BaseCharge, ExtraKgCharge);
+        ServiceArea, DeliveryCharge, CodChargePercent, ReturnCharge, DeliveryDays, IncludedWeightGrams, BaseCharge, ExtraKgCharge)
+    {
+        SpeedId = SpeedId,
+        ProductTypeId = ProductTypeId,
+        SpeedCharge = SpeedCharge,
+        ProductCharge = ProductCharge
+    };
 
     public bool IsFinal => Status.IsFinal();
 
@@ -255,9 +308,10 @@ public class Parcel : TenantEntity, IMerchantOwned
 
     /// <summary>
     /// A rider collected the parcel from the merchant on <paramref name="today"/> (the courier's date), which starts the
-    /// days it has to be delivered in. Collecting it again changes nothing.
+    /// days it has to be delivered in. The pickup van <paramref name="riderId"/> carries it until the hub scans it in,
+    /// so what the van holds is known. Collecting it again changes nothing.
     /// </summary>
-    public Result<ScanOutcome> PickUp(DateOnly today)
+    public Result<ScanOutcome> PickUp(DateOnly today, long? riderId = null)
     {
         if (Status == ParcelStatus.PickedUp)
         {
@@ -270,6 +324,7 @@ public class Parcel : TenantEntity, IMerchantOwned
         }
 
         DueOn = DeliveryDays is { } days ? today.AddDays(days) : null;
+        RiderId = riderId;
         MoveTo(ParcelStatus.PickedUp, "Picked up from the merchant");
 
         return ScanOutcome.Recorded;
@@ -417,8 +472,10 @@ public class Parcel : TenantEntity, IMerchantOwned
     }
 
     /// <summary>
-    /// The rider handed the parcel over and collected <paramref name="collected"/>: the whole cash on delivery
-    /// (delivered), or less when the recipient kept only part of it (partly delivered, with the reason).
+    /// The rider handed the parcel over and collected <paramref name="collected"/> in cash: all that was left to collect
+    /// (delivered), or less when the recipient kept only part of it (partly delivered, with the reason). A parcel paid
+    /// online has nothing left to collect, so it is only ever delivered whole; one the recipient does not keep is
+    /// refused, and the payment goes back to them.
     /// </summary>
     public Result Deliver(decimal collected, string? reason, DateTime now)
     {
@@ -427,14 +484,16 @@ public class Parcel : TenantEntity, IMerchantOwned
             return NotOutForDelivery();
         }
 
-        if (collected < 0 || collected > CodAmount)
+        if (collected < 0 || collected > AmountToCollect)
         {
             return Error.Validation(
                 "parcel.deliver.amount",
-                $"The amount collected must be between ৳0 and the cash on delivery, ৳{CodAmount:N0}.");
+                PaidOnline is null
+                    ? $"The amount collected must be between ৳0 and the cash on delivery, ৳{CodAmount:N0}."
+                    : "This parcel was paid online: collect nothing at the door.");
         }
 
-        var partly = collected < CodAmount;
+        var partly = collected < AmountToCollect;
         var why = reason.NullIfBlank();
         if (partly && why is null)
         {
@@ -444,13 +503,14 @@ public class Parcel : TenantEntity, IMerchantOwned
         }
 
         Attempts++;
-        CollectedAmount = collected;
-        CodCharge = ParcelCharges.CodCharge(collected, CodChargePercent);
+        CollectedAmount = collected + (PaidOnline ?? 0);
+        CodCharge = ParcelCharges.CodCharge(CollectedAmount.Value, CodChargePercent);
         RiderId = null;
         ClosedOn = now;
         MoveTo(
             partly ? ParcelStatus.PartlyDelivered : ParcelStatus.Delivered,
-            partly ? $"Partly delivered, ৳{collected:N0} collected: {why}" : $"Delivered, ৳{collected:N0} collected");
+            partly ? $"Partly delivered, ৳{collected:N0} collected: {why}"
+                : PaidOnline is { } paid ? $"Delivered, ৳{paid:N0} paid online" : $"Delivered, ৳{collected:N0} collected");
 
         return Result.Success();
     }
@@ -641,6 +701,69 @@ public class Parcel : TenantEntity, IMerchantOwned
     }
 
     /// <summary>
+    /// Whether the recipient may pay the cash on delivery online now: there is cash to pay, it has not been paid, and
+    /// the parcel is still on its way to them.
+    /// </summary>
+    public Result CanBePaidOnline()
+    {
+        if (CodAmount <= 0)
+        {
+            return Error.Conflict("parcel.pay.nothing", $"{TrackingCode} has no cash on delivery: there is nothing to pay.");
+        }
+
+        if (PaidOnline is not null)
+        {
+            return Error.Conflict("parcel.pay.paid", $"{TrackingCode} is already paid. Nothing is collected at the door.");
+        }
+
+        if (Status is not (ParcelStatus.Pending or ParcelStatus.PickedUp or ParcelStatus.AtHub or ParcelStatus.InTransit
+            or ParcelStatus.OnHold or ParcelStatus.OutForDelivery))
+        {
+            return Error.Conflict(
+                "parcel.pay.status",
+                $"{TrackingCode} is {Status.DisplayName().ToLowerInvariant()}, so it can no longer be paid online.");
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// The gateway confirmed the recipient paid <paramref name="amount"/> online under payment <paramref name="number"/>:
+    /// the rider collects nothing, and the merchant is paid the cash on delivery as if collected at the door. Refused
+    /// when the parcel can no longer be paid, or for another amount than its cash on delivery: that money goes back.
+    /// </summary>
+    public Result TakeOnlinePayment(decimal amount, string number)
+    {
+        var payable = CanBePaidOnline();
+        if (payable.IsFailure)
+        {
+            return payable;
+        }
+
+        if (amount != CodAmount)
+        {
+            return Error.Conflict(
+                "parcel.pay.amount",
+                $"{number} paid ৳{amount:N0}, but {TrackingCode}'s cash on delivery is ৳{CodAmount:N0}.");
+        }
+
+        PaidOnline = amount;
+        events.Add(new ParcelEvent(this, Status, $"Cash on delivery of ৳{amount:N0} paid online by the recipient ({number})", null));
+
+        return Result.Success();
+    }
+
+    /// <summary>A parcel paid online that will now never reach its recipient: the payment must go back to them.</summary>
+    public bool OwesRefund => PaidOnline is not null && Status is ParcelStatus.Cancelled or ParcelStatus.Returned;
+
+    private Error PaidAlready()
+    {
+        return Error.Conflict(
+            "parcel.cod.paid",
+            $"The recipient already paid {TrackingCode}'s ৳{PaidOnline:N0} online, so its cash on delivery cannot change.");
+    }
+
+    /// <summary>
     /// The cash on delivery becomes <paramref name="amount"/>, at the merchant's request and with the courier's
     /// approval: the rider collects the new amount and the COD charge follows it. Only while the parcel is on its way.
     /// </summary>
@@ -656,6 +779,11 @@ public class Parcel : TenantEntity, IMerchantOwned
         if (amount is < 0 or > MaxCodAmount)
         {
             return Error.Validation("parcel.cod", $"The cash on delivery must be between ৳0 and ৳{MaxCodAmount:N0}.");
+        }
+
+        if (PaidOnline is not null)
+        {
+            return PaidAlready();
         }
 
         var was = CodAmount;
@@ -800,6 +928,11 @@ public class Parcel : TenantEntity, IMerchantOwned
             return Error.Validation("parcel.cod", $"The cash on delivery must be between ৳0 and ৳{MaxCodAmount:N0}.");
         }
 
+        if (PaidOnline is not null && details.CodAmount != CodAmount)
+        {
+            return PaidAlready();
+        }
+
         if (details.ItemDescription?.Trim().Length > 200 || details.Note?.Trim().Length > 500)
         {
             return Error.Validation("parcel.text", "The item description is at most 200 characters and the note 500.");
@@ -810,6 +943,8 @@ public class Parcel : TenantEntity, IMerchantOwned
         RecipientName = name;
         RecipientPhone = details.RecipientPhone.Value;
         RecipientAddress = address;
+        RecipientLatitude = details.Pin?.Latitude;
+        RecipientLongitude = details.Pin?.Longitude;
         CodAmount = details.CodAmount;
         WeightGrams = details.WeightGrams;
         ItemDescription = details.ItemDescription.NullIfBlank();
@@ -822,6 +957,10 @@ public class Parcel : TenantEntity, IMerchantOwned
         IncludedWeightGrams = details.Charges.IncludedWeightGrams;
         BaseCharge = details.Charges.BaseCharge;
         ExtraKgCharge = details.Charges.ExtraKgCharge;
+        SpeedId = details.Charges.SpeedId;
+        ProductTypeId = details.Charges.ProductTypeId;
+        SpeedCharge = details.Charges.SpeedCharge;
+        ProductCharge = details.Charges.ProductCharge;
 
         return Result.Success();
     }

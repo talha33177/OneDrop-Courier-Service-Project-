@@ -94,19 +94,6 @@ public class SettingsModel(
         return Answer(await payoutAccounts.RemoveAsync(id, cancellationToken), "The account is removed.");
     }
 
-    public async Task<IActionResult> OnPostPointAsync(
-        long? id,
-        long areaId,
-        string? name,
-        string? address,
-        string? phone,
-        CancellationToken cancellationToken)
-    {
-        var saved = await account.SavePickupPointAsync(id, areaId, name, address, phone, cancellationToken);
-
-        return Answer(saved, id is null ? "Pickup point added." : "Pickup point saved.");
-    }
-
     public async Task<IActionResult> OnPostDefaultAsync(long id, CancellationToken cancellationToken)
     {
         var saved = await account.MakeDefaultAsync(id, cancellationToken);

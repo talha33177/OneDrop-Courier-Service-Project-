@@ -5,7 +5,7 @@
     ViewData["Title"] = "Choose your hub";
     var what = Model.Next switch
     {
-        "Pickups" => "to see its pickup requests",
+        "Pickups" => "to see its pickups for today",
         "Assign" => "to give its parcels to riders",
         "Scan" => "to scan parcels",
         "Runs" => "to close its riders' runs",
@@ -14,7 +14,7 @@
 
     void HubCard(HubWork work)
     {
-        <a class="card hub-card @(work.Total == 0 ? "quiet" : "")" href="@Url.Page($"/Hub/{Model.Next}", new { hub = work.Hub.Code })">
+        <a class="card hub-card @(work.Total == 0 ? "quiet" : "")" href="@Url.Page($"/Hub/{Model.Next}", new { hub = work.Hub.Code, mode = Model.Mode })">
             <div class="hub-card-head"><span class="code-link">@work.Hub.Code</span> <strong>@work.Hub.Name</strong></div>
             <div class="cell-sub">@work.Hub.Address</div>
             <div class="hub-card-counts">

@@ -13,7 +13,7 @@
         (active, "Get approved", "We check new merchants within a working day.", null, null),
         (d.HasPayoutAccount, "Tell us where to pay you", "A bKash, Nagad or bank account for your cash.", "/Merchant/Settings", "Add account"),
         (s.Total > 0, "Book your first parcel", "Recipient, address, area and the cash to collect.", "/Merchant/NewParcel", "Book a parcel"),
-        (d.HandedOver, "Hand your parcels over", "Ask for a pickup, or drop them at the nearest hub.", "/Merchant/Pickups", "Request pickup")
+        (d.HandedOver, "Hand your parcels over", "Our daily pickup collects them by itself, or drop them at the nearest hub.", "/Merchant/Pickups", "Pickup times")
     ];
     var doneCount = steps.Count(step => step.Done);
     var current = Array.FindIndex(steps, step => !step.Done);
@@ -26,7 +26,7 @@
     // Every stage a parcel can be in right now, in the order a parcel passes through them; a returned parcel collects nothing
     (string Tab, string Name, string Help, string Icon, string Tone, int Count, decimal? Cash, bool Attention)[] stages =
     [
-        ("Pending", "Waiting for pickup", "Booked, not collected from you yet", "clock", "amber", s.Pending, d.Cod.Pending, s.Pending > 0 && !d.PickupOpen && active),
+        ("Pending", "Waiting for pickup", "Booked, not collected from you yet", "clock", "amber", s.Pending, d.Cod.Pending, false),
         ("InTransit", "In transit", "At our hubs or on the road", "truck", "blue", s.InTransit, d.Cod.InTransit, false),
         ("OutForDelivery", "Out for delivery", "With a rider today", "bike", "dark", s.OutForDelivery, d.Cod.OutForDelivery, false),
         ("OnHold", "On hold", "The customer asked for another day", "pause", "orange", s.OnHold, d.Cod.OnHold, false),
@@ -100,15 +100,27 @@ else if (d.Status == MerchantStatus.Suspended)
         </div>
     </div>
 }
-else if (active && s.Pending > 0 && !d.PickupOpen && May(MerchantPermissions.Booking))
+else if (active && s.Pending > 0 && May(MerchantPermissions.Booking))
 {
+    var pickupLeaves = tenant.PickupTime is { } leaves ? $" The truck leaves the hub at {Statuses.Clock(leaves)}." : "";
     <div class="next-step">
         <span class="stat-icon">@Icons.Get("truck")</span>
         <div class="next-step-text">
-            <strong>@s.Pending parcel@(s.Pending == 1 ? " is" : "s are") waiting to be collected</strong>
-            <span>Ask for a pickup and a rider comes to your shop, or drop them at the nearest hub.</span>
+            @if (d.PickupToday > 0)
+            {
+                <strong>@d.PickupToday parcel@(d.PickupToday == 1 ? " goes" : "s go") with today's pickup</strong>
+                <span>Have @(d.PickupToday == 1 ? "it" : "them") packed and labelled.@pickupLeaves The truck takes what you book until it reaches you.@(d.PickupLater > 0 ? $" {d.PickupLater} booked after it came go{(d.PickupLater == 1 ? "es" : "")} tomorrow." : "")</span>
+            }
+            else
+            {
+                <strong>@d.PickupLater parcel@(d.PickupLater == 1 ? " goes" : "s go") with tomorrow's pickup</strong>
+                <span>The truck has already been to @(d.PickupLater == 1 ? "its" : "their") pickup point today.</span>
+            }
         </div>
-        <a class="btn btn-primary" asp-page="/Merchant/Pickups">Request a pickup @Icons.Get("arrow-right")</a>
+        @if (May(MerchantPermissions.Parcels))
+        {
+            <a class="btn btn-outline" asp-page="/Merchant/Labels">Print labels @Icons.Get("arrow-right")</a>
+        }
     </div>
 }
 
@@ -163,7 +175,7 @@ else if (active && s.Pending > 0 && !d.PickupOpen && May(MerchantPermissions.Boo
                 @if (May(MerchantPermissions.Booking))
                 {
                     <a class="quick-tile" asp-page="/Merchant/NewParcel"><span class="stat-icon">@Icons.Get("plus")</span> Book a parcel</a>
-                    <a class="quick-tile" asp-page="/Merchant/Pickups"><span class="stat-icon">@Icons.Get("truck")</span> Request a pickup</a>
+                    <a class="quick-tile" asp-page="/Merchant/Pickups"><span class="stat-icon">@Icons.Get("truck")</span> Pickup times</a>
                     <a class="quick-tile" asp-page="/Merchant/BulkUpload"><span class="stat-icon">@Icons.Get("upload")</span> Bulk upload</a>
                 }
                 @if (May(MerchantPermissions.Tools))

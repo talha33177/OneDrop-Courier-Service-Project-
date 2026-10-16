@@ -132,7 +132,7 @@ public partial class OnlinePaymentsTests(WebAppFactory factory) : AppTests(facto
         // Another courier's admin cannot credit it; this courier's admin does, once
         var rival = await SignInAsync("rival", "admin@rival.test");
         Assert.Contains("not found", await rival.SubmitAsync("/Admin/Payouts", $"/Admin/Payouts?handler=Credit&number={second.Number}"));
-        Assert.Contains("was credited", await admin.SubmitAsync("/Admin/Payouts", $"/Admin/Payouts?handler=Credit&number={second.Number}"));
+        Assert.Contains("was accepted", await admin.SubmitAsync("/Admin/Payouts", $"/Admin/Payouts?handler=Credit&number={second.Number}"));
         Assert.Contains("not waiting for a check", await admin.SubmitAsync("/Admin/Payouts", $"/Admin/Payouts?handler=Credit&number={second.Number}"));
         Assert.Equal(OnlinePaymentStatus.Paid, (await PaymentAsync(risky)).Status);
         Assert.Equal(0, await BalanceAsync(shop));

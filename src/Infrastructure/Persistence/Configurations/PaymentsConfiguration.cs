@@ -50,6 +50,24 @@ public class PayoutConfiguration : IEntityTypeConfiguration<Payout>
     }
 }
 
+public class PayoutRequestConfiguration : IEntityTypeConfiguration<PayoutRequest>
+{
+    public void Configure(EntityTypeBuilder<PayoutRequest> builder)
+    {
+        builder.MapTenantOwned(Schemas.Payments);
+        builder.Property(r => r.AmountAsked).IsMoney();
+        builder.Property(r => r.Answer).HasMaxLength(PayoutRequest.MaxAnswerLength);
+        builder.Ignore(r => r.IsOpen);
+        builder.Property(r => r.RowVersion).IsRowVersion();
+        builder.HasOne<Merchant>().WithMany().HasForeignKey(r => r.MerchantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Payout>().WithMany().HasForeignKey(r => r.PayoutId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(r => r.MerchantId)
+            .IsUnique()
+            .HasFilter("[Status] = 1")
+            .HasDatabaseName("UX_PayoutRequest_Merchant_Open");
+    }
+}
+
 public class OnlinePaymentConfiguration : IEntityTypeConfiguration<OnlinePayment>
 {
     public void Configure(EntityTypeBuilder<OnlinePayment> builder)
@@ -73,6 +91,12 @@ public class OnlinePaymentConfiguration : IEntityTypeConfiguration<OnlinePayment
         builder.Property(p => p.RowVersion).IsRowVersion();
         builder.HasOne<Merchant>().WithMany().HasForeignKey(p => p.MerchantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(p => p.LedgerEntry).WithMany().HasForeignKey(p => p.LedgerEntryId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Parcel>().WithMany().HasForeignKey(p => p.ParcelId).OnDelete(DeleteBehavior.Restrict);
+        builder.Property(p => p.RefundReference).HasMaxLength(80);
+        builder.HasIndex(p => p.ParcelId)
+            .IsUnique()
+            .HasFilter("[Status] = 2 AND [ParcelId] IS NOT NULL")
+            .HasDatabaseName("UX_OnlinePayment_Parcel_Paid");
         builder.HasIndex(p => p.Number).IsUnique().HasDatabaseName("UX_OnlinePayment_Number");
         builder.HasIndex(p => p.TransactionId).IsUnique().HasDatabaseName("UX_OnlinePayment_TransactionId");
         builder.HasIndex(p => p.LedgerEntryId)

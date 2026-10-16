@@ -35,6 +35,7 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
         var phone = NewPhone();
         var waiting = await BookAsync(shop.ApiKey, area: "Pallabi", phone: phone);
         var outCode = await BookAsync(shop.ApiKey, area: "Pallabi", phone: phone);
+        var shopPoint = await QueryAsync("onedrop", db => db.PickupPoints.Where(p => p.MerchantId == shop.Id).Select(p => p.Id).FirstAsync(Cancel));
         var payout = await PaidAsync(shop);
         var returnList = await ReturnListAsync(shop, rider);
         await QueryAsync("onedrop", async db =>
@@ -92,6 +93,12 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
                 Assert.Contains("could not find a parcel", await publicRival.PageAsync($"/Track?code={outCode}"));
                 Assert.DoesNotContain(phone[3..], await Visit("onedrop").PageAsync($"/Track?code={outCode}"));
             }),
+            // The amount shows only for the parcel's own phone, and never on another courier's site
+            ("/Track/Pay", async () =>
+            {
+                Assert.DoesNotContain("Cash on delivery</dt>", await Visit("onedrop").PageAsync($"/Track/Pay/{outCode}"));
+                Assert.Contains("could not find a parcel", await publicRival.SubmitAsync($"/Track/Pay/{outCode}", $"/Track/Pay/{outCode}?handler=Check", ("Phone", phone)));
+            }),
             ("/Coverage", async () => Assert.DoesNotContain("Gulshan", await publicRival.PageAsync("/Coverage"))),
             ("/Error", Fixed("the error page shows no record")),
             ("/Account/AccessDenied", Fixed("a fixed message")),
@@ -135,6 +142,7 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
                 Assert.Equal(HttpStatusCode.NotFound, opened.StatusCode);
             }),
             ("/Merchant/Picture", async () => Assert.Equal(HttpStatusCode.NotFound, (await other.GetAsync($"/Merchant/Picture/{shop.Id}")).StatusCode)),
+            ("/Merchant/PickupPoint", async () => await NotFoundForOtherShopsAsync($"/Merchant/PickupPoint/{shopPoint}")),
             ("/Merchant/NewBusiness", Fixed("a blank form; it adds only to the signed-in merchant's own account")),
             ("/Merchant/Parcels", async () => await OnlyTheShopSeesAsync("/Merchant/Parcels", outCode)),
             ("/Merchant/Parcel", async () => await NotFoundForOtherShopsAsync($"/Merchant/Parcel/{outCode}")),
@@ -259,6 +267,11 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
             }),
             ("/Admin/NewMerchant", async () => Assert.DoesNotContain("Gulshan", await rivalAdmin.PageAsync("/Admin/NewMerchant"))),
             ("/Admin/Riders", async () => Assert.DoesNotContain("Rafiq Hasan", await rivalAdmin.PageAsync("/Admin/Riders"))),
+            ("/Admin/Rider", async () =>
+            {
+                Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync($"/Admin/Rider/{rider.Id}")).StatusCode);
+                Assert.Equal(HttpStatusCode.NotFound, (await rivalAdmin.GetAsync($"/Admin/Rider/{rider.Id}")).StatusCode);
+            }),
             ("/Admin/Payouts", async () =>
             {
                 Assert.Contains(payout, await admin.PageAsync("/Admin/Payouts"));
@@ -280,6 +293,8 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
                 Assert.DoesNotContain(outCode, await rivalAdmin.PageAsync("/Admin/Requests"));
             }),
             ("/Admin/Rates", async () => Assert.DoesNotContain("৳120", await rivalAdmin.PageAsync("/Admin/Rates"))),
+            // OneDrop sells frozen goods for ৳50; the rival courier prices its own delivery types
+            ("/Admin/DeliveryTypes", async () => Assert.DoesNotContain("value=\"50\"", await rivalAdmin.PageAsync("/Admin/DeliveryTypes"))),
             ("/Admin/Coverage", async () =>
             {
                 Assert.DoesNotContain("Gulshan", await rivalAdmin.PageAsync("/Admin/Coverage"));
@@ -290,7 +305,27 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
             }),
             // The seeded van carries 300 parcels for OneDrop only; the rival courier sets its own capacities
             ("/Admin/Vehicles", async () => Assert.DoesNotContain("value=\"300\"", await rivalAdmin.PageAsync("/Admin/Vehicles"))),
+            // The launch courier's SMS sender is its own; the rival's admin sees only the rival's settings
+            ("/Admin/Settings", async () =>
+            {
+                Assert.Contains("value=\"OneDrop\"", await admin.PageAsync("/Admin/Settings"));
+                Assert.DoesNotContain("value=\"OneDrop\"", await rivalAdmin.PageAsync("/Admin/Settings"));
+            }),
+            // StuckParcelsTests makes a parcel stuck and checks the rival courier cannot see it; here the page only answers
+            ("/Admin/Stuck", async () => Assert.DoesNotContain(outCode, await rivalAdmin.PageAsync("/Admin/Stuck"))),
+            // StaffTests checks the rival's admin can neither see nor stop this courier's people
+            ("/Admin/Staff", async () =>
+            {
+                Assert.Contains("hub@onedrop.test", await admin.PageAsync("/Admin/Staff"));
+                Assert.DoesNotContain("hub@onedrop.test", await rivalAdmin.PageAsync("/Admin/Staff"));
+            }),
             ("/Admin/Messages", async () => Assert.DoesNotContain(outCode, await rivalAdmin.PageAsync("/Admin/Messages"))),
+            ("/Admin/Guide", async () =>
+            {
+                // Holds no data: an admin reads it, a merchant is kept out
+                Assert.Contains("Set up once, in this order", await admin.PageAsync("/Admin/Guide"));
+                Assert.DoesNotContain("Set up once, in this order", await (await owner.GetAsync("/Admin/Guide")).Content.ReadAsStringAsync(Cancel));
+            }),
 
             // The platform's list of couriers and the jobs dashboard are for platform admins only
             ("/Platform/Tenants", async () => Assert.NotEqual(HttpStatusCode.OK, (await Visit("", "").GetAsync("/Platform/Tenants")).StatusCode)),

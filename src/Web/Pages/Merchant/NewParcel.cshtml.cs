@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Application.Abstractions;
+using Application.Common;
 using Application.Merchants.Account;
 using Application.Merchants.Admin;
 using Application.Network.ListAreas;
@@ -18,7 +20,10 @@ public class NewParcelModel(
     CreateParcelHandler handler,
     QuoteHandler quotes,
     ListAreasHandler areas,
-    MerchantAccountHandler account) : PageModel
+    MerchantAccountHandler account,
+    IMapLinks mapLinks,
+    ITenantContext tenantContext,
+    TimeProvider time) : PageModel
 {
     [BindProperty]
     public ParcelForm Input { get; set; } = new();
@@ -48,22 +53,39 @@ public class NewParcelModel(
             return Page();
         }
 
-        TempData["Done"] = $"Parcel {booked.Value.TrackingCode} is booked for {booked.Value.Area}. Charge ৳{booked.Value.TotalCharge:N0}.";
+        var tenant = tenantContext.Require();
+        var pickup = booked.Value.PickupOn is { } day
+            ? $" It goes {Statuses.PickupWith(day, tenant.Today(time.GetUtcNow().UtcDateTime), tenant.PickupTime)}."
+            : "";
+        TempData["Done"] = $"Parcel {booked.Value.TrackingCode} is booked for {booked.Value.Area}. Charge ৳{booked.Value.TotalCharge:N0}.{pickup}";
 
         return next == "another"
             ? RedirectToPage()
             : RedirectToPage("/Merchant/Parcel", new { code = booked.Value.TrackingCode });
     }
 
-    /// <summary>The live quote beside the form, as JSON.</summary>
+    /// <summary>
+    /// The live quote beside the form, as JSON, with what each speed and kind of contents adds on the route and how
+    /// soon each speed delivers (missing where it is not offered). A speed or contents the route does not take is
+    /// quoted at the courier's defaults, with the reason, so the form can say why.
+    /// </summary>
     public async Task<IActionResult> OnGetQuoteAsync(
         long? areaId,
         long? pickupPointId,
         decimal weightKg,
         decimal codAmount,
+        string? speed,
+        string? productType,
         CancellationToken cancellationToken)
     {
-        var quote = await quotes.QuoteAsync(areaId, null, pickupPointId, weightKg, codAmount, cancellationToken);
+        var quote = await quotes.QuoteAsync(areaId, null, pickupPointId, weightKg, codAmount, speed, productType, cancellationToken);
+        string? problem = null;
+        if (quote.Error?.Code is "parcel.speed" or "parcel.productType")
+        {
+            problem = quote.Error.Message;
+            quote = await quotes.QuoteAsync(areaId, null, pickupPointId, weightKg, codAmount, cancellationToken: cancellationToken);
+        }
+
         if (quote.IsFailure)
         {
             return BadRequest();
@@ -79,8 +101,27 @@ public class NewParcelModel(
             q.CodCharge,
             q.Total,
             q.ReturnCharge,
-            when = q.DeliveryDays is { } days ? Statuses.AfterPickup(days) : null
+            when = q.DeliveryDays is { } days ? Statuses.AfterPickup(days) : null,
+            q.SpeedCharge,
+            q.ProductCharge,
+            q.SpeedName,
+            productName = q.ProductName,
+            speeds = q.Speeds.ToDictionary(
+                o => o.Code,
+                o => new { extra = o.Charge, when = o.DeliveryDays is { } d ? Statuses.AfterPickup(d) : null }),
+            products = q.Contents.ToDictionary(o => o.Code, o => o.Charge),
+            problem
         });
+    }
+
+    /// <summary>
+    /// The pin in what the merchant pasted, as JSON: coordinates, a Google Maps link that holds them, or a short
+    /// maps.app.goo.gl link, which is opened first. A link to a named place without coordinates comes back as the
+    /// place's name for the map to look up.
+    /// </summary>
+    public async Task<IActionResult> OnGetPinAsync(string? link, CancellationToken cancellationToken)
+    {
+        return new JsonResult(await PastedPin.ReadAsync(mapLinks, link, cancellationToken));
     }
 
     private async Task LoadAsync(CancellationToken cancellationToken)

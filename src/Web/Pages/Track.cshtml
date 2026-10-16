@@ -58,6 +58,20 @@
                         }
                     </div>
                 </div>
+                @if (parcel.PaidOnline)
+                {
+                    <div class="alert alert-success mt" style="margin-bottom:0">@Icons.Get("check-circle")<div><strong>Paid online.</strong> There is nothing to pay the rider.</div></div>
+                }
+                else if (parcel.PayOnline)
+                {
+                    <div class="alert alert-info mt" style="margin-bottom:0">
+                        @Icons.Get("wallet")
+                        <div>
+                            <strong>Pay before it arrives?</strong> Pay the cash on delivery online with bKash, Nagad or a card, and give the rider nothing at the door.
+                            <div style="margin-top:8px"><a class="btn btn-primary btn-sm" asp-page="/Track/Pay" asp-route-code="@parcel.TrackingCode">Pay online</a></div>
+                        </div>
+                    </div>
+                }
                 <hr />
                 <ol class="timeline">
                     @foreach (var step in parcel.Steps)

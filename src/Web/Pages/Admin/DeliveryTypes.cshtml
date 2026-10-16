@@ -1,0 +1,378 @@
+@page
+@using Application.Pricing.DeliveryOptions
+@using Application.Pricing.Rates
+@using Domain.Pricing
+@model Web.Pages.Admin.DeliveryTypesModel
+@{
+    ViewData["Title"] = "Delivery types";
+    (DeliveryOptionKind Kind, string Title, string Text, string Add, string Example)[] kinds =
+    [
+        (DeliveryOptionKind.Speed, "Delivery speeds", "How fast a parcel goes. The merchant picks one when booking.", "Add a speed", "Same day"),
+        (DeliveryOptionKind.Contents, "What is inside", "What the merchant says is in the parcel, so hubs and riders know how to handle it.", "Add a kind of contents", "Electronics")
+    ];
+    var areas = DeliveryTypesModel.Areas;
+    RateRow? RateIn(ServiceArea area) => Model.Rates.FirstOrDefault(r => r.ServiceArea == area);
+
+    // The worked example at the top: the first extra on sale inside the city of each kind
+    var inside = RateIn(ServiceArea.InsideCity);
+    OptionRow? Sample(DeliveryOptionKind kind) => Model.Options.FirstOrDefault(o =>
+        o.Kind == kind && !o.Archived && !o.IsDefault && o.ChargeIn(ServiceArea.InsideCity) > 0);
+    var sampleSpeed = Sample(DeliveryOptionKind.Speed);
+    var sampleContents = Sample(DeliveryOptionKind.Contents);
+    var sampleTotal = (inside?.BaseCharge ?? 0) + (sampleSpeed?.ChargeIn(ServiceArea.InsideCity) ?? 0) +
+        (sampleContents?.ChargeIn(ServiceArea.InsideCity) ?? 0);
+
+    // What a row of the overview shows in one service area
+    void Price(OptionRow o, ServiceArea area)
+    {
+        if (o.ChargeIn(area) is not { } extra)
+        {
+            <span class="faint">Not offered</span>
+            return;
+        }
+
+        if (extra == 0)
+        {
+            <span class="strong">No extra</span>
+        }
+        else
+        {
+            <span class="strong">+@Money.Taka(extra)</span>
+        }
+
+        if (o.Kind == DeliveryOptionKind.Speed)
+        {
+            <div class="cell-sub">@Statuses.Promise(o.DaysIn(area) ?? RateIn(area)?.DeliveryDays)</div>
+        }
+    }
+
+    // The edit window of one option, or the empty one that adds a new option of a kind
+    async Task Editor(OptionRow? o, DeliveryOptionKind kind, string title)
+    {
+        var key = o?.Id.ToString() ?? $"new-{kind}";
+        var icon = o?.Icon ?? (kind == DeliveryOptionKind.Speed ? "truck" : "package");
+        var example = kinds.First(k => k.Kind == kind).Example;
+        <dialog class="sheet" id="editor-@key" aria-labelledby="editor-title-@key">
+            <form method="post" asp-page-handler="@(o is null ? "Add" : "Save")" asp-route-id="@o?.Id" asp-route-kind="@(o is null ? kind.ToString() : null)" data-option-editor>
+                <div class="sheet-head">
+                    <h2 id="editor-title-@key">@title</h2>
+                    <button type="button" class="sheet-close" data-close aria-label="Close">@Icons.Get("x")</button>
+                </div>
+                <div class="sheet-body">
+                    <section class="sheet-step">
+                        <h3><span class="sheet-step-num">1</span> How merchants see it</h3>
+                        <div class="sheet-split">
+                            <div>
+                                <div class="field">
+                                    <label for="name-@key">Name</label>
+                                    <input type="text" id="name-@key" name="Name" value="@o?.Name" maxlength="@DeliveryOption.MaxNameLength" required placeholder="e.g. @example" data-preview="name" />
+                                </div>
+                                <div class="field">
+                                    <label for="description-@key">Short description <span class="muted">(optional)</span></label>
+                                    <input type="text" id="description-@key" name="Description" value="@o?.Description" maxlength="@DeliveryOption.MaxDescriptionLength" placeholder="@(kind == DeliveryOptionKind.Speed ? "e.g. Delivered before 9 pm" : "e.g. Phones, laptops, chargers")" data-preview="description" />
+                                </div>
+                            </div>
+                            <div class="field">
+                                <span class="sheet-label">On the booking form</span>
+                                <div class="option-card option-preview" aria-hidden="true">
+                                    <span class="option-card-body">
+                                        <span class="option-card-title"><span data-preview-icon>@Icons.Named(icon)</span> <span data-preview-name>@(o?.Name ?? example)</span></span>
+                                        <small data-preview-description>@o?.Description</small>
+                                        <span class="option-card-price">@(o?.IsDefault == true ? "No extra" : "+ its extra")</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <fieldset class="field mb-0">
+                            <legend class="sheet-label">Icon</legend>
+                            <div class="icon-picker">
+                                @foreach (var name in Icons.ForDeliveryOptions)
+                                {
+                                    <label title="@name"><input type="radio" name="Icon" value="@name" checked="@(name == icon)" />@Icons.Get(name)<span class="sr-only">@name</span></label>
+                                }
+                            </div>
+                        </fieldset>
+                    </section>
+
+                    <section class="sheet-step">
+                        <h3><span class="sheet-step-num">2</span> Where it is offered and what it adds</h3>
+                        @if (o?.IsDefault == true)
+                        {
+                            <div class="alert alert-info mb-0" role="note">@Icons.Get("info")<div>This is the default: what a merchant gets when they choose nothing. It is offered everywhere at no extra@(kind == DeliveryOptionKind.Speed ? ", in the rate card's delivery time" : "").</div></div>
+                        }
+                        else
+                        {
+                            <p class="hint mt-0">Tick where the courier offers it, and what it adds to the delivery charge there. Empty means no extra.</p>
+                            <div class="area-table">
+                                <div class="area-row area-row-head">
+                                    <span>Service area</span>
+                                    <span>Adds</span>
+                                    @if (kind == DeliveryOptionKind.Speed)
+                                    {
+                                        <span>Delivered within</span>
+                                    }
+                                </div>
+                                @for (var i = 0; i < areas.Length; i++)
+                                {
+                                    var area = areas[i];
+                                    var rate = RateIn(area);
+                                    var offered = o?.ChargeIn(area) is not null;
+                                    <div class="area-row" data-area-row>
+                                        <label class="check">
+                                            <input type="checkbox" name="OfferedIn" value="@area" checked="@offered" data-offered />
+                                            <span class="check-text">@area.DisplayName()<small>@(rate is null ? "No rate set" : $"Rate card from ৳{rate.BaseCharge:N0}")</small></span>
+                                        </label>
+                                        <div class="input-group">
+                                            <span class="prefix">+৳</span>
+                                            <input type="number" name="Charges[@i]" value="@o?.ChargeIn(area)?.ToString("0.##")" min="0" max="@DeliveryRate.MaxCharge" step="1" placeholder="0" aria-label="What it adds @area.Destination()" disabled="@(!offered)" />
+                                        </div>
+                                        @if (kind == DeliveryOptionKind.Speed)
+                                        {
+                                            <div class="input-group">
+                                                <input type="number" name="Days[@i]" value="@o?.DaysIn(area)" min="0" max="@DeliveryRate.MaxDeliveryDays" step="1" placeholder="@(rate?.DeliveryDays?.ToString() ?? "")" aria-label="Days after pickup @area.Destination()" disabled="@(!offered)" />
+                                                <span class="suffix">days</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            @if (kind == DeliveryOptionKind.Speed)
+                            {
+                                <p class="hint mb-0">Days after pickup; 0 is the same day. Leave it empty to keep the usual time from the rate card, shown faded.</p>
+                            }
+                        }
+                    </section>
+
+                    <section class="sheet-step">
+                        <h3><span class="sheet-step-num">3</span> At the hub and on the road</h3>
+                        @if (kind == DeliveryOptionKind.Contents)
+                        {
+                            <div class="field">
+                                <label for="handling-@key">Note for hubs and riders <span class="muted">(optional)</span></label>
+                                <input type="text" id="handling-@key" name="Handling" value="@o?.Handling" maxlength="@DeliveryOption.MaxHandlingLength" placeholder="e.g. Electronics: keep dry" />
+                                <span class="hint">Printed on the label and shown at the hub and in the rider's app.</span>
+                            </div>
+                        }
+                        <label class="check">
+                            <input type="checkbox" name="GoesFirst" value="true" checked="@(o?.GoesFirst ?? false)" />
+                            <span class="check-text">Goes first<small>Handed to riders before other parcels and delivered early in the run, like express or food that spoils.</small></span>
+                        </label>
+                    </section>
+                </div>
+                <div class="sheet-foot">
+                    <div class="page-actions">
+                        @if (o is not null && !o.IsDefault)
+                        {
+                            <button class="btn btn-danger btn-sm" type="submit" asp-page-handler="Archive" asp-route-id="@o.Id" formnovalidate data-confirm="Merchants can no longer choose @o.Name. Parcels already booked with it keep it and its charge, and you can offer it again later." data-confirm-title="Stop offering @o.Name?" data-confirm-ok="Stop offering" data-confirm-tone="danger">Stop offering</button>
+                            <button class="btn btn-ghost btn-sm" type="submit" asp-page-handler="Default" asp-route-id="@o.Id" formnovalidate data-confirm="Merchants who choose nothing will get @o.Name, offered everywhere at no extra. The current default stays on the list but is offered nowhere until you tick where it goes." data-confirm-title="Make @o.Name the default?" data-confirm-ok="Make it the default" data-confirm-tone="calm">Make it the default</button>
+                        }
+                    </div>
+                    <div class="page-actions">
+                        <button class="btn btn-outline" type="button" data-close>Cancel</button>
+                        <button class="btn btn-primary" type="submit">@(o is null ? "Add" : "Save changes")</button>
+                    </div>
+                </div>
+            </form>
+        </dialog>
+    }
+}
+
+<div class="page-head">
+    <div>
+        <h1>Delivery types</h1>
+        <p>The choices a merchant makes when booking a parcel: how fast it goes and what is inside. Each can add to the delivery charge.</p>
+    </div>
+    <div class="page-actions"><a class="btn btn-outline" asp-page="/Admin/Rates">@Icons.Get("tag") Delivery rates</a></div>
+</div>
+
+<partial name="_Alerts" />
+
+<div class="card">
+    <div class="card-body">
+        <h2 class="price-explain-title">@Icons.Get("info") How a parcel's delivery charge adds up</h2>
+        <div class="price-sum">
+            <div class="price-sum-part">
+                <small>Rate card</small>
+                <strong>@if (inside is null) { <text>—</text> } else { @Money.Taka(inside.BaseCharge) }</strong>
+                <span>@(inside is null ? "By area and weight" : $"Inside city, up to {Money.Kg(inside.IncludedWeightGrams)}")</span>
+            </div>
+            <span class="price-sum-op" aria-hidden="true">+</span>
+            <div class="price-sum-part">
+                <small>Speed</small>
+                <strong>@Money.Taka(sampleSpeed?.ChargeIn(ServiceArea.InsideCity) ?? 0)</strong>
+                <span>@(sampleSpeed?.Name ?? "The default")</span>
+            </div>
+            <span class="price-sum-op" aria-hidden="true">+</span>
+            <div class="price-sum-part">
+                <small>What is inside</small>
+                <strong>@Money.Taka(sampleContents?.ChargeIn(ServiceArea.InsideCity) ?? 0)</strong>
+                <span>@(sampleContents?.Name ?? "The default")</span>
+            </div>
+            <span class="price-sum-op" aria-hidden="true">=</span>
+            <div class="price-sum-part price-sum-total">
+                <small>Delivery charge</small>
+                <strong>@Money.Taka(sampleTotal)</strong>
+                <span>before the COD charge</span>
+            </div>
+        </div>
+        <p class="hint mb-0">A change applies to parcels booked from now on. Parcels already booked keep what they were charged.</p>
+    </div>
+</div>
+
+@foreach (var part in kinds)
+{
+    var onSale = Model.Options.Where(o => o.Kind == part.Kind && !o.Archived).ToList();
+    var gone = Model.Options.Where(o => o.Kind == part.Kind && o.Archived).ToList();
+    <div class="part-head spread">
+        <div>
+            <h2>@Icons.Get(part.Kind == DeliveryOptionKind.Speed ? "zap" : "package") @part.Title</h2>
+            <p>@part.Text</p>
+        </div>
+        @if (onSale.Count < DeliveryOptionsHandler.MaxPerKind)
+        {
+            <button class="btn btn-primary" type="button" data-open="editor-new-@part.Kind">@Icons.Get("plus") @part.Add</button>
+        }
+    </div>
+    <div class="card">
+        <div class="table-wrap">
+            <table class="table option-table">
+                <thead>
+                    <tr>
+                        <th>@(part.Kind == DeliveryOptionKind.Speed ? "Speed" : "Contents")</th>
+                        @foreach (var area in areas)
+                        {
+                            <th>@area.DisplayName()</th>
+                        }
+                        <th class="text-right" aria-label="Actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var n = 0; n < onSale.Count; n++)
+                    {
+                        var o = onSale[n];
+                        <tr>
+                            <td>
+                                <div class="option-name">
+                                    <span class="option-name-icon">@Icons.Named(o.Icon)</span>
+                                    <div>
+                                        <div class="cell-main">
+                                            @o.Name
+                                            @if (o.IsDefault)
+                                            {
+                                                <span class="badge badge-brand plain" title="What a merchant gets when they choose nothing">Default</span>
+                                            }
+                                            @if (o.GoesFirst)
+                                            {
+                                                <span class="badge badge-out plain" title="Handed to riders before other parcels">Goes first</span>
+                                            }
+                                        </div>
+                                        @if (o.Description is not null)
+                                        {
+                                            <div class="cell-sub">@o.Description</div>
+                                        }
+                                        @if (o.Handling is not null)
+                                        {
+                                            <div class="cell-sub">Label: @o.Handling</div>
+                                        }
+                                    </div>
+                                </div>
+                            </td>
+                            @foreach (var area in areas)
+                            {
+                                <td>@{ Price(o, area); }</td>
+                            }
+                            <td class="text-right">
+                                <div class="option-actions">
+                                    <form method="post" asp-page-handler="Move" asp-route-id="@o.Id" asp-route-up="true" class="inline-form">
+                                        <button class="btn btn-ghost btn-sm" type="submit" disabled="@(n == 0)" title="Show it earlier on the booking form" aria-label="Move @o.Name up">↑</button>
+                                    </form>
+                                    <form method="post" asp-page-handler="Move" asp-route-id="@o.Id" asp-route-up="false" class="inline-form">
+                                        <button class="btn btn-ghost btn-sm" type="submit" disabled="@(n == onSale.Count - 1)" title="Show it later on the booking form" aria-label="Move @o.Name down">↓</button>
+                                    </form>
+                                    <button class="btn btn-outline btn-sm" type="button" data-open="editor-@o.Id">@Icons.Get("edit") Edit</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-foot"><p class="hint mb-0">Merchants see them in this order. Codes for the API and spreadsheet upload: @string.Join(", ", onSale.Select(o => o.Code)).</p></div>
+    </div>
+
+    foreach (var o in onSale)
+    {
+        await Editor(o, part.Kind, $"Edit {o.Name}");
+    }
+    await Editor(null, part.Kind, part.Add);
+
+    @if (gone.Count > 0)
+    {
+        <details class="card mt gone-options">
+            <summary class="card-head"><div><h2>No longer offered · @gone.Count</h2><p>Kept for the parcels booked with them. Offer one again and it comes back with the prices it had.</p></div>@Icons.Get("chevron-down")</summary>
+            <div class="table-wrap">
+                <table class="table">
+                    <tbody>
+                        @foreach (var o in gone)
+                        {
+                            <tr>
+                                <td><div class="option-name"><span class="option-name-icon">@Icons.Named(o.Icon)</span><div class="cell-main">@o.Name</div></div></td>
+                                <td class="text-right">
+                                    <form method="post" asp-page-handler="Restore" asp-route-id="@o.Id" class="inline-form">
+                                        <button class="btn btn-outline btn-sm" type="submit">Offer again</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    }
+}
+
+<script>
+    (() => {
+        // Edit and add open their window; closing it puts the fields back as they were
+        const sync = box => box.closest("[data-area-row]").querySelectorAll("input[type=number]").forEach(input => {
+            input.disabled = !box.checked;
+        });
+        const preview = form => {
+            const name = form.querySelector("[data-preview=name]");
+            form.querySelector("[data-preview-name]").textContent = name.value || name.placeholder.replace(/^e\.g\. /, "");
+            form.querySelector("[data-preview-description]").textContent = form.querySelector("[data-preview=description]").value;
+            const icon = form.querySelector("[name=Icon]:checked")?.closest("label").querySelector("svg");
+            if (icon) {
+                form.querySelector("[data-preview-icon]").innerHTML = icon.outerHTML;
+            }
+        };
+
+        document.querySelectorAll("[data-open]").forEach(button => button.addEventListener("click", () => {
+            document.getElementById(button.dataset.open)?.showModal();
+        }));
+        document.querySelectorAll("dialog.sheet").forEach(dialog => {
+            const form = dialog.querySelector("form");
+            dialog.querySelectorAll("[data-close]").forEach(close => close.addEventListener("click", () => dialog.close()));
+            dialog.addEventListener("click", event => {
+                if (event.target === dialog) {
+                    dialog.close();
+                }
+            });
+            dialog.addEventListener("close", () => {
+                form.reset();
+                form.querySelectorAll("[data-offered]").forEach(sync);
+                preview(form);
+            });
+            // An area not ticked takes no price; ticking one goes straight to its price
+            form.querySelectorAll("[data-offered]").forEach(box => box.addEventListener("change", () => {
+                sync(box);
+                if (box.checked) {
+                    box.closest("[data-area-row]").querySelector("input[type=number]").focus();
+                }
+            }));
+            // The card beside the name shows the option as merchants will see it on the booking form
+            form.addEventListener("input", () => preview(form));
+            form.addEventListener("change", () => preview(form));
+        });
+    })();
+</script>

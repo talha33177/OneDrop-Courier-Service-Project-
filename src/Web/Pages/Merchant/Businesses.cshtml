@@ -2,14 +2,14 @@
 @using Domain.Merchants
 @model Web.Pages.Merchant.BusinessesModel
 @{
-    ViewData["Title"] = "All businesses";
+    ViewData["Title"] = "Manage businesses";
 }
 
 <partial name="_Alerts" />
 
 <div class="page-head">
     <div>
-        <h1>Businesses</h1>
+        <h1>Manage businesses</h1>
         <p>Each business has its own parcels, pickups, payments, balance and figures. Approval and the payout account are shared from your account.</p>
     </div>
     @if (!Model.Room.Full)

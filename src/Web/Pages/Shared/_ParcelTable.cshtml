@@ -65,6 +65,10 @@ else
                             {
                                 <div class="mt-xs">@Statuses.Badge(issue)</div>
                             }
+                            @if (row.Tags.Any)
+                            {
+                                <div class="tag-row">@Statuses.Tags(row.Tags)</div>
+                            }
                             @if (row.Attempts > 0)
                             {
                                 <div class="cell-sub">@row.Attempts attempt@(row.Attempts == 1 ? "" : "s")</div>

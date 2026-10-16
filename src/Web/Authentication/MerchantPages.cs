@@ -35,6 +35,7 @@ public static class MerchantPages
             ["/Merchant/FraudCheck"] = MerchantPermissions.Tools,
             ["/Merchant/Pricing"] = MerchantPermissions.Tools,
             ["/Merchant/Settings"] = MerchantPermissions.Settings,
+            ["/Merchant/PickupPoint"] = MerchantPermissions.Settings,
             ["/Merchant/ApiKeys"] = MerchantPermissions.Settings,
             ["/Merchant/Webhook"] = MerchantPermissions.Settings,
             ["/Merchant/Businesses"] = MerchantPermissions.Settings,

@@ -9,6 +9,7 @@ using Application.Abstractions;
 using Infrastructure.Email;
 using Infrastructure.Identity;
 using Infrastructure.Jobs;
+using Infrastructure.Maps;
 using Infrastructure.MultiTenancy;
 using Infrastructure.Payments;
 using Infrastructure.Persistence;
@@ -101,7 +102,17 @@ public static class DependencyInjection
                 CultureInfo.InvariantCulture))
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
+        // Google Maps' short links are opened one redirect at a time, so only Google's own short hosts are ever asked
+        services
+            .AddHttpClient<IMapLinks, GoogleMapLinks>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(5);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+
         services.AddSingleton<DemoDataSeeder>();
+        services.AddSingleton<AdminSetup>();
 
         return services;
     }
@@ -109,6 +120,10 @@ public static class DependencyInjection
     /// <summary>Identity stores and options. The web host adds the cookie scheme on top.</summary>
     public static IdentityBuilder AddAppIdentity(this IServiceCollection services)
     {
+        // A stopped moderator or staff member, or one whose role changed, is caught within a minute rather than Identity's
+        // default thirty
+        services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.FromMinutes(1));
+
         return services
             .AddIdentity<AppUser, AppRole>(options =>
             {

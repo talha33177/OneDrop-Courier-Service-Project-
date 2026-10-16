@@ -1,0 +1,63 @@
+@page
+@using Domain.Platform
+@model Web.Pages.Admin.SettingsModel
+@{
+    ViewData["Title"] = "Courier settings";
+    var s = Model.Settings;
+}
+
+<div class="page-head">
+    <div>
+        <h1>Courier settings</h1>
+        <p>How the courier introduces itself, how often a rider tries a door, and when the day's pickup and closing happen. A change applies from the next page anyone opens.</p>
+    </div>
+</div>
+
+<partial name="_Alerts" />
+
+<form method="post">
+    <div class="grid grid-2">
+        <div class="card">
+            <div class="card-head"><div><h2>The courier</h2><p>What merchants and recipients read</p></div></div>
+            <div class="card-body">
+                <div class="field"><label for="name">Name</label><input type="text" id="name" name="name" value="@s.Name" maxlength="200" required /><span class="hint">On every page, the texts to recipients and the payout emails.</span></div>
+                <div class="form-grid">
+                    <div class="field"><label for="supportPhone">Hotline</label><input id="supportPhone" name="supportPhone" type="tel" value="@s.SupportPhone" maxlength="20" required /><span class="hint">In the top bar, on labels, run sheets and texts.</span></div>
+                    <div class="field"><label for="smsSenderName">SMS sender</label><input type="text" id="smsSenderName" name="smsSenderName" value="@s.SmsSenderName" maxlength="@Tenant.MaxSmsSenderLength" pattern="[A-Za-z0-9]+" required /><span class="hint">Letters and digits, at most @Tenant.MaxSmsSenderLength. The name recipients' texts come from.</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><div><h2>Parcels and merchants</h2><p>The rules every merchant works under</p></div></div>
+            <div class="card-body">
+                <div class="field"><label for="maxDeliveryAttempts">Delivery attempts</label><div class="input-group"><input id="maxDeliveryAttempts" name="maxDeliveryAttempts" type="number" value="@s.MaxDeliveryAttempts" min="1" max="@Tenant.MaxAttempts" step="1" required /><span class="suffix">tries</span></div><span class="hint">A rider may put a parcel on hold for another day until it has had this many tries; after the last one it goes back to the merchant. Parcels on hold keep the tries they have had.</span></div>
+                <div class="field"><label for="maxBusinessesPerAccount">Businesses per account</label><div class="input-group"><input id="maxBusinessesPerAccount" name="maxBusinessesPerAccount" type="number" value="@s.MaxBusinessesPerAccount" min="1" max="@Tenant.MaxBusinesses" step="1" placeholder="No limit" /><span class="suffix">besides the main one</span></div><span class="hint">How many businesses a merchant may add to its account. Lowering it never removes one; it only stops new ones. Leave empty for no limit.</span></div>
+                <div class="field"><label for="stuckAfterDays">A parcel is stuck after</label><div class="input-group"><input id="stuckAfterDays" name="stuckAfterDays" type="number" value="@s.StuckAfterDays" min="1" max="@Tenant.MaxStuckAfterDays" step="1" placeholder="Not watched" /><span class="suffix">days in one place</span></div><span class="hint">With a pickup rider, at a hub, between hubs, on hold past its day or going back. Such parcels are listed on <a asp-page="/Admin/Stuck">Stuck parcels</a> and in your bell. Leave empty to watch for none.</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><div><h2>The day</h2><p>On the courier's clock (@Model.Tenant.TimeZone)</p></div></div>
+            <div class="card-body">
+                <div class="form-grid">
+                    <div class="field"><label for="pickupTime">Pickup leaves the hub</label><input id="pickupTime" name="pickupTime" type="time" value="@s.PickupTime?.ToString("HH:mm")" /><span class="hint">Told to merchants. The truck visits each pickup point once a day: a parcel booked before it reaches the point goes with it, one booked after goes the next day. Empty: no time is told.</span></div>
+                    <div class="field"><label for="riderReturnTime">Riders back at the hub by</label><input id="riderReturnTime" name="riderReturnTime" type="time" value="@s.RiderReturnTime?.ToString("HH:mm")" /><span class="hint">With the day's cash and what they could not deliver; a run still open after it shows as late. Empty: no time.</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><div><h2>Set by the platform</h2><p>These move parcels and money already on their way, so only the platform changes them</p></div></div>
+            <div class="card-body">
+                <dl class="kv">
+                    <dt>Address name</dt><dd class="mono">@Model.Tenant.Slug</dd>
+                    <dt>Time zone</dt><dd>@Model.Tenant.TimeZone</dd>
+                    <dt>Currency</dt><dd>@Model.Tenant.CurrencyCode</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-actions mt"><button class="btn btn-primary" type="submit">Save settings</button></div>
+</form>

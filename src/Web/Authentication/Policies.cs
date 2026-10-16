@@ -9,11 +9,11 @@ public static class Policies
     public const string MerchantPortal = nameof(MerchantPortal);
     public const string PlatformAdmin = nameof(PlatformAdmin);
 
-    /// <summary>The courier's own staff at the hubs: hub staff and admins.</summary>
+    /// <summary>
+    /// The courier's own staff: super admins and staff with a job. Which hub and admin pages each may open is then
+    /// decided by <see cref="StaffPermissionFilter"/>.
+    /// </summary>
     public const string Operations = nameof(Operations);
-
-    /// <summary>The courier's admins: the whole company at once (merchants, riders, rates, payouts).</summary>
-    public const string OperatorAdmin = nameof(OperatorAdmin);
 
     /// <summary>The courier's riders, on their own tenant's subdomain.</summary>
     public const string Rider = nameof(Rider);
@@ -30,9 +30,6 @@ public static class Policies
         options.AddPolicy(PlatformAdmin, policy => policy.RequireRole(Roles.PlatformAdmin));
         options.AddPolicy(Operations, policy => policy
             .RequireRole(Roles.HubStaff, Roles.TenantAdmin)
-            .RequireClaim(AppClaims.TenantId));
-        options.AddPolicy(OperatorAdmin, policy => policy
-            .RequireRole(Roles.TenantAdmin)
             .RequireClaim(AppClaims.TenantId));
         options.AddPolicy(Rider, policy => policy
             .RequireRole(Roles.Rider)

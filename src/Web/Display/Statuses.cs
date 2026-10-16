@@ -2,11 +2,13 @@ using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Html;
 using Application.Payments.MerchantPayments;
+using Application.Pricing.DeliveryOptions;
 using Domain.Common;
 using Domain.Delivery;
 using Domain.Merchants;
 using Domain.Parcels;
 using Domain.Payments;
+using Domain.Pricing;
 
 namespace Web.Display;
 
@@ -55,11 +57,60 @@ public static class Statuses
     {
         return status switch
         {
-            PickupStatus.Requested => Pill("pending", "Requested"),
+            PickupStatus.Scheduled => Pill("pending", "Waiting for a rider"),
             PickupStatus.Assigned => Pill("out", "Rider assigned"),
             PickupStatus.Completed => Pill("done", "Picked up"),
-            _ => Pill("cancel", "Cancelled")
+            _ => Pill("cancel", "Called off")
         };
+    }
+
+    /// <summary>
+    /// The tags a parcel carries in lists, labels and the rider's app: its speed and what is inside, each unless it is
+    /// the courier's default. Nothing for a regular parcel of general goods.
+    /// </summary>
+    public static IHtmlContent Tags(DeliveryTags tags)
+    {
+        var html = new List<string>();
+        if (tags.Speed is not null)
+        {
+            html.Add(Tag("speed", tags.SpeedIcon, tags.Speed));
+        }
+
+        if (tags.Contents is not null)
+        {
+            html.Add(Tag("contents", tags.ContentsIcon, tags.Contents));
+        }
+
+        return new HtmlString(string.Concat(html));
+    }
+
+    /// <summary>The day a pickup collects, as merchants read it: "today", "tomorrow", "on Sat 11 Oct".</summary>
+    public static string PickupDay(DateOnly day, DateOnly today)
+    {
+        return day <= today ? "today" : day == today.AddDays(1) ? "tomorrow" : $"on {day:ddd d MMM}";
+    }
+
+    /// <summary>A time of day as people read it: "3:30 pm", "3 pm".</summary>
+    public static string Clock(TimeOnly time)
+    {
+        return time.ToString(time.Minute == 0 ? "h tt" : "h:mm tt", CultureInfo.InvariantCulture).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// When a parcel booked now is collected, in a sentence's middle: "with today's pickup (the truck leaves the hub at
+    /// 3:30 pm)", "with tomorrow's pickup".
+    /// </summary>
+    public static string PickupWith(DateOnly day, DateOnly today, TimeOnly? leavesAt)
+    {
+        var when = PickupDay(day, today);
+        var pickup = when is "today" or "tomorrow" ? $"with {when}'s pickup" : $"with the pickup {when}";
+
+        return leavesAt is { } time ? $"{pickup} (the truck leaves the hub at {Clock(time)})" : pickup;
+    }
+
+    private static string Tag(string kind, string icon, string text)
+    {
+        return $"""<span class="tag tag-{kind}">{Icons.Named(icon)}{WebUtility.HtmlEncode(text)}</span>""";
     }
 
     public static IHtmlContent Badge(ParcelRequestStatus status)
@@ -121,6 +172,7 @@ public static class Statuses
             OnlinePaymentStatus.Failed => Pill("cancel", "Not paid"),
             OnlinePaymentStatus.Review => Pill("hold", "Being checked"),
             OnlinePaymentStatus.Refunded => Pill("return", "Refunded"),
+            OnlinePaymentStatus.RefundDue => Pill("return", "Refund due"),
             _ => Pill("pending", "Waiting")
         };
     }

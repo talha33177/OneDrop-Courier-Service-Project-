@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Delivery.Pickups;
+using Application.Pricing.DeliveryOptions;
 using Domain.Common;
 using Domain.Delivery;
 using Domain.Parcels;
@@ -35,6 +37,9 @@ public sealed record ParcelView
     public required string RecipientPhone { get; init; }
 
     public required string RecipientAddress { get; init; }
+
+    /// <summary>The door pinned on a map, when the merchant pinned it.</summary>
+    public GeoPoint? Pin { get; init; }
 
     public required long AreaId { get; init; }
 
@@ -72,9 +77,32 @@ public sealed record ParcelView
 
     public decimal? CollectedAmount { get; init; }
 
+    /// <summary>What the recipient paid online before the door; null while it is collected in cash.</summary>
+    public decimal? PaidOnline { get; init; }
+
     public ServiceArea ServiceArea { get; init; }
 
+    /// <summary>The weight's charge plus <see cref="SpeedCharge"/> and <see cref="ProductCharge"/>.</summary>
     public decimal DeliveryCharge { get; init; }
+
+    /// <summary>The speed's code (what the edit form posts back) and its name.</summary>
+    public string Speed { get; init; } = "";
+
+    public string SpeedName { get; init; } = "";
+
+    /// <summary>What is inside: its code and name.</summary>
+    public string ProductType { get; init; } = "";
+
+    public string ProductName { get; init; } = "";
+
+    public DeliveryTags Tags { get; init; } = new(null, "", null, "", null, false);
+
+    public decimal SpeedCharge { get; init; }
+
+    public decimal ProductCharge { get; init; }
+
+    /// <summary>While it waits for pickup: the day the courier collects it.</summary>
+    public DateOnly? PickupOn { get; init; }
 
     public decimal CodChargePercent { get; init; }
 
@@ -142,13 +170,14 @@ public sealed record ParcelView
 /// One parcel by its tracking code, with its tracking history and delivery attempts. A merchant finds only its own
 /// parcels (the merchant filter): another merchant's is not found, as an unknown code is.
 /// </summary>
-public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext, TimeProvider time)
+public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext, PickupSchedule schedule, TimeProvider time)
 {
     public static readonly Error NotFound = Error.NotFound("parcel.notFound", "No parcel with that tracking code was found.");
 
     public async Task<Result<ParcelView>> GetAsync(string? trackingCode, CancellationToken cancellationToken = default)
     {
         var tenant = tenantContext.Require();
+        var today = tenant.Today(time.GetUtcNow().UtcDateTime);
         var code = trackingCode?.Trim().ToUpperInvariant();
         var found = await (
             from parcel in db.Parcels
@@ -162,6 +191,8 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
             select new
             {
                 Parcel = parcel,
+                Speed = parcel.Speed!,
+                Contents = parcel.ProductType!,
                 Merchant = merchant.Name,
                 MerchantPhone = merchant.ContactPhone,
                 Area = area.Name,
@@ -208,6 +239,8 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
             select paid.Number)
             .FirstOrDefaultAsync(cancellationToken);
 
+        DateOnly? pickupOn = p.Status == ParcelStatus.Pending ? await schedule.DayForAsync(p.PickupPointId, cancellationToken) : null;
+
         return new ParcelView
         {
             TrackingCode = p.TrackingCode,
@@ -217,6 +250,7 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
             RecipientName = p.RecipientName,
             RecipientPhone = p.RecipientPhone,
             RecipientAddress = p.RecipientAddress,
+            Pin = p.Pin,
             AreaId = p.AreaId,
             Area = found.Area,
             City = found.City,
@@ -235,8 +269,23 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
                 : null,
             CodAmount = p.CodAmount,
             CollectedAmount = p.CollectedAmount,
+            PaidOnline = p.PaidOnline,
             ServiceArea = p.ServiceArea,
             DeliveryCharge = p.DeliveryCharge,
+            Speed = found.Speed.Code,
+            SpeedName = found.Speed.Name,
+            ProductType = found.Contents.Code,
+            ProductName = found.Contents.Name,
+            Tags = new DeliveryTags(
+                found.Speed.IsDefault ? null : found.Speed.Name,
+                found.Speed.Icon,
+                found.Contents.IsDefault ? null : found.Contents.Name,
+                found.Contents.Icon,
+                found.Contents.Handling,
+                found.Speed.GoesFirst || found.Contents.GoesFirst),
+            SpeedCharge = p.SpeedCharge,
+            ProductCharge = p.ProductCharge,
+            PickupOn = pickupOn,
             CodChargePercent = p.CodChargePercent,
             CodCharge = p.CodCharge ?? p.Charges.CodChargeOn(p.CodAmount),
             ReturnCharge = p.ReturnCharge,
@@ -247,7 +296,7 @@ public class ParcelDetailsHandler(IAppDbContext db, ITenantContext tenantContext
             HoldUntil = p.HoldUntil,
             DeliveryDays = p.DeliveryDays,
             DueOn = p.DueOn,
-            Late = p.IsLate(tenant.Today(time.GetUtcNow().UtcDateTime)),
+            Late = p.IsLate(today),
             ReturnReason = p.ReturnReason,
             Issue = p.Issue,
             IssueNote = p.IssueNote,

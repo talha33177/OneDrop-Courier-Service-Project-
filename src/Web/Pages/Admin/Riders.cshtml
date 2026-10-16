@@ -8,7 +8,7 @@
 <div class="page-head">
     <div>
         <h1>Riders</h1>
-        <p>Who picks up and delivers, from which hub, and on what. A rider is never handed more than their vehicle carries.</p>
+        <p>Who picks up and delivers, from which hub, and on what. A rider is never handed more than their vehicle carries, and only a pickup van goes to the merchants.</p>
     </div>
     <div class="page-actions">
         <a class="btn btn-outline" asp-page="/Admin/Vehicles">@Icons.Get("truck") What each vehicle carries</a>
@@ -30,6 +30,28 @@
 {
     <div class="alert alert-error">@Icons.Get("alert")<div>@Model.Problem</div></div>
 }
+@{
+    // A hub that is staffed but has no van: nobody there can be sent to a merchant. A hub with no riders at all is
+    // simply not staffed yet, which its empty list already says
+    var vanless = Model.Hubs
+        .Where(hub => Model.Rows.Any(r => r.HubId == hub.Id && r.Active) &&
+            !Model.Rows.Any(r => r.HubId == hub.Id && r.Active && r.Vehicle == Vehicle.Van))
+        .ToList();
+}
+@if (vanless.Count > 0)
+{
+    <div class="alert alert-warning">
+        @Icons.Get("truck")
+        <div>
+            <strong>@(vanless.Count == 1 ? $"{vanless[0].Name} has" : $"{vanless.Count} hubs have") no pickup van rider.</strong>
+            Only a pickup van goes to a merchant's door, so nobody collects the daily pickups there.
+            @if (vanless.Count > 1)
+            {
+                <text> @string.Join(", ", vanless.Select(h => h.Name)).</text>
+            }
+        </div>
+    </div>
+}
 
 <div class="grid grid-side">
     <div class="card">
@@ -46,7 +68,7 @@
                         @foreach (var r in Model.Rows)
                         {
                             <tr style="@(r.Active ? "" : "opacity:.55")">
-                                <td><div class="cell-main">@r.Name @if (!r.Active) { <span class="badge badge-cancel">Stopped</span> }</div><div class="cell-sub">@Money.Phone(r.Phone)@(r.Email is null ? "" : $" · {r.Email}")</div></td>
+                                <td><div class="cell-main"><a asp-page="/Admin/Rider" asp-route-id="@r.Id">@r.Name</a> @if (!r.Active) { <span class="badge badge-cancel">Stopped</span> }</div><div class="cell-sub">@Money.Phone(r.Phone)@(r.Email is null ? "" : $" · {r.Email}")</div></td>
                                 <td>@r.Hub</td>
                                 <td><span class="vehicle">@Icons.Get(Statuses.Icon(r.Vehicle)) @r.Vehicle.DisplayName()</span></td>
                                 <td class="num">@r.WithThem</td>
@@ -115,7 +137,7 @@
                             <option value="@vehicle">@vehicle.DisplayName()</option>
                         }
                     </select>
-                    <span class="hint">Decides how many parcels the hub can hand them at once.</span>
+                    <span class="hint">Decides how many parcels the hub can hand them at once. Only a pickup van collects from merchants; a bicycle or motorbike delivers to recipients.</span>
                 </div>
                 <div class="field"><label for="email">Email to sign in with</label><input type="email" id="email" name="email" required /></div>
                 <div class="field"><label for="password">First password</label><input type="text" id="password" name="password" autocomplete="off" required /></div>

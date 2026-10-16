@@ -46,8 +46,10 @@
             <li>When a parcel is delivered or returned, its cash and charges are written to the merchant's balance in the same moment.</li>
             <li>Each hour, every merchant with money up to yesterday is paid in one payout, with an invoice, to its payout account.</li>
             <li>A merchant waits when its charges are more than its cash, it has no payout account, or you hold its payouts. Nothing is lost: the lines carry over.</li>
+            <li>A merchant may ask to be paid now, today's cash too. You decide: pay it at once, or refuse with a reason and it goes out with the daily payouts.</li>
             <li>A transfer the gateway refuses is tried again every hour. It is listed below with the reason; send it again, or cancel it so the next payout goes to a corrected account.</li>
             <li>A merchant who owes the courier can pay it online from its Payments page. The money reaches its balance once the gateway confirms it; a payment the gateway marks risky, or of another amount, waits below for you to credit or refund.</li>
+            <li>A recipient can pay a parcel's cash on delivery online from its tracking page: the rider then collects nothing, and the merchant is paid it with the parcel as usual. If the parcel is cancelled or comes back, the payment is refunded to the recipient by itself.</li>
             <li>Settle a merchant who owes the courier in another way, or correct a balance, with an adjustment on the merchant's page.</li>
         </ul>
     </div>
@@ -59,6 +61,52 @@
     <div class="stat"><div class="stat-icon amber">@Icons.Get("clock")</div><div><div class="stat-label">Processing</div><div class="stat-value">@Money.Taka(d.PendingTotal)</div></div></div>
     <div class="stat"><div class="stat-icon @(d.Stuck.Count > 0 ? "red" : "")">@Icons.Get("alert")</div><div><div class="stat-label">Refused by the gateway</div><div class="stat-value">@d.Stuck.Count</div><div class="stat-sub">@(d.Stuck.Count == 0 ? "None" : Money.Taka(d.Stuck.Sum(p => p.Amount)))</div></div></div>
 </div>
+
+@if (Model.Requests.Count > 0)
+{
+    <div class="card mb">
+        <div class="card-head"><div><h2>@Icons.Get("send") Asking to be paid now</h2><p>Paying sends the merchant's balance as it is now, today's cash too. Check the cash still with riders and what the parcels on their way would cost if they came back.</p></div></div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Merchant</th><th class="num">Balance now</th><th class="num">Cash still with riders</th><th>If its parcels on the way came back</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in Model.Requests)
+                    {
+                        <tr>
+                            <td><a class="cell-main" asp-page="/Admin/Merchant" asp-route-id="@r.MerchantId" asp-fragment="money">@r.Merchant</a><div class="cell-sub">Asked @r.Created.ToString("d MMM, h:mm tt") · @(r.PayoutAccount ?? "no payout account")</div></td>
+                            <td class="num"><strong>@Money.Taka(r.Balance)</strong><div class="cell-sub">@Money.Taka(r.Today) of it today@(r.Balance != r.AmountAsked ? $"; asked when it was ৳{r.AmountAsked:N0}" : "")</div></td>
+                            <td class="num @(r.WithRiders > 0 ? "negative" : "")">@Money.Taka(r.WithRiders)@if (r.WithRiders > 0) { <div class="cell-sub">runs not closed yet</div> }</td>
+                            <td>
+                                @if (r.OnTheirWay == 0)
+                                {
+                                    <span class="muted">No parcels on the way</span>
+                                }
+                                else
+                                {
+                                    <span>@r.OnTheirWay parcel@(r.OnTheirWay == 1 ? "" : "s"), up to @Money.Taka(r.ChargesIfReturned) in charges</span>
+                                    <div class="cell-sub @(r.AfterReturns < 0 ? "negative" : "")">The merchant would then @(r.AfterReturns < 0 ? "owe" : "keep") @Money.Taka(Math.Abs(r.AfterReturns))</div>
+                                }
+                                @if (r.PayoutHold is { } held)
+                                {
+                                    <div class="cell-sub negative">Payouts held: @held</div>
+                                }
+                            </td>
+                            <td style="width:230px">
+                                <form method="post" asp-page-handler="PayRequest" asp-route-id="@r.Id">
+                                    <button class="btn btn-primary btn-sm" type="submit" style="width:100%" data-confirm="@r.Merchant's balance, ৳@r.Balance.ToString("N0") now, is made into a payout and sent to @(r.PayoutAccount ?? "its payout account") at once." data-confirm-title="Pay @r.Merchant now?" data-confirm-ok="Pay now" data-confirm-tone="calm">@Icons.Get("send") Pay now</button>
+                                </form>
+                                <form method="post" asp-page-handler="RefuseRequest" asp-route-id="@r.Id" style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+                                    <input type="text" name="answer" maxlength="200" placeholder="Or: why not now" required aria-label="Why not now" />
+                                    <button class="btn btn-outline btn-sm" type="submit">Refuse</button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
 
 @if (d.Stuck.Count > 0)
 {
@@ -98,12 +146,19 @@
                     {
                         <tr>
                             <td class="nowrap mono">@p.Number<div class="cell-sub">@((p.ConfirmedOn ?? p.Created).ToString("d MMM, h:mm tt"))</div></td>
-                            <td><a class="cell-main" asp-page="/Admin/Merchant" asp-route-id="@p.MerchantId" asp-fragment="money">@p.Merchant</a><div class="cell-sub">@(p.Method ?? "")@(p.BankTransactionId is null ? "" : $" · {p.BankTransactionId}")</div></td>
+                            <td><a class="cell-main" asp-page="/Admin/Merchant" asp-route-id="@p.MerchantId" asp-fragment="money">@p.Merchant</a><div class="cell-sub">@(p.TrackingCode is { } held ? $"Recipient of {held} · " : "")@(p.Method ?? "")@(p.BankTransactionId is null ? "" : $" · {p.BankTransactionId}")</div></td>
                             <td class="num strong">@Money.Taka(p.PaidAmount)<div class="cell-sub">asked @Money.Taka(p.Amount)</div></td>
                             <td style="min-width:220px">@p.Note</td>
                             <td style="width:230px">
                                 <form method="post" asp-page-handler="Credit" asp-route-number="@p.Number">
-                                    <button class="btn btn-primary btn-sm" type="submit" style="width:100%" data-confirm="The amount received is credited to @p.Merchant's balance." data-confirm-title="Credit @p.Number?" data-confirm-ok="Credit it" data-confirm-tone="calm">@Icons.Get("check") Credit to the merchant</button>
+                                    @if (p.TrackingCode is { } code)
+                                    {
+                                        <button class="btn btn-primary btn-sm" type="submit" style="width:100%" data-confirm="@code is marked paid online and its rider collects nothing. If the parcel can no longer take it, it is refunded by itself." data-confirm-title="Accept @p.Number?" data-confirm-ok="Accept it" data-confirm-tone="calm">@Icons.Get("check") Accept for @code</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-primary btn-sm" type="submit" style="width:100%" data-confirm="The amount received is credited to @p.Merchant's balance." data-confirm-title="Credit @p.Number?" data-confirm-ok="Credit it" data-confirm-tone="calm">@Icons.Get("check") Credit to the merchant</button>
+                                    }
                                 </form>
                                 <form method="post" asp-page-handler="Refunded" asp-route-number="@p.Number" style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
                                     <input type="text" name="note" maxlength="300" placeholder="Or: what was refunded" required aria-label="What was refunded" />
@@ -118,7 +173,43 @@
     </div>
 }
 
-<div class="grid grid-side @(d.Stuck.Count > 0 || online.ToCheck.Count > 0 ? "mt-lg" : "")">
+@if (online.RefundsDue.Count > 0)
+{
+    <div class="card @(d.Stuck.Count > 0 || online.ToCheck.Count > 0 ? "mt-lg" : "")">
+        <div class="card-head"><div><h2>@Icons.Get("return") Refunds owed to recipients</h2><p>Paid online for parcels that were cancelled, came back, or were paid at the door first. Each is refunded through @online.Gateway within minutes; one it refuses is asked again every hour, or refund it in @online.Gateway's panel and record that here.</p></div></div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Payment</th><th>Parcel</th><th class="num">To refund</th><th>Why</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var p in online.RefundsDue)
+                    {
+                        <tr>
+                            <td class="nowrap mono">@p.Number<div class="cell-sub">@((p.ConfirmedOn ?? p.Created).ToString("d MMM, h:mm tt"))</div></td>
+                            <td><a class="cell-main mono" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.Merchant · @(p.Method ?? "")</div></td>
+                            <td class="num strong">@Money.Taka(p.PaidAmount ?? p.Amount)</td>
+                            <td style="min-width:220px">@if (p.RefundRefused) { <span class="badge badge-cancel">Refused</span> } @p.Note</td>
+                            <td style="width:230px">
+                                @if (p.RefundRefused)
+                                {
+                                    <form method="post" asp-page-handler="Refunded" asp-route-number="@p.Number" style="display:flex;flex-direction:column;gap:6px">
+                                        <input type="text" name="note" maxlength="300" placeholder="What was refunded, and how" required aria-label="What was refunded" />
+                                        <button class="btn btn-outline btn-sm" type="submit" data-confirm="Refund it in @online.Gateway's panel first: the check stops asking the gateway." data-confirm-title="Record @p.Number as refunded?" data-confirm-ok="It is refunded">Record the refund</button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <span class="muted">Being refunded</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<div class="grid grid-side @(d.Stuck.Count > 0 || online.ToCheck.Count > 0 || online.RefundsDue.Count > 0 ? "mt-lg" : "")">
     <div class="card" data-swap="payouts">
         <div class="card-head">
             <h2>Payouts</h2>
@@ -200,10 +291,10 @@
             }
         </div>
         <div class="card">
-            <div class="card-head"><div><h2>Paid online by merchants</h2><p>@(online.Available ? $"Through {online.Gateway}, the latest first." : "Online payments are not set up.")</p></div></div>
+            <div class="card-head"><div><h2>Paid online</h2><p>@(online.Available ? $"By merchants and by recipients for their parcels, through {online.Gateway}, the latest first." : "Online payments are not set up.")</p></div></div>
             @if (online.Recent.Count == 0)
             {
-                <div class="card-body muted">No merchant has paid online yet.</div>
+                <div class="card-body muted">Nobody has paid online yet.</div>
             }
             else
             {
@@ -213,7 +304,7 @@
                             @foreach (var p in online.Recent)
                             {
                                 <tr>
-                                    <td><span class="cell-main">@p.Merchant</span><div class="cell-sub">@p.Number · @p.Created.ToString("d MMM")</div></td>
+                                    <td><span class="cell-main">@(p.TrackingCode is { } code ? $"Recipient of {code}" : p.Merchant)</span><div class="cell-sub">@p.Number · @(p.TrackingCode is null ? "" : $"{p.Merchant} · ")@p.Created.ToString("d MMM")</div></td>
                                     <td class="num">@Money.Taka(p.PaidAmount ?? p.Amount)<div>@Statuses.Badge(p.Status)</div></td>
                                 </tr>
                             }

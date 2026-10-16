@@ -16,6 +16,11 @@ public class ParcelForm
 
     public string? RecipientAddress { get; set; }
 
+    /// <summary>The door pinned on the map (hidden fields the map fills in), or empty.</summary>
+    public decimal? RecipientLatitude { get; set; }
+
+    public decimal? RecipientLongitude { get; set; }
+
     public long? AreaId { get; set; }
 
     public long? PickupPointId { get; set; }
@@ -23,6 +28,12 @@ public class ParcelForm
     public decimal CodAmount { get; set; }
 
     public decimal WeightKg { get; set; } = 0.5m;
+
+    /// <summary>The speed's code; empty for the courier's default.</summary>
+    public string? Speed { get; set; }
+
+    /// <summary>What is inside, by its code; empty for the courier's default.</summary>
+    public string? ProductType { get; set; }
 
     public string? ItemDescription { get; set; }
 
@@ -36,9 +47,13 @@ public class ParcelForm
             RecipientName = parcel.RecipientName,
             RecipientPhone = Display.Money.Phone(parcel.RecipientPhone),
             RecipientAddress = parcel.RecipientAddress,
+            RecipientLatitude = parcel.Pin?.Latitude,
+            RecipientLongitude = parcel.Pin?.Longitude,
             AreaId = parcel.AreaId,
             CodAmount = parcel.CodAmount,
             WeightKg = parcel.WeightGrams / 1000m,
+            Speed = parcel.Speed,
+            ProductType = parcel.ProductType,
             ItemDescription = parcel.ItemDescription,
             Note = parcel.Note
         };
@@ -52,10 +67,14 @@ public class ParcelForm
             RecipientName = RecipientName,
             RecipientPhone = RecipientPhone,
             RecipientAddress = RecipientAddress,
+            RecipientLatitude = RecipientLatitude,
+            RecipientLongitude = RecipientLongitude,
             AreaId = AreaId,
             PickupPointId = PickupPointId,
             CodAmount = CodAmount,
             WeightKg = WeightKg,
+            Speed = Speed,
+            ProductType = ProductType,
             ItemDescription = ItemDescription,
             Note = Note,
             IdempotencyKey = idempotencyKey

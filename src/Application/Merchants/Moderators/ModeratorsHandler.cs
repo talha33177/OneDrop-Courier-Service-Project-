@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
@@ -38,10 +37,6 @@ public class ModeratorsHandler(
     public static readonly Error NotTheOwner = Error.Forbidden(
         "moderator.notTheOwner",
         "Only the account's owner adds moderators and changes what they may do.");
-
-    private const string PasswordCapitals = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-    private const string PasswordLetters = "abcdefghijkmnopqrstuvwxyz";
-    private const string PasswordDigits = "23456789";
 
     public async Task<IReadOnlyList<ModeratorRow>> ListAsync(CancellationToken cancellationToken = default)
     {
@@ -95,7 +90,7 @@ public class ModeratorsHandler(
             return phone.Error!;
         }
 
-        var password = NewPassword();
+        var password = Passwords.New();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var login = await accounts.CreateAsync(
             new NewLogin(spec.Email, password, spec.Name?.Trim() ?? "", Roles.Merchant) { MerchantId = accountId },
@@ -180,22 +175,10 @@ public class ModeratorsHandler(
             return moderator.Error!;
         }
 
-        var password = NewPassword();
+        var password = Passwords.New();
         var reset = await accounts.ResetPasswordAsync(moderator.Value.UserId, password, cancellationToken);
 
         return reset.IsFailure ? reset.Error! : password;
-    }
-
-    /// <summary>
-    /// A password to hand over: letters a person can read out, with two digits in the middle so it always passes
-    /// the sign-in rules whatever the random draw.
-    /// </summary>
-    private static string NewPassword()
-    {
-        return RandomNumberGenerator.GetString(PasswordCapitals, 2)
-            + RandomNumberGenerator.GetString(PasswordLetters, 4)
-            + RandomNumberGenerator.GetString(PasswordDigits, 2)
-            + RandomNumberGenerator.GetString(PasswordLetters, 4);
     }
 
     private async Task<Result<Moderator>> FindAsync(long id, CancellationToken cancellationToken)

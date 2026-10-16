@@ -32,7 +32,12 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
             join area in db.Areas on point.AreaId equals area.Id
             where !point.Archived
             orderby point.IsDefault descending, point.Name
-            select new PickupPointView(point.Id, point.Name, point.Address, area.Name, area.Id, point.ContactPhone, point.IsDefault))
+            select new
+            {
+                View = new PickupPointView(point.Id, point.Name, point.Address, area.Name, area.Id, point.ContactPhone, point.IsDefault),
+                point.Latitude,
+                point.Longitude
+            })
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
@@ -42,7 +47,7 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
             merchant.PayoutMethod,
             merchant.PayoutAccount,
             merchant.PayoutAccountName,
-            points);
+            [.. points.Select(p => p.View with { Pin = GeoPoint.From(p.Latitude, p.Longitude).Value })]);
     }
 
     public async Task<Result> EditProfileAsync(MerchantProfile profile, CancellationToken cancellationToken = default)
@@ -60,6 +65,8 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
         string? name,
         string? address,
         string? phone,
+        decimal? latitude = null,
+        decimal? longitude = null,
         CancellationToken cancellationToken = default)
     {
         var merchantId = currentUser.MerchantId ?? throw new InvalidOperationException("A merchant has pickup points.");
@@ -68,10 +75,16 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
             return Error.Validation("pickupPoint.area", "Choose the pickup point's area.");
         }
 
+        var pin = GeoPoint.From(latitude, longitude);
+        if (pin.IsFailure)
+        {
+            return pin.Error!;
+        }
+
         if (id is null)
         {
             var hasDefault = await db.PickupPoints.AnyAsync(p => p.IsDefault && !p.Archived, cancellationToken);
-            var created = PickupPoint.Create(merchantId, areaId, name, address, phone, isDefault: !hasDefault);
+            var created = PickupPoint.Create(merchantId, areaId, name, address, phone, isDefault: !hasDefault, pin.Value);
             if (created.IsFailure)
             {
                 return created.Error!;
@@ -102,7 +115,16 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
                 "or add a new pickup point for the new place.");
         }
 
-        return await SaveAsync(point.Change(areaId, name, address, phone), cancellationToken);
+        // A pickup still on the list with nothing to collect was for the old zone's hub: it is called off
+        if (zones > 1)
+        {
+            var empty = await db.PickupRequests
+                .Where(r => r.PickupPointId == point.Id && r.Status == PickupStatus.Scheduled)
+                .ToListAsync(cancellationToken);
+            empty.ForEach(pickup => pickup.Cancel());
+        }
+
+        return await SaveAsync(point.Change(areaId, name, address, phone, pin.Value), cancellationToken);
     }
 
     public async Task<Result> MakeDefaultAsync(long id, CancellationToken cancellationToken = default)
@@ -129,12 +151,11 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
         return Result.Success();
     }
 
+    /// <summary>Parcels wait at the point, or a rider is already on the way to it.</summary>
     private async Task<bool> HasOpenWorkAsync(long pointId, CancellationToken cancellationToken)
     {
         return await db.Parcels.AnyAsync(p => p.PickupPointId == pointId && p.Status == ParcelStatus.Pending, cancellationToken) ||
-            await db.PickupRequests.AnyAsync(
-                r => r.PickupPointId == pointId && (r.Status == PickupStatus.Requested || r.Status == PickupStatus.Assigned),
-                cancellationToken);
+            await db.PickupRequests.AnyAsync(r => r.PickupPointId == pointId && r.Status == PickupStatus.Assigned, cancellationToken);
     }
 
     private Task<Merchant> MerchantAsync(CancellationToken cancellationToken)

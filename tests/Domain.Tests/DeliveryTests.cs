@@ -13,6 +13,14 @@ public class DeliveryTests
         return Build.WithId(Rider.Create(hubId, "Rafiq Hasan", "01722000001", vehicle, userId: 30).Value, id);
     }
 
+    /// <summary>A rider on the only vehicle that collects from merchants.</summary>
+    private static Rider NewVan(long hubId = Build.Mirpur, long id = 6)
+    {
+        return Build.WithId(Rider.Create(hubId, "Shahin Mollah", "01722000007", Vehicle.Van, userId: 31).Value, id);
+    }
+
+    private static readonly Load Empty = Load.Of([]);
+
     [Fact]
     public void A_rider_needs_a_name_a_mobile_number_and_a_vehicle()
     {
@@ -54,33 +62,46 @@ public class DeliveryTests
     }
 
     [Fact]
-    public void A_pickup_is_asked_for_up_to_a_week_ahead_and_goes_requested_assigned_completed()
+    public void A_pickup_is_scheduled_for_its_day_and_goes_scheduled_assigned_completed()
     {
-        Assert.Equal("pickup.date", PickupRequest.Create(7, 1, Build.Mirpur, Today.AddDays(-1), Today, 3, null).Error?.Code);
-        Assert.Equal("pickup.date", PickupRequest.Create(7, 1, Build.Mirpur, Today.AddDays(8), Today, 3, null).Error?.Code);
-        Assert.Equal("pickup.parcels", PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 0, null).Error?.Code);
-
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 3, "At the counter").Value;
-        var load = PickupRequest.ToCollect(3, []);
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
+        var load = Load.Of([500, 1_000, 800]);
+        Assert.Equal(PickupStatus.Scheduled, pickup.Status);
+        Assert.Equal(Today, pickup.PickupDate);
         Assert.Equal("pickup.notAssigned", pickup.Complete(3, Now).Error?.Code);
-        Assert.Equal("pickup.rider", pickup.Assign(NewRider(hubId: Build.Gulshan), Build.Fleet(), load).Error?.Code);
-        Assert.True(pickup.Assign(NewRider(), Build.Fleet(), load).IsSuccess);
+        Assert.Equal("pickup.rider", pickup.Assign(NewVan(hubId: Build.Gulshan), Build.Fleet(), Empty, load).Error?.Code);
+        Assert.True(pickup.Assign(NewVan(), Build.Fleet(), Empty, load).IsSuccess);
         Assert.True(pickup.Complete(2, Now).IsSuccess);
 
         Assert.Equal(PickupStatus.Completed, pickup.Status);
         Assert.Equal(2, pickup.PickedParcels);
         Assert.Equal("pickup.closed", pickup.Cancel().Error?.Code);
+        Assert.Equal("pickup.carry", pickup.CarryTo(Today.AddDays(1)).Error?.Code);
+    }
+
+    [Fact]
+    public void A_pickup_whose_day_passed_is_carried_to_today_and_waits_for_a_rider_again()
+    {
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today.AddDays(-1));
+        Assert.True(pickup.Assign(NewVan(), Build.Fleet(), Empty, Load.Of([500])).IsSuccess);
+
+        Assert.Equal("pickup.carry", pickup.CarryTo(Today.AddDays(-1)).Error?.Code);
+        Assert.True(pickup.CarryTo(Today).IsSuccess);
+        Assert.Equal(Today, pickup.PickupDate);
+        Assert.Equal(PickupStatus.Scheduled, pickup.Status);
+        Assert.Null(pickup.RiderId);
     }
 
     [Fact]
     public void A_stopped_rider_is_not_sent_on_a_pickup()
     {
-        var rider = NewRider();
+        var rider = NewVan();
         rider.Deactivate();
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 1, null).Value;
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
 
-        Assert.Equal("pickup.rider", pickup.Assign(rider, Build.Fleet(), PickupRequest.ToCollect(1, [])).Error?.Code);
+        Assert.Equal("pickup.rider", pickup.Assign(rider, Build.Fleet(), Empty, Load.Of([1_000])).Error?.Code);
         Assert.True(pickup.Cancel().IsSuccess);
+        Assert.Equal(PickupStatus.Cancelled, pickup.Status);
     }
 
     [Theory]
@@ -121,48 +142,68 @@ public class DeliveryTests
         var fleet = new Fleet([]);
 
         Assert.True(fleet.Take(Vehicle.Bicycle, new Load(500, 900_000, 30_000), "OD1", 30_000).IsSuccess);
-        Assert.True(fleet.Collect(Vehicle.Bicycle, new Load(900, 0, 0)).IsSuccess);
+        Assert.True(fleet.Collect(Vehicle.Van, new Load(900, 0, 0), new Load(900, 0, 0)).IsSuccess);
     }
 
     [Fact]
-    public void A_pickup_is_sized_by_what_is_booked_or_what_the_merchant_expects_whichever_is_more()
+    public void Only_a_pickup_van_collects_from_merchants()
     {
-        Assert.Equal(new Load(10, 1_500, 1_000), PickupRequest.ToCollect(10, [500, 1_000]));
-        Assert.Equal(new Load(3, 1_800, 800), PickupRequest.ToCollect(2, [500, 500, 800]));
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
+        var load = Load.Of([500, 1_000]);
+
+        foreach (var vehicle in new[] { Vehicle.Bicycle, Vehicle.Motorbike })
+        {
+            var refused = pickup.Assign(NewRider(vehicle: vehicle), Build.Fleet(), Empty, load).Error!;
+            Assert.Equal("pickup.vehicle", refused.Code);
+            Assert.Contains("does not collect from merchants", refused.Message);
+            Assert.Null(pickup.RiderId);
+        }
+
+        Assert.True(pickup.Assign(NewVan(), Build.Fleet(), Empty, load).IsSuccess);
+        Assert.False(Vehicle.Bicycle.CollectsPickups());
+        Assert.True(Vehicle.Van.CollectsPickups());
     }
 
     [Fact]
-    public void The_hub_sends_the_smallest_vehicle_that_carries_a_pickup_in_one_trip()
+    public void A_pickup_is_refused_when_the_van_is_already_too_full_for_it()
+    {
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
+        // The van takes 300 parcels or 1,000 kg: 250 on board already leaves room for 50
+        var onBoard = Load.Of([.. Enumerable.Repeat(1_000, 250)]);
+
+        var refused = pickup.Assign(NewVan(), Build.Fleet(), onBoard, Load.Of([.. Enumerable.Repeat(1_000, 80)])).Error!;
+        Assert.Equal("pickup.full", refused.Code);
+        Assert.Equal(
+            "With this pickup the pickup van would have 330 parcels; it takes 300 at once. " +
+            "Give it to another pickup van, or after this one has unloaded at the hub.",
+            refused.Message);
+        Assert.Null(pickup.RiderId);
+
+        Assert.True(pickup.Assign(NewVan(), Build.Fleet(), onBoard, Load.Of([.. Enumerable.Repeat(1_000, 50)])).IsSuccess);
+    }
+
+    [Fact]
+    public void A_pickup_bigger_than_the_whole_van_goes_to_an_empty_van_in_more_than_one_trip()
+    {
+        var pickup = PickupRequest.Schedule(7, 1, Build.Mirpur, Today);
+        var load = Load.Of([.. Enumerable.Repeat(100, 1_000)]);
+        var fleet = Build.Fleet();
+
+        Assert.True(pickup.Assign(NewVan(), fleet, Empty, load).IsSuccess);
+        Assert.Equal(4, fleet.Trips(Vehicle.Van, load));
+        Assert.Equal(1, fleet.Trips(Vehicle.Van, Load.Of([500, 900])));
+
+        // Not once the van already has something on it: that load would be stranded
+        var second = PickupRequest.Schedule(7, 2, Build.Mirpur, Today);
+        Assert.Equal("pickup.full", second.Assign(NewVan(), fleet, Load.Of([500]), load).Error?.Code);
+    }
+
+    [Fact]
+    public void A_parcel_heavier_than_the_vehicle_takes_is_refused_whatever_room_is_left()
     {
         var fleet = Build.Fleet();
 
-        Assert.Equal(Vehicle.Bicycle, fleet.For(new Load(10, 4_000, 1_000)));
-        Assert.Equal(Vehicle.Motorbike, fleet.For(new Load(30, 4_000, 1_000)));
-        Assert.Equal(Vehicle.Motorbike, fleet.For(new Load(10, 4_000, 8_000)));
-        Assert.Equal(Vehicle.Van, fleet.For(new Load(120, 60_000, 1_000)));
-        Assert.Equal(Vehicle.Van, fleet.For(new Load(2_000, 0, 0)));
-    }
-
-    [Fact]
-    public void A_pickup_too_big_for_the_riders_vehicle_is_refused_and_says_what_to_send()
-    {
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 120, null).Value;
-        var load = PickupRequest.ToCollect(pickup.ExpectedParcels, [1_000, 2_000]);
-
-        var refused = pickup.Assign(NewRider(), Build.Fleet(), load).Error!;
-        Assert.Equal("pickup.vehicle", refused.Code);
-        Assert.Equal("This pickup is 120 parcels; a motorbike carries 40. Send a rider with a pickup van.", refused.Message);
-        Assert.Null(pickup.RiderId);
-        Assert.True(pickup.Assign(NewRider(id: 6, vehicle: Vehicle.Van), Build.Fleet(), load).IsSuccess);
-    }
-
-    [Fact]
-    public void A_pickup_nothing_carries_in_one_trip_goes_to_the_biggest_vehicle()
-    {
-        var pickup = PickupRequest.Create(7, 1, Build.Mirpur, Today, Today, 1_000, null).Value;
-        var load = PickupRequest.ToCollect(pickup.ExpectedParcels, []);
-
-        Assert.Equal("pickup.vehicle", pickup.Assign(NewRider(), Build.Fleet(), load).Error?.Code);
-        Assert.True(pickup.Assign(NewRider(vehicle: Vehicle.Van), Build.Fleet(), load).IsSuccess);
+        Assert.Equal("capacity.parcel", fleet.Take(Vehicle.Bicycle, Empty, "OD1", 6_000).Error?.Code);
+        Assert.True(fleet.Take(Vehicle.Motorbike, Empty, "OD1", 6_000).IsSuccess);
     }
 }

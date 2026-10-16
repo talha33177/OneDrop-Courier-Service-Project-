@@ -42,10 +42,8 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
     {
         WebAppFactory.RequireDatabase();
         var shop = await NewMerchantAsync(area: "Mirpur 10");
-        var merchant = await SignInAsync("onedrop", shop.Email);
-        var point = await QueryAsync("onedrop", db => db.PickupPoints.Where(p => p.MerchantId == shop.Id).Select(p => p.Id).SingleAsync(Cancel));
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Dhaka")));
-        await merchant.SubmitAsync("/Merchant/Pickups", "/Merchant/Pickups", ("PointId", $"{point}"), ("Date", today.ToString("yyyy-MM-dd")), ("Expected", "1"), ("Note", ""));
+        // Booking puts the merchant's point on the Mirpur hub's pickup list
+        await BookAsync(shop.ApiKey);
         var hub = await SignInAsync("onedrop", "hub@onedrop.test");
 
         var asked = await hub.GetAsync("/Hub/Pickups");
@@ -68,6 +66,40 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
         Assert.Contains(shop.Name, await hub.PageAsync("/Hub/Pickups?hub=MIR"));
         var remembered = Visit("onedrop", $"{await SignInCookieAsync("onedrop", "hub@onedrop.test")}; {Web.Pages.Hub.RememberHub.Cookie}=MIR");
         Assert.Contains(shop.Name, await remembered.PageAsync("/Hub/Pickups"));
+    }
+
+    [Fact]
+    public async Task Admins_open_one_board_for_every_hub_and_pick_a_hub_from_its_menu()
+    {
+        WebAppFactory.RequireDatabase();
+        var shop = await NewMerchantAsync(area: "Mirpur 10");
+        await BookAsync(shop.ApiKey);
+        var admin = await SignInAsync("onedrop", "admin@onedrop.test");
+
+        // Before choosing, the admin sees every hub; its steps open the chooser, and the hub menu offers every hub
+        var all = await admin.PageAsync("/Hub");
+        Assert.Contains("<h1>All hubs</h1>", all);
+        Assert.Contains("<option value=\"*\" selected=\"selected\">All hubs", all);
+        Assert.Contains("/Hub/Choose?next=Pickups", all);
+        Assert.Contains("/Hub/Choose?next=Scan&mode=Receive", all);
+        Assert.Contains("<option value=\"MIR\">Mirpur hub (MIR)", all);
+
+        var one = await admin.PageAsync("/Hub?hub=MIR");
+        Assert.Contains("<h1>Mirpur hub</h1>", one);
+        Assert.Contains("/Hub/Pickups?hub=MIR", one);
+        var remembered = Visit("onedrop", $"{await SignInCookieAsync("onedrop", "admin@onedrop.test")}; {Web.Pages.Hub.RememberHub.Cookie}=*");
+        Assert.Contains("<h1>All hubs</h1>", await remembered.PageAsync("/Hub"));
+
+        // Hub staff still choose first, and may ask for every hub; a page that works at one hub cannot show them all
+        var hub = await SignInAsync("onedrop", "hub@onedrop.test");
+        Assert.Equal("/Hub/Choose?next=Index", (await hub.GetAsync("/Hub")).Headers.Location!.OriginalString);
+        Assert.Contains("<h1>All hubs</h1>", await hub.PageAsync("/Hub?hub=*"));
+        Assert.Equal("/Hub/Choose?next=Scan", (await hub.GetAsync("/Hub/Scan?hub=*")).Headers.Location!.OriginalString);
+
+        // Another courier's board of every hub holds only its own hub
+        var rival = await (await SignInAsync("rival", "admin@rival.test")).PageAsync("/Hub");
+        Assert.Contains("<h1>All hubs</h1>", rival);
+        Assert.DoesNotContain("Mirpur hub", rival);
     }
 
     [Fact]
@@ -182,17 +214,14 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
     }
 
     [Fact]
-    public async Task A_merchant_asks_for_a_pickup_the_hub_sends_a_rider_and_the_rider_collects_the_parcels()
+    public async Task A_booked_parcel_goes_on_the_days_pickup_the_hub_sends_a_rider_and_the_rider_collects_the_parcels()
     {
         WebAppFactory.RequireDatabase();
         var shop = await NewMerchantAsync(area: "Mirpur 10");
-        var rider = await NewRiderAsync("MIR");
+        var rider = await NewRiderAsync("MIR", vehicle: Vehicle.Van);
         var codes = new[] { await BookAsync(shop.ApiKey), await BookAsync(shop.ApiKey) };
-        var merchant = await SignInAsync("onedrop", shop.Email);
-        var point = await QueryAsync("onedrop", db => db.PickupPoints.Where(p => p.MerchantId == shop.Id).Select(p => p.Id).SingleAsync(Cancel));
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Dhaka")));
 
-        Assert.Contains("Pickup requested", await merchant.SubmitAsync("/Merchant/Pickups", "/Merchant/Pickups", ("PointId", $"{point}"), ("Date", today.ToString("yyyy-MM-dd")), ("Expected", "2"), ("Note", "Gate 2")));
+        // Booking listed the point once for its day; the merchant asks for nothing
         var pickup = await QueryAsync("onedrop", db => db.PickupRequests.SingleAsync(p => p.MerchantId == shop.Id, Cancel));
 
         var hub = await SignInAsync("onedrop", "hub@onedrop.test");
@@ -202,7 +231,7 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
 
         var app = await SignInAsync("onedrop", rider.Email);
         Assert.Contains(shop.Name, await app.PageAsync("/Rider/Pickups"));
-        Assert.Contains("2 parcels collected", await app.SubmitAsync("/Rider/Pickups", "/Rider/Pickups", ("id", $"{pickup.Id}"), ("codes", codes[0]), ("codes", codes[1])));
+        Assert.Contains("2 parcels collected", await app.SubmitAsync("/Rider/Pickups", "/Rider/Pickups", ("id", $"{pickup.Id}"), ("codes", codes[0]), ("codes", codes[1]), ("shown", codes[0]), ("shown", codes[1])));
 
         foreach (var code in codes)
         {
@@ -211,8 +240,8 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
 
         Assert.Equal(PickupStatus.Completed, await QueryAsync("onedrop", db => db.PickupRequests.Where(p => p.Id == pickup.Id).Select(p => p.Status).SingleAsync(Cancel)));
 
-        // Another merchant cannot cancel it
+        // Another merchant does not see it
         var other = await SignInAsync("onedrop", (await NewMerchantAsync()).Email);
-        Assert.Equal(HttpStatusCode.NotFound, (await other.PostFormAsync("/Merchant/Pickups", "/Merchant/Pickups?handler=Cancel", ("id", $"{pickup.Id}"))).StatusCode);
+        Assert.DoesNotContain(rider.Email[..6], await other.PageAsync("/Merchant/Pickups"));
     }
 }

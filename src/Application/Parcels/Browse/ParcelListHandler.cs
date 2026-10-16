@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Pricing.DeliveryOptions;
 using Domain.Common;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.Browse;
 
@@ -73,6 +75,8 @@ public sealed record ParcelRow(
 
     /// <summary>A problem a hub flagged on the parcel, if any.</summary>
     public ParcelIssue? Issue { get; init; }
+
+    public DeliveryTags Tags { get; init; } = new(null, "", null, "", null, false);
 }
 
 public sealed record ParcelList(Page<ParcelRow> Page, IReadOnlyDictionary<ParcelTab, int> Counts);
@@ -182,7 +186,14 @@ public class ParcelListHandler(IAppDbContext db, ITenantContext tenantContext, T
                 parcel.Created,
                 parcel.DueOn)
             {
-                Issue = parcel.Issue
+                Issue = parcel.Issue,
+                Tags = new DeliveryTags(
+                    parcel.Speed!.IsDefault ? null : parcel.Speed.Name,
+                    parcel.Speed.Icon,
+                    parcel.ProductType!.IsDefault ? null : parcel.ProductType.Name,
+                    parcel.ProductType.Icon,
+                    parcel.ProductType.Handling,
+                    parcel.Speed.GoesFirst || parcel.ProductType.GoesFirst)
             })
             .Skip((number - 1) * size)
             .Take(size)

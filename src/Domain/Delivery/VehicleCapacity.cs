@@ -15,6 +15,11 @@ public readonly record struct Load(int Parcels, int Grams, int HeaviestGrams)
     {
         return new Load(Parcels + 1, Grams + grams, Math.Max(HeaviestGrams, grams));
     }
+
+    public Load Plus(Load other)
+    {
+        return new Load(Parcels + other.Parcels, Grams + other.Grams, Math.Max(HeaviestGrams, other.HeaviestGrams));
+    }
 }
 
 public sealed record CapacityValues(int MaxParcels, int MaxLoadGrams, int MaxParcelGrams);
@@ -126,39 +131,50 @@ public sealed class Fleet(IEnumerable<VehicleCapacity> capacities)
     }
 
     /// <summary>
-    /// The vehicle to send for a pickup of <paramref name="load"/>: the smallest that carries it in one trip, or the
-    /// biggest when none does (it makes more than one trip).
+    /// How many trips a vehicle needs to carry <paramref name="load"/> once its capacity is known: one when it fits (or
+    /// when the courier has set no limit for it).
     /// </summary>
-    public Vehicle For(Load load)
+    public int Trips(Vehicle vehicle, Load load)
     {
-        var bySize = Vehicles.All
-            .OrderBy(v => this[v]?.MaxLoadGrams ?? int.MaxValue)
-            .ThenBy(v => this[v]?.MaxParcels ?? int.MaxValue)
-            .ToList();
+        if (this[vehicle] is not { } own)
+        {
+            return 1;
+        }
 
-        return bySize.FirstOrDefault(v => this[v]?.Carries(load) ?? true, bySize[^1]);
+        return Math.Max(1, Math.Max((load.Parcels + own.MaxParcels - 1) / own.MaxParcels, (load.Grams + own.MaxLoadGrams - 1) / own.MaxLoadGrams));
     }
 
     /// <summary>
-    /// Whether a rider on <paramref name="vehicle"/> can be sent to collect <paramref name="load"/>: their vehicle carries
-    /// it, or nothing the courier has does and theirs is the biggest.
+    /// Whether a rider on <paramref name="vehicle"/> already <paramref name="carries"/> this much (parcels with them, and
+    /// parcels they are on their way to collect) can also be sent to collect <paramref name="load"/>. Only a pickup van
+    /// collects. It must carry everything together, except that a pickup bigger than the whole van takes the van when
+    /// it is otherwise empty: nothing the courier has carries it in one trip, so the van makes more than one.
     /// </summary>
-    public Result Collect(Vehicle vehicle, Load load)
+    public Result Collect(Vehicle vehicle, Load carries, Load load)
     {
+        var name = vehicle.DisplayName().ToLowerInvariant();
+        if (!vehicle.CollectsPickups())
+        {
+            return Error.Conflict(
+                "pickup.vehicle",
+                $"A {name} does not collect from merchants: it takes parcels to recipients. Send a rider with a pickup van.");
+        }
+
         var own = this[vehicle];
-        var send = For(load);
-        if (own is null || own.Carries(load) || send == vehicle)
+        var together = carries.Plus(load);
+        if (own is null || own.Carries(together) || (carries.Parcels == 0 && !own.Carries(load)))
         {
             return Result.Success();
         }
 
-        var name = vehicle.DisplayName().ToLowerInvariant();
-        var why = load.Parcels > own.MaxParcels
-            ? $"This pickup is {load.Parcels} parcels; a {name} carries {own.MaxParcels}."
-            : load.Grams > own.MaxLoadGrams
-                ? $"The parcels booked weigh {Weight.Kg(load.Grams)}; a {name} carries {Weight.Kg(own.MaxLoadGrams)}."
+        var why = together.Parcels > own.MaxParcels
+            ? $"With this pickup the {name} would have {together.Parcels} parcels; it takes {own.MaxParcels} at once."
+            : together.Grams > own.MaxLoadGrams
+                ? $"With this pickup the {name} would have {Weight.Kg(together.Grams)}; it takes {Weight.Kg(own.MaxLoadGrams)} at once."
                 : $"One parcel booked weighs {Weight.Kg(load.HeaviestGrams)}; a {name} takes parcels up to {Weight.Kg(own.MaxParcelGrams)}.";
 
-        return Error.Conflict("pickup.vehicle", $"{why} Send a rider with a {send.DisplayName().ToLowerInvariant()}.");
+        return Error.Conflict(
+            "pickup.full",
+            $"{why} Give it to another pickup van, or after this one has unloaded at the hub.");
     }
 }

@@ -1,15 +1,18 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Delivery.Capacities;
 using Domain.Common;
 using Domain.Delivery;
 using Domain.Network;
+using Domain.Pricing;
 
 namespace Application.Hubs.AssignParcels;
 
 /// <summary>
-/// A rider of the hub, what they ride and what they carry now: the parcels with them and their weight, against the
-/// most their vehicle takes at once (null when the courier has set no limit for it).
+/// A rider of the hub, what they ride and what they carry now: the parcels with them (and, for a pickup van, the ones it
+/// is on its way to collect) and their weight, against the most their vehicle takes at once (null when the courier has
+/// set no limit for it).
 /// </summary>
 public sealed record RiderLoad(
     long Id,
@@ -20,7 +23,11 @@ public sealed record RiderLoad(
     int CarriedGrams,
     int DeliveredToday,
     int? MaxParcels,
-    int? MaxLoadGrams);
+    int? MaxLoadGrams,
+    int? MaxParcelGrams)
+{
+    public bool CollectsPickups => Vehicle.CollectsPickups();
+}
 
 /// <summary>
 /// What an assignment did: the parcels handed over, the ones that could not be with why, and the rider's run, so the
@@ -35,7 +42,7 @@ public sealed record AssignResult(int Assigned, IReadOnlyList<string> Problems, 
 /// cannot go (not here, delivered from another hub, too heavy for the vehicle) is listed with the reason and the others
 /// still go.
 /// </summary>
-public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext, HubDirectory hubs, TimeProvider time)
+public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext, HubDirectory hubs, RiderLoads loads, TimeProvider time)
 {
     public static readonly Error UnknownRider = Error.Validation("assign.rider", "Choose an active rider of this hub.");
 
@@ -58,14 +65,13 @@ public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext
                 r.Name,
                 r.Phone,
                 r.Vehicle,
-                WithThem = db.Parcels.Count(p => p.RiderId == r.Id),
-                Grams = db.Parcels.Where(p => p.RiderId == r.Id).Sum(p => (int?)p.WeightGrams) ?? 0,
                 Delivered = db.DeliveryAttempts.Count(a => a.RiderId == r.Id && a.CompletedOn >= todayStart &&
                     (a.Outcome == AttemptOutcome.Delivered || a.Outcome == AttemptOutcome.PartlyDelivered))
             })
             .AsNoTracking()
             .ToListAsync(cancellationToken);
         var fleet = new Fleet(await db.VehicleCapacities.AsNoTracking().ToListAsync(cancellationToken));
+        var carried = await loads.CarriedAsync([.. riders.Select(r => r.Id)], cancellationToken: cancellationToken);
 
         return
         [
@@ -74,11 +80,12 @@ public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext
                 r.Name,
                 r.Phone,
                 r.Vehicle,
-                r.WithThem,
-                r.Grams,
+                carried[r.Id].Parcels,
+                carried[r.Id].Grams,
                 r.Delivered,
                 fleet[r.Vehicle]?.MaxParcels,
-                fleet[r.Vehicle]?.MaxLoadGrams))
+                fleet[r.Vehicle]?.MaxLoadGrams,
+                fleet[r.Vehicle]?.MaxParcelGrams))
         ];
     }
 
@@ -115,12 +122,14 @@ public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext
         }
 
         var fleet = new Fleet(await db.VehicleCapacities.AsNoTracking().ToListAsync(cancellationToken));
-        var load = Load.Of(await db.Parcels.Where(p => p.RiderId == rider.Id).Select(p => p.WeightGrams).ToListAsync(cancellationToken));
+        var load = await loads.CarriedAsync(rider.Id, cancellationToken: cancellationToken);
 
-        // The parcels due soonest go first, so the ones left behind when the vehicle is full are the least urgent
+        // What goes first (express, food that spoils) leads, then the parcels due soonest, so the ones left behind when the vehicle
+        // is full are the least urgent
         var parcels = await db.Parcels
             .Where(p => codes.Contains(p.TrackingCode))
-            .OrderBy(p => p.DueOn == null)
+            .OrderByDescending(p => p.Speed!.GoesFirst || p.ProductType!.GoesFirst)
+            .ThenBy(p => p.DueOn == null)
             .ThenBy(p => p.DueOn)
             .ThenBy(p => p.Id)
             .ToListAsync(cancellationToken);
@@ -129,7 +138,7 @@ public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext
         var assigned = 0;
         foreach (var parcel in parcels)
         {
-            var fits = fleet.Take(rider.Vehicle, load, parcel.TrackingCode, parcel.WeightGrams);
+            var fits = fleet.Take(rider.Vehicle, load, parcel.TrackingCode, parcel.BilledWeightGrams);
             if (fits.Error?.Code is "capacity.parcels" or "capacity.load")
             {
                 full.Add(parcel.TrackingCode);
@@ -144,7 +153,7 @@ public class AssignParcelsHandler(IAppDbContext db, ITenantContext tenantContext
             }
 
             db.DeliveryAttempts.Add(run.Add(parcel, now).Value);
-            load = load.With(parcel.WeightGrams);
+            load = load.With(parcel.BilledWeightGrams);
             assigned++;
         }
 

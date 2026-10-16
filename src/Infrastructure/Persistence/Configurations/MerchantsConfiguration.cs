@@ -98,6 +98,9 @@ public class PickupPointConfiguration: IEntityTypeConfiguration<PickupPoint>
         builder.Property(p => p.Name).HasMaxLength(200);
         builder.Property(p => p.Address).HasMaxLength(500);
         builder.Property(p => p.ContactPhone).HasMaxLength(20);
+        builder.Property(p => p.Latitude).HasPrecision(9, 6);
+        builder.Property(p => p.Longitude).HasPrecision(9, 6);
+        builder.Ignore(p => p.Pin);
         builder.HasOne<Merchant>().WithMany().HasForeignKey(p => p.MerchantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Area>().WithMany().HasForeignKey(p => p.AreaId).OnDelete(DeleteBehavior.Restrict);
     }

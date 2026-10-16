@@ -22,6 +22,9 @@ public sealed record FakeCharge(PaymentSession Session, DateTime StartedOn)
     public string? Reason { get; init; }
 }
 
+/// <summary>A refund the fake gateway made.</summary>
+public sealed record FakeRefund(string BankTransactionId, decimal Amount, string Reference, string RefundReference);
+
 /// <summary>The payments the fake gateway was asked to take, by transaction, so the Dev page and the tests can pay or fail them.</summary>
 public class FakePaymentLog
 {
@@ -62,6 +65,28 @@ public class FakePaymentLog
                 });
 
         return paid.ValidationId;
+    }
+
+    /// <summary>Refunds the gateway made, newest last: the gateway's payment id, the amount and our reference.</summary>
+    public IReadOnlyList<FakeRefund> Refunds => [.. refunds];
+
+    private readonly ConcurrentQueue<FakeRefund> refunds = new();
+
+    /// <summary>
+    /// Sends a payment back. The gateway refuses a second refund of the same payment, as the real one refuses a refund
+    /// larger than what is left of it.
+    /// </summary>
+    public RefundAnswer Refund(string bankTransactionId, decimal amount, string reference)
+    {
+        if (refunds.Any(r => r.BankTransactionId == bankTransactionId))
+        {
+            return new RefundAnswer(RefundState.Refused, Reason: "This payment was already refunded.");
+        }
+
+        var refund = new FakeRefund(bankTransactionId, amount, reference, $"FAKE-REF-{Guid.NewGuid():N}"[..20]);
+        refunds.Enqueue(refund);
+
+        return new RefundAnswer(RefundState.Done, refund.RefundReference);
     }
 
     /// <summary>The payment fails or is cancelled on the page.</summary>
@@ -109,6 +134,25 @@ public class FakePaymentGateway(FakePaymentLog log, SslcommerzOptions options, T
             { State: GatewayState.Failed } failed => new GatewayLookup(GatewayState.Failed, Reason: failed.Reason),
             _ => new GatewayLookup(GatewayState.Pending)
         });
+    }
+
+    public Task<RefundAnswer> RefundAsync(
+        string bankTransactionId,
+        decimal amount,
+        string reference,
+        string remarks,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation("Fake refund of {Amount} for {Reference}: {Remarks}", amount, reference, remarks);
+
+        return Task.FromResult(log.Refund(bankTransactionId, amount, reference));
+    }
+
+    public Task<RefundAnswer> RefundStatusAsync(string refundReference, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(log.Refunds.Any(r => r.RefundReference == refundReference)
+            ? new RefundAnswer(RefundState.Done, refundReference)
+            : new RefundAnswer(RefundState.Refused, refundReference, "No such refund."));
     }
 
     private static GatewayReceipt Receipt(FakeCharge charge)

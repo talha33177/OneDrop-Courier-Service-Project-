@@ -37,6 +37,48 @@
 </div>
 
 <div class="card">
+    <div class="card-head"><div><h2>@Icons.Get("zap") Delivery types</h2><p>Added to the delivery charge when you choose them while booking</p></div></div>
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    @foreach (var rate in Model.Rates)
+                    {
+                        <th class="num">@rate.ServiceArea.DisplayName()</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var option in Model.DeliveryTypes.Where(o => !o.IsDefault))
+                {
+                    <tr>
+                        <td><div class="cell-main">@Icons.Named(option.Icon) @option.Name</div><div class="cell-sub">@option.Description</div></td>
+                        @foreach (var rate in Model.Rates)
+                        {
+                            <td class="num">
+                                @if (option.ChargeIn(rate.ServiceArea) is { } extra)
+                                {
+                                    <span>+@Money.Taka(extra)</span>
+                                    @if (option.Kind == DeliveryOptionKind.Speed)
+                                    {
+                                        <div class="cell-sub">@Statuses.Promise(option.DaysIn(rate.ServiceArea) ?? rate.DeliveryDays).ToLowerInvariant()</div>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="faint">Not offered</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
     <div class="card-head"><h2>@Icons.Get("chart") Price calculator</h2></div>
     <div class="card-body">
         <form id="calc" class="form-grid-3" onsubmit="return false">
@@ -64,7 +106,26 @@
                 <label for="codAmount">Cash to collect (৳)</label>
                 <input type="number" id="codAmount" name="codAmount" value="1000" min="0" step="1" />
             </div>
+            <div class="field">
+                <label for="speed">Speed</label>
+                <select id="speed" name="speed">
+                    @foreach (var speed in Model.DeliveryTypes.Where(o => o.Kind == DeliveryOptionKind.Speed))
+                    {
+                        <option value="@speed.Code" selected="@speed.IsDefault">@speed.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label for="productType">What is inside</label>
+                <select id="productType" name="productType">
+                    @foreach (var product in Model.DeliveryTypes.Where(o => o.Kind == DeliveryOptionKind.Contents))
+                    {
+                        <option value="@product.Code" selected="@product.IsDefault">@product.Name</option>
+                    }
+                </select>
+            </div>
         </form>
+        <div class="alert alert-warning mt" id="calc-problem" hidden></div>
         <div class="stats" id="result" hidden>
             <div class="stat"><div><div class="stat-label">Service</div><div class="stat-value" data-r="service" style="font-size:18px"></div></div></div>
             <div class="stat"><div><div class="stat-label">Delivery charge</div><div class="stat-value" data-r="delivery"></div></div></div>
@@ -98,6 +159,9 @@
                 result.querySelector("[data-r=cod]").textContent = taka(q.codCharge);
                 result.querySelector("[data-r=total]").textContent = taka(q.total);
                 result.hidden = false;
+                const problem = document.getElementById("calc-problem");
+                problem.textContent = q.problem ? q.problem + " The charges shown are for the courier's usual delivery." : "";
+                problem.hidden = !q.problem;
             };
             form.addEventListener("input", run);
         })();

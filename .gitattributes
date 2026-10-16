@@ -18,6 +18,8 @@
 # Use LF line endings for shell scripts used in WSL/Linux
 *.sh       text eol=lf
 tools/runai text eol=lf
+# The live site's compose file, Caddyfile and .env run on a Linux server
+deploy/**  text eol=lf
 
 ###############################################################################
 # Set default behavior for command prompt diff.

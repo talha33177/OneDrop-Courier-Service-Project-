@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
+using Application.Common;
+using Application.Parcels.Stuck;
 using Domain.Delivery;
 using Domain.Merchants;
 using Domain.Notifications;
@@ -10,14 +12,14 @@ namespace Application.Notifications.Bell;
 
 /// <summary>
 /// The admin panel's bell: what is waiting for the courier's admin, worked out when asked from what the courier already
-/// keeps. Sign-ups to approve, requests to answer, parcels a hub flagged, messages that failed, payouts the gateway
-/// refused, online payments the gateway held for a check and merchants owed money with no payout account are listed
-/// while they wait, each as one line with its count;
-/// riders who handed in less cash than they collected and notes merchants left on return lists are listed for the last
-/// week. A notice's time is that of the newest thing in it, so it shows as new when something joined it since the bell
-/// was last opened.
+/// keeps. Sign-ups to approve, requests to answer, parcels a hub flagged, parcels stuck in one place, messages that
+/// failed, payouts the gateway refused, merchants asking to be paid now, online payments the gateway held for a check
+/// and merchants owed money with no payout account are listed while they wait, each as one line with its count; riders
+/// who handed in less cash than they collected and notes merchants left on return lists are listed for the last week. A
+/// notice's time is that of the newest thing in it, so it shows as new when something joined it since the bell was last
+/// opened.
 /// </summary>
-public class AdminBellHandler(IAppDbContext db, TimeProvider time)
+public class AdminBellHandler(IAppDbContext db, ITenantContext tenantContext, TimeProvider time)
 {
     /// <summary>How far back the bell looks for short riders and return list notes.</summary>
     public const int Days = MerchantBellHandler.Days;
@@ -25,7 +27,11 @@ public class AdminBellHandler(IAppDbContext db, TimeProvider time)
     /// <summary>The most return list notes listed one by one.</summary>
     public const int MaxNotes = 5;
 
-    public async Task<Bell> ForAsync(DateTime? seen, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// What waits, newest first. <paramref name="opens"/> keeps a staff member to the lines whose page they may open, so
+    /// accounts hears about payouts and merchant support about sign-ups.
+    /// </summary>
+    public async Task<Bell> ForAsync(DateTime? seen, Func<string, bool>? opens = null, CancellationToken cancellationToken = default)
     {
         var since = time.GetUtcNow().UtcDateTime.AddDays(-Days);
         List<Notice> notices = [];
@@ -69,6 +75,22 @@ public class AdminBellHandler(IAppDbContext db, TimeProvider time)
             ? new Notice(flag.Latest!.Value, NoticeTone.Attention, "flag", $"{Plural(flag.Count, "parcel")} flagged in review", "/Hub/Parcels?tab=InReview")
             : new Notice(flag.Latest!.Value, NoticeTone.Problem, "flag", $"{Plural(flag.Count, "parcel")} flagged exceptional", "/Hub/Parcels?tab=Exceptional")));
 
+        // Timed by the newest parcel to have become stuck: the day it last moved and the courier's days after it
+        var tenant = tenantContext.Require();
+        var stuckParcels = await StuckParcelsHandler.Stuck(db.Parcels, tenant, time.GetUtcNow().UtcDateTime)
+            .GroupBy(p => 1)
+            .Select(g => new { Count = g.Count(), Latest = g.Max(p => p.MovedOn) })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (stuckParcels is not null)
+        {
+            notices.Add(new Notice(
+                stuckParcels.Latest.AddDays(tenant.StuckAfterDays ?? 0),
+                NoticeTone.Problem,
+                "clock",
+                $"{Plural(stuckParcels.Count, "parcel")} stuck in one place for over {Plural(tenant.StuckAfterDays ?? 0, "day")}",
+                "/Admin/Stuck"));
+        }
+
         var failed = await db.OutboxMessages
             .Where(m => m.Status == OutboxStatus.Failed)
             .GroupBy(m => 1)
@@ -99,7 +121,22 @@ public class AdminBellHandler(IAppDbContext db, TimeProvider time)
                 "/Admin/Payouts"));
         }
 
-        // Money a merchant paid online that the gateway took but held: risky, or another amount than asked
+        var asking = await db.PayoutRequests
+            .Where(r => r.Status == PayoutRequestStatus.Open)
+            .GroupBy(r => 1)
+            .Select(g => new { Count = g.Count(), Latest = g.Max(r => r.Created) })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (asking is not null)
+        {
+            notices.Add(new Notice(
+                asking.Latest,
+                NoticeTone.Attention,
+                "send",
+                $"{Plural(asking.Count, "merchant")} asking to be paid now",
+                "/Admin/Payouts"));
+        }
+
+        // Money paid online that the gateway took but held: risky, or another amount than asked
         var held = await db.OnlinePayments
             .Where(p => p.Status == OnlinePaymentStatus.Review)
             .GroupBy(p => 1)
@@ -111,7 +148,23 @@ public class AdminBellHandler(IAppDbContext db, TimeProvider time)
                 held.Latest!.Value,
                 NoticeTone.Attention,
                 "flag",
-                $"{Plural(held.Count, "online payment")} from merchants to check",
+                $"{Plural(held.Count, "online payment")} to check",
+                "/Admin/Payouts"));
+        }
+
+        // A recipient's payment owed back that the gateway would not refund: asked again hourly, or refunded by hand
+        var refusedRefunds = await db.OnlinePayments
+            .Where(p => p.Status == OnlinePaymentStatus.RefundDue && p.RefundReference == null && p.RefundTriedOn != null)
+            .GroupBy(p => 1)
+            .Select(g => new { Count = g.Count(), Latest = g.Max(p => p.RefundTriedOn) })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (refusedRefunds is not null)
+        {
+            notices.Add(new Notice(
+                refusedRefunds.Latest!.Value,
+                NoticeTone.Problem,
+                "return",
+                $"{Plural(refusedRefunds.Count, "refund")} to a recipient the gateway refused",
                 "/Admin/Payouts"));
         }
 
@@ -171,7 +224,7 @@ public class AdminBellHandler(IAppDbContext db, TimeProvider time)
             $"{note.Merchant} on {note.Number}: “{note.Note}”",
             $"/Hub/Returns?hub={note.Hub}")));
 
-        var latest = notices.OrderByDescending(notice => notice.At).ToList();
+        var latest = notices.Where(notice => opens is null || opens(notice.Link)).OrderByDescending(notice => notice.At).ToList();
 
         return new Bell(latest, latest.Count(notice => seen is null || notice.At > seen));
     }

@@ -15,8 +15,8 @@ public sealed record RateRow(
     int? DeliveryDays);
 
 /// <summary>
-/// The courier's rate card and delivery times: shown on the public pricing section and the merchant's calculator,
-/// changed by the courier's admin. A change prices, and promises a time for, parcels booked from then on.
+/// The courier's rate card and delivery times: shown on the public pricing section and the merchant's
+/// calculator, changed by the courier's admin. A change prices, and promises a time for, parcels booked from then on.
 /// </summary>
 public class RatesHandler(IAppDbContext db)
 {

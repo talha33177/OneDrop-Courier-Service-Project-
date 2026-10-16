@@ -43,4 +43,15 @@ public static class ServiceAreas
             _ => "Outside city"
         };
     }
+
+    /// <summary>Where such a parcel goes, to finish a sentence: "inside the city", "to a suburb", "outside the city".</summary>
+    public static string Destination(this ServiceArea area)
+    {
+        return area switch
+        {
+            ServiceArea.InsideCity => "inside the city",
+            ServiceArea.Suburb => "to a suburb",
+            _ => "outside the city"
+        };
+    }
 }

@@ -5,7 +5,7 @@ using Domain.Pricing;
 
 namespace Web.Pages.Admin;
 
-/// <summary>The courier's rate card: the admin changes what parcels booked from now on cost.</summary>
+/// <summary>The courier's rate card: the admin changes what parcels booked from now on cost. Delivery types are priced on their own page.</summary>
 public class RatesModel(RatesHandler rates) : PageModel
 {
     public IReadOnlyList<RateRow> Rates { get; private set; } = [];

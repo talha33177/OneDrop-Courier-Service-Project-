@@ -130,10 +130,10 @@
 </div>
 
 <div class="card mt-lg">
-    <div class="card-head"><div><h2>@Icons.Get("map-pin") Pickup points</h2><p>Where riders collect your parcels. New parcels go from the default point unless you choose another.</p></div></div>
+    <div class="card-head"><div><h2>@Icons.Get("map-pin") Pickup points</h2><p>Where riders collect your parcels. New parcels go from the default point unless you choose another. Pin a point on the map and the pickup van is guided to your door, and your stop sits on the rider's route.</p></div></div>
     <div class="table-wrap">
         <table class="table">
-            <thead><tr><th>Name</th><th>Address</th><th>Area</th><th>Phone</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Address</th><th>Area</th><th>Phone</th><th>On the map</th><th></th></tr></thead>
             <tbody>
                 @foreach (var point in a.PickupPoints)
                 {
@@ -142,7 +142,18 @@
                         <td>@point.Address</td>
                         <td>@point.Area</td>
                         <td>@Money.Phone(point.ContactPhone)</td>
-                        <td class="text-right">
+                        <td>
+                            @if (point.Pin is { } pin)
+                            {
+                                <a class="link-btn" href="@MapLinks.Directions(pin)" target="_blank" rel="noopener">@Icons.Get("map-pin") Pinned</a>
+                            }
+                            else
+                            {
+                                <span class="faint">By address</span>
+                            }
+                        </td>
+                        <td class="text-right nowrap">
+                            <a class="btn btn-ghost btn-sm" asp-page="/Merchant/PickupPoint" asp-route-id="@point.Id">Edit</a>
                             @if (!point.IsDefault)
                             {
                                 <form method="post" asp-page-handler="Default" asp-route-id="@point.Id" class="inline-form">
@@ -156,15 +167,6 @@
         </table>
     </div>
     <div class="card-body" style="border-top:1px solid var(--line)">
-        <h3 class="mb">Add a pickup point</h3>
-        <form method="post" asp-page-handler="Point">
-            <div class="form-grid">
-                <div class="field"><label for="pname">Name</label><input type="text" id="pname" name="name" placeholder="e.g. Warehouse" required /></div>
-                <div class="field"><label for="areaId">Area</label>@await Html.PartialAsync("_AreaSelect", ("areaId", (long?)null, Model.Areas))</div>
-                <div class="field"><label for="paddress">Address</label><input type="text" id="paddress" name="address" required /></div>
-                <div class="field"><label for="pphone">Contact phone</label><input type="tel" id="pphone" name="phone" required /></div>
-            </div>
-            <button class="btn btn-outline" type="submit">@Icons.Get("plus") Add pickup point</button>
-        </form>
+        <a class="btn btn-outline" asp-page="/Merchant/PickupPoint">@Icons.Get("plus") Add a pickup point</a>
     </div>
 </div>

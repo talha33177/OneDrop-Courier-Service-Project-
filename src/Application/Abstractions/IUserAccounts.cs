@@ -8,6 +8,9 @@ public sealed record NewLogin(string? Email, string? Password, string DisplayNam
     public long? MerchantId { get; init; }
 }
 
+/// <summary>A login of the courier's own people (an admin or hub staff), as the admin sees it.</summary>
+public sealed record StaffLogin(long UserId, string Name, string Email, string Role, bool Stopped, DateTime Created);
+
 /// <summary>Creates logins. Identity lives in Infrastructure; the use cases only ask for an account.</summary>
 public interface IUserAccounts
 {
@@ -28,4 +31,13 @@ public interface IUserAccounts
 
     /// <summary>Gives a login a new password, for an owner who has to hand one out again.</summary>
     Task<Result> ResetPasswordAsync(long userId, string password, CancellationToken cancellationToken = default);
+
+    /// <summary>The current courier's logins in one of <paramref name="roles"/>, each with the first of them it holds.</summary>
+    Task<IReadOnlyList<StaffLogin>> InRolesAsync(IReadOnlyList<string> roles, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Renames a login and moves it from role <paramref name="from"/> to <paramref name="to"/>. An open session picks
+    /// the new role up at its next security check.
+    /// </summary>
+    Task<Result> ChangeAsync(long userId, string name, string from, string to, CancellationToken cancellationToken = default);
 }

@@ -8,7 +8,7 @@
 <div class="page-head">
     <div>
         <h1>What each vehicle carries</h1>
-        <p>The most a rider takes out at once. The hub cannot hand a rider more than their vehicle carries, and each pickup goes to a vehicle big enough for it.</p>
+        <p>The most a rider takes out at once. The hub cannot hand a rider more than their vehicle carries, and the pickup van is only given the pickups it holds.</p>
     </div>
     <div class="page-actions"><a class="btn btn-outline" asp-page="/Admin/Riders">@Icons.Get("users") Riders</a></div>
 </div>
@@ -20,9 +20,11 @@
     <div>
         <div class="tip-title">How the limits are used</div>
         <ul>
-            <li>Handing parcels to a rider stops when the next parcel would go over any of the three numbers; the parcels due soonest go first.</li>
-            <li>A pickup is sized from the parcels booked at the point, or the merchant's own count if larger. Too big for a motorbike? The hub is told to send a pickup van.</li>
-            <li>When nothing carries a pickup in one trip, the biggest vehicle goes and makes more than one.</li>
+            <li>Bicycles and motorbikes take parcels to recipients and never go to a merchant. Each hub needs a rider on a pickup van: it collects from the merchants once a day.</li>
+            <li>Handing parcels to a rider stops when the next parcel would go over any of the three numbers; the parcels due soonest go first. Parcels count at the weight the hub's scale read, and parcels on a return list count too.</li>
+            <li>The van's load is what is on it (collected and not yet scanned in at the hub) plus the parcels at the merchants it is sent to. The hub gives it pickups until it is full; the rest wait for another van or for after it has unloaded.</li>
+            <li>One pickup bigger than the whole van is allowed when the van is otherwise empty: it makes more than one trip.</li>
+            <li>Lowering a limit applies to the next hand-over. Parcels a rider already holds stay with them.</li>
         </ul>
     </div>
 </div>

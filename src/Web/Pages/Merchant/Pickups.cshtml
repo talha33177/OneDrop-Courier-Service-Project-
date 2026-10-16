@@ -2,68 +2,88 @@
 @using Domain.Delivery
 @model Web.Pages.Merchant.PickupsModel
 @{
-    ViewData["Title"] = "Pickup requests";
+    ViewData["Title"] = "Pickups";
+    var d = Model.Data;
+    var leaves = d.LeavesAt is { } l ? Statuses.Clock(l) : null;
+    var today = d.Points.Where(p => p.GoesOn <= Model.Today).Sum(p => p.Waiting);
+    var later = d.Points.Where(p => p.GoesOn > Model.Today).Sum(p => p.Waiting);
+    var visited = d.Points.Any(p => p.GoesOn > Model.Today);
 }
 
 <div class="page-head">
     <div>
-        <h1>Pickup requests</h1>
-        <p>Ask us to collect your parcels. A rider from the nearest hub comes to your pickup point.</p>
+        <h1>Pickups</h1>
+        <p>We collect from you once a day. You do not need to ask: every parcel you book goes with a pickup by itself.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-primary" asp-page="/Merchant/NewParcel">@Icons.Get("plus") Book a parcel</a>
     </div>
 </div>
 
 <partial name="_Alerts" />
 
-<div class="tip" data-tip="merchant-pickups">
-    @Icons.Get("bulb")
-    <div>
-        <div class="tip-title">How pickups work</div>
-        <ol>
-            <li>Book your parcels first</li>
-            <li>Ask for a pickup on the day you want</li>
-            <li>A rider collects every parcel booked at that point</li>
-        </ol>
+<div class="pickup-rule card">
+    <div class="card-body">
+        <div class="pickup-rule-steps">
+            <div>
+                <span class="stat-icon">@Icons.Get("package")</span>
+                <div><strong>Book, pack and label</strong><small>Until the truck reaches you, every parcel you book goes with it</small></div>
+            </div>
+            <div>
+                <span class="stat-icon">@Icons.Get("truck")</span>
+                <div><strong>@(leaves is null ? "Our pickup comes" : $"The truck leaves at {leaves}")</strong><small>It visits each pickup point once a day</small></div>
+            </div>
+            <div>
+                <span class="stat-icon">@Icons.Get("warehouse")</span>
+                <div><strong>At the hub the same evening</strong><small>Sorted and sent on for delivery</small></div>
+            </div>
+        </div>
+        <p class="next-pickup @(visited ? "closed" : "")">
+            @Icons.Get("clock")
+            @if (visited)
+            {
+                <span>The truck has already been to @(d.Points.Count(p => p.GoesOn > Model.Today) == 1 ? "a pickup point" : "some pickup points") of yours today. A parcel booked there now goes <strong>tomorrow</strong>.</span>
+            }
+            else
+            {
+                <span>A parcel you book before the truck reaches you is collected <strong>today</strong>, even a minute before it arrives. Once it has been to a pickup point, parcels booked there go with the next day's pickup.</span>
+            }
+        </p>
     </div>
 </div>
 
 <div class="grid grid-side">
     <div class="card">
-        <div class="card-head"><h2>Your requests</h2></div>
-        @if (Model.Data.Requests.Count == 0)
+        <div class="card-head">
+            <div><h2>Your pickups</h2><p>The latest 30, newest first</p></div>
+        </div>
+        @if (d.Pickups.Count == 0)
         {
-            <div class="empty">@Icons.Get("truck")<h3>No pickups yet</h3><p>Request your first pickup with the form.</p></div>
+            <div class="empty">@Icons.Get("truck")<h3>No pickups yet</h3><p>Book a parcel and it goes with the next pickup.</p><a class="btn btn-primary" asp-page="/Merchant/NewParcel">Book a parcel</a></div>
         }
         else
         {
             <div class="table-wrap">
                 <table class="table">
-                    <thead><tr><th>Day</th><th>Pickup point</th><th class="num">Parcels</th><th>Rider</th><th>Status</th><th></th></tr></thead>
+                    <thead><tr><th>Day</th><th>Pickup point</th><th class="num">Parcels</th><th>Rider</th><th>Status</th></tr></thead>
                     <tbody>
-                        @foreach (var request in Model.Data.Requests)
+                        @foreach (var pickup in d.Pickups)
                         {
                             <tr>
-                                <td class="nowrap"><div class="cell-main">@request.Date.ToString("ddd d MMM")</div></td>
-                                <td><div>@request.PickupPoint</div><div class="cell-sub">@request.Area</div></td>
-                                <td class="num">@(request.Picked?.ToString() ?? request.Expected.ToString())<div class="cell-sub">@(request.Picked is null ? "expected" : "picked")</div></td>
+                                <td class="nowrap"><div class="cell-main">@pickup.Date.ToString("ddd d MMM")</div>@if (pickup.Date == Model.Today) {<div class="cell-sub">today</div>}</td>
+                                <td><div>@pickup.PickupPoint</div><div class="cell-sub">@pickup.Area</div></td>
+                                <td class="num">@(pickup.Picked ?? pickup.Parcels)<div class="cell-sub">@(pickup.Picked is null ? pickup.Status is PickupStatus.Scheduled or PickupStatus.Assigned ? "to collect" : "" : "picked")</div></td>
                                 <td>
-                                    @if (request.Rider is not null)
+                                    @if (pickup.Rider is not null)
                                     {
-                                        <div>@request.Rider</div><div class="cell-sub">@Money.Phone(request.RiderPhone)</div>
+                                        <div>@pickup.Rider</div><div class="cell-sub">@Money.Phone(pickup.RiderPhone)</div>
                                     }
                                     else
                                     {
                                         <span class="faint">Not yet</span>
                                     }
                                 </td>
-                                <td>@Statuses.Badge(request.Status)</td>
-                                <td class="text-right">
-                                    @if (request.Status is PickupStatus.Requested or PickupStatus.Assigned)
-                                    {
-                                        <form method="post" asp-page-handler="Cancel" asp-route-id="@request.Id" class="inline-form">
-                                            <button class="btn btn-ghost btn-sm" type="submit" data-confirm="The hub will not send a rider for this pickup." data-confirm-title="Cancel this pickup?" data-confirm-ok="Cancel pickup">Cancel</button>
-                                        </form>
-                                    }
-                                </td>
+                                <td>@Statuses.Badge(pickup.Status)</td>
                             </tr>
                         }
                     </tbody>
@@ -73,69 +93,32 @@
     </div>
 
     <div class="card">
-        <div class="card-head"><h2>@Icons.Get("plus") Request a pickup</h2></div>
+        <div class="card-head"><h2>@Icons.Get("map-pin") Waiting at your points</h2></div>
         <div class="card-body">
-            @if (Model.Data.Points.Count == 0)
+            @if (d.Points.Count == 0)
             {
                 <p class="muted">Add a pickup point in <a asp-page="/Merchant/Settings">Settings</a> first.</p>
             }
             else
             {
-                <form method="post">
-                    <div class="field">
-                        <label for="PointId">Pickup point</label>
-                        <select asp-for="PointId">
-                            @foreach (var point in Model.Data.Points)
-                            {
-                                <option value="@point.Id" selected="@point.IsDefault" data-waiting="@point.Waiting">@point.Name, @point.Area (@point.Waiting waiting)</option>
-                            }
-                        </select>
-                        <div class="alert alert-warning mt" style="margin-bottom:0" data-none-waiting hidden>
-                            @Icons.Get("alert")<div>No parcels are booked at this point yet. <a asp-page="/Merchant/NewParcel">Book them first</a> so the rider knows what to collect.</div>
+                <div class="money-list">
+                    @foreach (var point in d.Points)
+                    {
+                        <div>
+                            <span><span class="cell-main">@point.Name</span><span class="cell-sub">@point.Area</span></span>
+                            <span class="text-right">
+                                <strong>@point.Waiting</strong> @(point.GoesOn > Model.Today ? "tomorrow" : "today")
+                                @if (point.GoesOn > Model.Today)
+                                {
+                                    <span class="cell-sub">The truck has been here today</span>
+                                }
+                            </span>
                         </div>
-                    </div>
-                    <div class="field">
-                        <label for="Date">Day</label>
-                        <input asp-for="Date" type="date" min="@Model.Today.ToString("yyyy-MM-dd")" max="@Model.Today.AddDays(7).ToString("yyyy-MM-dd")" />
-                    </div>
-                    <div class="field">
-                        <label for="Expected">How many parcels</label>
-                        <input asp-for="Expected" type="number" min="1" max="1000" />
-                    </div>
-                    <div class="field">
-                        <label for="Note">Note for the rider</label>
-                        <input asp-for="Note" maxlength="300" placeholder="e.g. Ask for Rahim at the counter" />
-                    </div>
-                    <button class="btn btn-primary btn-block" type="submit">@Icons.Get("truck") Request pickup</button>
-                </form>
-                <p class="hint mt">Parcels waiting at each point: @string.Join(", ", Model.Data.Points.Select(p => $"{p.Name} {p.Waiting}")).</p>
+                    }
+                </div>
+                <p class="hint mt">@today parcel@(today == 1 ? "" : "s") go@(today == 1 ? "es" : "") with today's pickup@(later > 0 ? $", {later} with tomorrow's" : "").</p>
+                <p class="hint">Bringing parcels to a hub yourself? Hub staff scan them in at the counter, any day.</p>
             }
         </div>
     </div>
 </div>
-
-@section Scripts {
-    <script>
-    (() => {
-        const point = document.getElementById("PointId");
-        const expected = document.getElementById("Expected");
-        const warning = document.querySelector("[data-none-waiting]");
-        if (!point) {
-            return;
-        }
-
-        // The number of parcels follows the point's bookings until the merchant types their own
-        let typed = false;
-        expected.addEventListener("input", () => typed = true);
-        const update = () => {
-            const waiting = Number(point.selectedOptions[0]?.dataset.waiting || 0);
-            warning.hidden = waiting > 0;
-            if (!typed && waiting > 0) {
-                expected.value = waiting;
-            }
-        };
-        point.addEventListener("change", update);
-        update();
-    })();
-    </script>
-}

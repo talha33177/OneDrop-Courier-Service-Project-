@@ -22,6 +22,56 @@ internal static class Build
     public static readonly RateValues Suburb = new(1000, 100, 20, 1, 50, 2);
     public static readonly RateValues OutsideCity = new(1000, 120, 20, 1, 60, 3);
 
+    /// <summary>The default speed: everywhere, at no extra, in the rate card's time.</summary>
+    public static DeliveryOption Regular() => Option(11, DeliveryOptionKind.Speed, "regular", "Regular", isDefault: true);
+
+    /// <summary>The launch express: ৳40, the day after pickup, inside the city and to a suburb only; goes first.</summary>
+    public static DeliveryOption Express() =>
+        Option(12, DeliveryOptionKind.Speed, "express", "Express", goesFirst: true, near: 40, days: 1);
+
+    /// <summary>The default contents: everywhere, at no extra.</summary>
+    public static DeliveryOption General() => Option(21, DeliveryOptionKind.Contents, "general", "General", isDefault: true);
+
+    public static DeliveryOption Liquid() => Option(22, DeliveryOptionKind.Contents, "liquid", "Liquid", near: 10, far: 10);
+
+    public static DeliveryOption Fragile() => Option(23, DeliveryOptionKind.Contents, "fragile", "Fragile", near: 20, far: 20);
+
+    /// <summary>The launch frozen: ৳50, inside the city and to a suburb only; goes first.</summary>
+    public static DeliveryOption Frozen() =>
+        Option(25, DeliveryOptionKind.Contents, "frozen", "Frozen", goesFirst: true, near: 50);
+
+    /// <summary>
+    /// A delivery option priced <paramref name="near"/> inside the city and to a suburb and <paramref name="far"/>
+    /// outside it (null: not offered there), a speed delivering in <paramref name="days"/> where it is offered.
+    /// </summary>
+    public static DeliveryOption Option(
+        long id,
+        DeliveryOptionKind kind,
+        string code,
+        string name,
+        bool isDefault = false,
+        bool goesFirst = false,
+        decimal? near = null,
+        decimal? far = null,
+        int? days = null)
+    {
+        var option = DeliveryOption.Create(
+            kind,
+            code,
+            new DeliveryOptionValues(name, null, kind == DeliveryOptionKind.Contents ? $"{name}: handle with care" : null, "package", goesFirst),
+            (int)id).Value;
+        if (isDefault)
+        {
+            option.MakeDefault();
+        }
+
+        option.SetCharge(ServiceArea.InsideCity, near, near is null ? null : days);
+        option.SetCharge(ServiceArea.Suburb, near, near is null ? null : days);
+        option.SetCharge(ServiceArea.OutsideCity, far, far is null ? null : days);
+
+        return WithId(option, id);
+    }
+
     /// <summary>
     /// The launch courier's vehicles: a bicycle carries 25 parcels, 15 kg and 5 kg a parcel; a motorbike 40, 30 kg and
     /// 10 kg; a pickup van 300, a tonne and 30 kg.

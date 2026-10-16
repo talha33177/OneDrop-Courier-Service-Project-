@@ -4,8 +4,10 @@ using Application.Abstractions;
 using Application.Common;
 using Application.Parcels.Browse;
 using Application.Parcels.CreateParcel;
+using Application.Platform.Staff;
 using Domain.Common;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.ParcelActions;
 
@@ -17,6 +19,7 @@ namespace Application.Parcels.ParcelActions;
 public class ParcelActionsHandler(
     IAppDbContext db,
     ICurrentUser currentUser,
+    StaffAccess staff,
     ParcelBooking booking,
     IValidator<CreateParcelCommand> validator,
     TimeProvider time)
@@ -46,6 +49,8 @@ public class ParcelActionsHandler(
             details.AreaId,
             details.Area,
             details.WeightGrams,
+            details.Speed,
+            details.ProductType,
             cancellationToken);
         if (route.IsFailure)
         {
@@ -62,7 +67,10 @@ public class ParcelActionsHandler(
             details.WeightGrams,
             details.ItemDescription,
             details.Note,
-            route.Value.Charges));
+            route.Value.Charges)
+        {
+            Pin = GeoPoint.From(details.RecipientLatitude, details.RecipientLongitude).Value
+        });
 
         return await SaveAsync(edited, cancellationToken);
     }
@@ -89,13 +97,13 @@ public class ParcelActionsHandler(
     /// </summary>
     public async Task<Result> ReweighAsync(string trackingCode, int measuredGrams, CancellationToken cancellationToken = default)
     {
-        var parcel = await FindAsync(trackingCode, cancellationToken);
-        if (parcel is null)
+        var parcel = await FindAtYourHubAsync(trackingCode, cancellationToken);
+        if (parcel.IsFailure)
         {
-            return ParcelDetailsHandler.NotFound;
+            return parcel.Error!;
         }
 
-        return await SaveAsync(parcel.Reweigh(measuredGrams, null), cancellationToken);
+        return await SaveAsync(parcel.Value.Reweigh(measuredGrams, null), cancellationToken);
     }
 
     /// <summary>
@@ -104,28 +112,43 @@ public class ParcelActionsHandler(
     /// </summary>
     public async Task<Result> FlagAsync(string trackingCode, ParcelIssue issue, string? note, CancellationToken cancellationToken = default)
     {
-        var parcel = await FindAsync(trackingCode, cancellationToken);
-        if (parcel is null)
+        var parcel = await FindAtYourHubAsync(trackingCode, cancellationToken);
+        if (parcel.IsFailure)
         {
-            return ParcelDetailsHandler.NotFound;
+            return parcel.Error!;
         }
 
-        return await SaveAsync(parcel.Flag(issue, note, null, time.GetUtcNow().UtcDateTime), cancellationToken);
+        return await SaveAsync(parcel.Value.Flag(issue, note, null, time.GetUtcNow().UtcDateTime), cancellationToken);
     }
 
     /// <summary>Courier staff clear a flagged problem once it has been looked at, saying what was done.</summary>
     public async Task<Result> ClearFlagAsync(string trackingCode, string? note, CancellationToken cancellationToken = default)
     {
-        var parcel = await FindAsync(trackingCode, cancellationToken);
-        if (parcel is null)
+        var parcel = await FindAtYourHubAsync(trackingCode, cancellationToken);
+        if (parcel.IsFailure)
         {
-            return ParcelDetailsHandler.NotFound;
+            return parcel.Error!;
         }
 
-        return await SaveAsync(parcel.ClearFlag(note, null), cancellationToken);
+        return await SaveAsync(parcel.Value.ClearFlag(note, null), cancellationToken);
     }
 
     public async Task<Result> RequestReturnAsync(string trackingCode, string? reason, CancellationToken cancellationToken = default)
+    {
+        var parcel = await FindAtYourHubAsync(trackingCode, cancellationToken);
+        if (parcel.IsFailure)
+        {
+            return parcel.Error!;
+        }
+
+        return await SaveAsync(parcel.Value.RequestReturn(reason), cancellationToken);
+    }
+
+    /// <summary>
+    /// The parcel for one of the hub's buttons: not found as for anyone else, and refused to a hub's own staff unless it
+    /// is at their hub. Head office acts on a parcel wherever it is.
+    /// </summary>
+    private async Task<Result<Parcel>> FindAtYourHubAsync(string trackingCode, CancellationToken cancellationToken)
     {
         var parcel = await FindAsync(trackingCode, cancellationToken);
         if (parcel is null)
@@ -133,7 +156,9 @@ public class ParcelActionsHandler(
             return ParcelDetailsHandler.NotFound;
         }
 
-        return await SaveAsync(parcel.RequestReturn(reason), cancellationToken);
+        var rights = await staff.CurrentAsync(cancellationToken);
+
+        return rights.WorksAt(parcel.CurrentHubId) ? parcel : StaffRights.NotAtYourHub;
     }
 
     private Task<Parcel?> FindAsync(string trackingCode, CancellationToken cancellationToken)

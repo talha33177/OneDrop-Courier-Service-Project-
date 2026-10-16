@@ -1,16 +1,54 @@
-@using Application.Hubs
-@using Application.Hubs.HubOverview
-@model (IReadOnlyList<HubWork> Hubs, HubItem? Current)
-@* Which hub the page is about, with what waits at each; changing it reloads the page for that hub *@
-<form method="get" class="hub-switch no-print">
-    @Icons.Get("warehouse")
-    <select name="hub" aria-label="Hub" onchange="this.form.submit()">
-        @foreach (var work in Model.Hubs)
-        {
-            var waiting = work.Total == 0 ? "" : $" · {work.Total} waiting";
-            <option value="@work.Hub.Code" selected="@(work.Hub.Code == Model.Current?.Code)">@work.Hub.Name (@work.Hub.Code)@waiting</option>
-        }
-    </select>
-    <noscript><button class="btn btn-outline btn-sm" type="submit">Go</button></noscript>
-</form>
-<a class="btn btn-ghost btn-sm no-print" asp-page="/Hub/Choose" asp-route-next="@ViewContext.RouteData.Values["page"]?.ToString()?.Split('/')[^1]">All hubs</a>
+@model Web.Pages.Hub.HubPage
+@* Which hub the page is about, with a red "!" on each hub that has work waiting; choosing one reloads the page for that
+   hub. The board also offers every hub at once; other pages work at one hub and link to the chooser instead. A hub's own
+   staff work at theirs alone, so they see its name and no menu. The list is built here rather than as a select, because
+   a menu option cannot hold a badge. *@
+@if (Model.LockedToHub)
+{
+    <span class="hub-switch hub-switch-fixed no-print">@Icons.Get("warehouse") @Model.Hub?.Name (@Model.Hub?.Code)</span>
+    return;
+}
+@{
+    var total = Model.Work.Sum(work => work.Total);
+    var current = Model.AllHubs && Model.OffersAllHubs ? "All hubs" : $"{Model.Hub?.Name} ({Model.Hub?.Code})";
+    var currentWaiting = Model.AllHubs && Model.OffersAllHubs ? total > 0 : Model.Work.Any(work => work.Hub.Code == Model.Hub?.Code && work.Total > 0);
+}
+<div class="hub-switch hub-menu no-print">
+    <details>
+        <summary aria-label="Choose a hub">
+            @Icons.Get("warehouse")
+            <span class="hub-menu-name">@current</span>
+            @if (currentWaiting)
+            {
+                <span class="hub-bang" title="Work waiting here">!</span><span class="sr-only">, work waiting</span>
+            }
+            @Icons.Get("chevron-down")
+        </summary>
+        <div class="hub-menu-list">
+            @if (Model.OffersAllHubs)
+            {
+                <a href="?hub=@RememberHub.AllHubs" class="@(Model.AllHubs ? "current" : "") @(total > 0 ? "has-work" : "")">
+                    <span>All hubs</span>@if (total > 0) {<span class="hub-bang" title="Work waiting">!</span><span class="sr-only">, work waiting</span>}
+                </a>
+            }
+            @foreach (var work in Model.Work)
+            {
+                <a href="?hub=@work.Hub.Code" class="@(!Model.AllHubs && work.Hub.Code == Model.Hub?.Code ? "current" : "") @(work.Total > 0 ? "has-work" : "")">
+                    <span>@work.Hub.Name (@work.Hub.Code)</span>@if (work.Total > 0) {<span class="hub-bang" title="Work waiting">!</span><span class="sr-only">, work waiting</span>}
+                </a>
+            }
+        </div>
+    </details>
+</div>
+@if (!Model.OffersAllHubs)
+{
+    <a class="btn btn-ghost btn-sm no-print" asp-page="/Hub/Choose" asp-route-next="@ViewContext.RouteData.Values["page"]?.ToString()?.Split('/')[^1]">All hubs</a>
+}
+<script>
+    // Close the hub list when the page is clicked elsewhere or Escape is pressed
+    (() => {
+        const menu = document.querySelector(".hub-menu details");
+        document.addEventListener("click", event => { if (menu?.open && !menu.contains(event.target)) { menu.open = false; } });
+        document.addEventListener("keydown", event => { if (event.key === "Escape" && menu) { menu.open = false; } });
+    })();
+</script>

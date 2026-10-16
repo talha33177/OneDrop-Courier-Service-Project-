@@ -137,6 +137,59 @@ public class SslcommerzGateway(HttpClient http, SslcommerzOptions options, ILogg
             });
     }
 
+    public async Task<RefundAnswer> RefundAsync(
+        string bankTransactionId,
+        decimal amount,
+        string reference,
+        string remarks,
+        CancellationToken cancellationToken = default)
+    {
+        using var answer = await SendAsync(
+            () => http.GetAsync(
+                "validator/api/merchantTransIDvalidationAPI.php" + Query(
+                    ("bank_tran_id", bankTransactionId),
+                    ("refund_amount", amount.ToString("0.00", CultureInfo.InvariantCulture)),
+                    ("refund_remarks", Clip(remarks, 255)),
+                    ("refe_id", reference),
+                    ("format", "json")),
+                cancellationToken),
+            cancellationToken);
+
+        return Refund(answer.RootElement);
+    }
+
+    public async Task<RefundAnswer> RefundStatusAsync(string refundReference, CancellationToken cancellationToken = default)
+    {
+        using var answer = await SendAsync(
+            () => http.GetAsync(
+                "validator/api/merchantTransIDvalidationAPI.php" + Query(("refund_ref_id", refundReference), ("format", "json")),
+                cancellationToken),
+            cancellationToken);
+
+        return Refund(answer.RootElement) with { Reference = refundReference };
+    }
+
+    /// <summary>
+    /// The refund API's answer: "success" or "refunded" when the money went back, "processing" while the bank is still
+    /// on it, anything else refused, with its "errorReason".
+    /// </summary>
+    private static RefundAnswer Refund(JsonElement root)
+    {
+        if (Text(root, "APIConnect") is { } connect && !string.Equals(connect, "DONE", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new PaymentGatewayException($"The refund request was refused ({connect}).");
+        }
+
+        var reference = Text(root, "refund_ref_id");
+
+        return Text(root, "status")?.ToLowerInvariant() switch
+        {
+            "success" or "refunded" => new RefundAnswer(RefundState.Done, reference),
+            "processing" => new RefundAnswer(RefundState.Processing, reference),
+            _ => new RefundAnswer(RefundState.Refused, reference, Text(root, "errorReason") ?? "It gave no reason.")
+        };
+    }
+
     /// <summary>A paid answer (VALID, or VALIDATED when we asked before) as a receipt; null for anything else.</summary>
     private static GatewayReceipt? Receipt(JsonElement answer, string? transactionId)
     {
@@ -243,6 +296,21 @@ public class NoPaymentGateway(SslcommerzOptions options) : IPaymentGateway
     }
 
     public Task<GatewayLookup> LookUpAsync(string transactionId, CancellationToken cancellationToken = default)
+    {
+        throw new PaymentGatewayException("Online payments are not set up.");
+    }
+
+    public Task<RefundAnswer> RefundAsync(
+        string bankTransactionId,
+        decimal amount,
+        string reference,
+        string remarks,
+        CancellationToken cancellationToken = default)
+    {
+        throw new PaymentGatewayException("Online payments are not set up.");
+    }
+
+    public Task<RefundAnswer> RefundStatusAsync(string refundReference, CancellationToken cancellationToken = default)
     {
         throw new PaymentGatewayException("Online payments are not set up.");
     }

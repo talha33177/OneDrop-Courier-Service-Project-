@@ -3,6 +3,7 @@
 @model Web.Pages.Admin.MerchantModel
 @{
     var m = Model.Merchant;
+    var whole = Model.Account;
     ViewData["Title"] = m.Profile.Name;
 }
 
@@ -38,7 +39,8 @@
 <div class="stats">
     <div class="stat"><div class="stat-icon blue">@Icons.Get("package")</div><div><div class="stat-label">Parcels</div><div class="stat-value">@m.Parcels</div></div></div>
     <div class="stat"><div class="stat-icon green">@Icons.Get("check-circle")</div><div><div class="stat-label">Delivered</div><div class="stat-value">@m.Delivered</div></div></div>
-    <div class="stat"><div class="stat-icon red">@Icons.Get("return")</div><div><div class="stat-label">Returned</div><div class="stat-value">@m.Returned</div></div></div>
+    <div class="stat"><div class="stat-icon">@Icons.Get("truck")</div><div><div class="stat-label">On the way</div><div class="stat-value">@m.InProgress</div></div></div>
+    <div class="stat"><div class="stat-icon red">@Icons.Get("return")</div><div><div class="stat-label">Returned</div><div class="stat-value">@m.Returned</div><div class="stat-sub">@(m.ReturnRate is { } rate ? $"{Math.Round(rate * 100, MidpointRounding.AwayFromZero)}% return rate" : "No parcel finished yet")</div></div></div>
     <div class="stat"><div class="stat-icon">@Icons.Get("wallet")</div><div><div class="stat-label">Owed now</div><div class="stat-value">@Money.Taka(m.Unpaid)</div></div></div>
 </div>
 
@@ -74,7 +76,66 @@
                 <div class="field"><label for="accountName">Account name (and bank, branch)</label><input type="text" id="accountName" name="accountName" value="@m.PayoutAccountName" required /></div>
                 <button class="btn btn-outline" type="submit">Save payout account</button>
             </form>
+            @if (whole.PayoutAccounts.Count > 0)
+            {
+                <h3 class="mt mb">Saved by the merchant</h3>
+                <dl class="kv">
+                    @foreach (var saved in whole.PayoutAccounts)
+                    {
+                        <dt>@Statuses.PayoutAccount(saved.Method, saved.Number)</dt><dd>@saved.Name @if (saved.InUse) { <span class="badge badge-brand plain">In use</span> }</dd>
+                    }
+                </dl>
+            }
         </div>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-lg">
+    <div class="card">
+        <div class="card-head"><div><h2>@Icons.Get("layers") The account</h2><p>@(whole.Businesses.Count == 1 ? "One business; the merchant has added no others." : $"{whole.Businesses.Count} businesses under one login")</p></div></div>
+        <div class="table-wrap">
+            <table class="table compact">
+                <thead><tr><th>Business</th><th>Status</th><th class="num">On the way</th><th class="num">Owed now</th></tr></thead>
+                <tbody>
+                    @foreach (var b in whole.Businesses)
+                    {
+                        <tr>
+                            <td class="cell-main">
+                                @if (b.Id == m.Id) { @b.Name } else { <a asp-page="/Admin/Merchant" asp-route-id="@b.Id">@b.Name</a> }
+                                @if (b.IsMain) { <span class="badge badge-brand plain">Main profile</span> }
+                            </td>
+                            <td>@Statuses.Badge(b.Status)</td>
+                            <td class="num">@b.OnTheWay</td>
+                            <td class="num @(b.Unpaid < 0 ? "negative" : "")">@Money.Taka(b.Unpaid)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><div><h2>@Icons.Get("users") Moderators</h2><p>People the owner lets work in the account, in every business of it</p></div></div>
+        @if (whole.Moderators.Count == 0)
+        {
+            <div class="card-body"><p class="muted">Only the owner signs in to this account.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead><tr><th>Person</th><th>May use</th></tr></thead>
+                    <tbody>
+                        @foreach (var person in whole.Moderators)
+                        {
+                            <tr>
+                                <td class="cell-main">@person.Name<div class="cell-sub">@person.Email</div>@if (person.Stopped) { <span class="badge badge-cancel">Stopped</span> }</td>
+                                <td>@string.Join(", ", Web.Pages.Merchant.ModeratorsModel.Choices.Where(c => person.Permissions.HasFlag(c.Permission)).Select(c => c.Label))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>
 
@@ -149,7 +210,64 @@
     }
 </div>
 
-<div class="card">
+<div class="grid grid-2 mt-lg">
+    <div class="card">
+        <div class="card-head"><div><h2>@Icons.Get("wallet") Payouts</h2><p>The latest ten</p></div><a class="btn btn-ghost btn-sm" asp-page="/Admin/Payouts">All payouts @Icons.Get("arrow-right")</a></div>
+        @if (whole.Payouts.Count == 0)
+        {
+            <div class="card-body"><p class="muted">Nothing paid out yet.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead><tr><th>Invoice</th><th>Up to</th><th>Status</th><th class="num">Amount</th></tr></thead>
+                    <tbody>
+                        @foreach (var payout in whole.Payouts)
+                        {
+                            <tr>
+                                <td><a class="code-link" asp-page="/Admin/Payout" asp-route-number="@payout.Number">@payout.Number</a></td>
+                                <td class="nowrap">@payout.UpTo.ToString("d MMM yyyy")</td>
+                                <td>@Statuses.Badge(payout.Status, payout.Stuck)</td>
+                                <td class="num strong">@Money.Taka(payout.Amount)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+    <div class="card">
+        <div class="card-head"><div><h2>@Icons.Get("message") Requests</h2><p>About its parcels and to be paid now, the latest first</p></div><a class="btn btn-ghost btn-sm" asp-page="/Admin/Requests">Answer requests @Icons.Get("arrow-right")</a></div>
+        @if (whole.Requests.Count == 0)
+        {
+            <div class="card-body"><p class="muted">The merchant has asked for nothing.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead><tr><th>Asked</th><th>For</th><th>Answer</th></tr></thead>
+                    <tbody>
+                        @foreach (var request in whole.Requests)
+                        {
+                            <tr>
+                                <td class="nowrap">@request.Asked.ToString("d MMM, h:mm tt")</td>
+                                <td>
+                                    @request.What @if (request.Amount is { } amount) { @Money.Taka(amount) }
+                                    @if (request.TrackingCode is { } code) { <div><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@code">@code</a></div> }
+                                </td>
+                                <td><span class="badge badge-@(request.Open ? "pending" : request.Status is "Approved" or "Paid" ? "done" : "cancel")">@(request.Open ? "Waiting for an answer" : request.Status)</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card mt-lg">
     <div class="card-head"><h2>@Icons.Get("map-pin") Pickup points</h2></div>
     <div class="table-wrap">
         <table class="table compact">

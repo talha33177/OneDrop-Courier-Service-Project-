@@ -10,7 +10,7 @@
         <h1>Rider closing</h1>
         <p>At the end of the day count each rider's cash and take back the parcels they could not deliver. A run still open after its rider was due back is marked late: call the rider.</p>
     </div>
-    <div class="page-actions">@await Html.PartialAsync("_HubSwitch", (Model.Work, Model.Hub))</div>
+    <div class="page-actions">@await Html.PartialAsync("_HubSwitch", Model)</div>
 </div>
 
 <partial name="_Alerts" />

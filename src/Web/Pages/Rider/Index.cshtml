@@ -6,6 +6,12 @@
     var t = Model.Today!;
     var total = t.Deliveries.Count + t.Done.Count;
     var percent = total == 0 ? 0 : 100 * t.Done.Count / total;
+
+    // The round in the order it is worked: collect from the merchants first, then the doors
+    var stops = new List<string>();
+    stops.AddRange(t.Pickups.Select(p => MapLinks.Stop(p.Pin, p.Address, p.Area)));
+    stops.AddRange(t.Deliveries.Select(d => MapLinks.Stop(d.Pin, d.RecipientAddress, d.Area)));
+    var route = MapLinks.Route(stops);
 }
 @section Head {
     <partial name="_RiderApp" />
@@ -43,6 +49,24 @@
                 <div class="hint">@Icons.Get("clock") Back at the hub by <strong>@back.ToString("h:mm tt")</strong> with the cash and any parcel you could not deliver.</div>
             }
         </div>
+    }
+
+    @if (route is not null)
+    {
+        <a class="route-card" href="@route" target="_blank" rel="noopener">
+            <span class="stat-icon">@Icons.Get("navigation")</span>
+            <span class="route-text">
+                <strong>See today's route on the map</strong>
+                <span>
+                    @stops.Count stop@(stops.Count == 1 ? "" : "s") in the order you work them, from where you are now@(t.Pickups.Count > 0 ? ": pickups first, then the doors" : "").
+                    @if (stops.Count > MapLinks.MaxRouteStops)
+                    {
+                        <text>Google shows the first @MapLinks.MaxRouteStops; open it again from the next stop for the rest.</text>
+                    }
+                </span>
+            </span>
+            @Icons.Get("arrow-right")
+        </a>
     }
 
     @if (t.Pickups.Count > 0)
@@ -101,6 +125,10 @@
                     <div class="muted" style="font-size:12px">@(d.CodAmount == 0 ? "already paid" : "to collect")</div>
                 </div>
             </div>
+            @if (d.Tags.Any)
+            {
+                <div class="tag-row">@Statuses.Tags(d.Tags)</div>
+            }
             <div class="task-meta">
                 <div>@Icons.Get("map-pin") <span>@d.RecipientAddress, <strong>@d.Area</strong></span></div>
                 <div>@Icons.Get("phone") <a href="tel:@Money.Phone(d.RecipientPhone)">@Money.Phone(d.RecipientPhone)</a></div>
@@ -120,7 +148,14 @@
             <div class="task-actions">
                 <a class="btn btn-primary" asp-page="/Rider/Delivery" asp-route-code="@d.TrackingCode">@Icons.Get("check") Record outcome</a>
                 <a class="btn btn-outline" href="tel:@Money.Phone(d.RecipientPhone)">@Icons.Get("phone") Call</a>
-                <a class="btn btn-outline" href="https://www.google.com/maps/search/?api=1&query=@Uri.EscapeDataString(place)" target="_blank" rel="noopener">@Icons.Get("map-pin") Map</a>
+                @if (d.Pin is { } door)
+                {
+                    <a class="btn btn-outline" href="@MapLinks.Directions(door)" target="_blank" rel="noopener">@Icons.Get("navigation") Navigate</a>
+                }
+                else
+                {
+                    <a class="btn btn-outline" href="@MapLinks.Search(place)" target="_blank" rel="noopener">@Icons.Get("map-pin") Map</a>
+                }
             </div>
         </div>
     }
