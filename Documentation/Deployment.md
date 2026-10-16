@@ -129,7 +129,7 @@ What it needs:
 | `ConnectionStrings__Database` | `Server=…;Database=OneDrop;User Id=…;Password=…;TrustServerCertificate=true;MultipleActiveResultSets=true` (`MultipleActiveResultSets=true` is required) |
 | `Tenancy__HomeCourierHost` | The site's address, e.g. `courier.example.com` or the host's own `myapp.azurewebsites.net` |
 | `Links__PortalUrlFormat` | `https://<the same address>/`, for links in texts and emails, and SSLCommerz's return address |
-| `Setup__AdminEmail`, `Setup__AdminName`, `Setup__AdminPassword` | The first admin, as above |
+| `Setup__AdminEmail`, `Setup__AdminName`, `Setup__AdminPassword` | The first admin, as above; named by none of them, the demo admin is made |
 | `Email__Host`, `Email__Port`, `Email__User`, `Email__Password`, `Email__From`, `Email__FromName` | Optional mail server |
 | `Sslcommerz__StoreId`, `Sslcommerz__StorePassword`, `Sslcommerz__BaseUrl` | Optional SSLCommerz store |
 | `GoogleMaps__ApiKey` | Optional Google Maps browser key, as above |

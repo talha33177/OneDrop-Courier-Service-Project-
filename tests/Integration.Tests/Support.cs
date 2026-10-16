@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Application.Abstractions;
@@ -34,6 +35,31 @@ public abstract partial class AppTests(WebAppFactory factory)
 
     /// <summary>Today on the launch courier's clock (Dhaka), the day a parcel moved by a test is picked up on.</summary>
     protected static DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTime.UtcNow, "Asia/Dhaka"));
+
+    /// <summary>Runs SQL on the test database outside the app, as a data script does.</summary>
+    protected static async Task Sql(string text)
+    {
+        await using var connection = new SqlConnection(WebAppFactory.ConnectionString);
+        await connection.OpenAsync(Cancel);
+        await using var command = new SqlCommand(text, connection);
+        await command.ExecuteNonQueryAsync(Cancel);
+    }
+
+    /// <summary>A data script of this year, read from the repository, so a test proves the script that ships.</summary>
+    protected static async Task<string> ScriptAsync(string name)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Courier.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        var root = directory?.FullName ?? throw new InvalidOperationException("Courier.sln not found above the test output.");
+
+        return await File.ReadAllTextAsync(
+            Path.Combine(root, "src", "Database Update", "Scripts", "2026", name),
+            Cancel);
+    }
 
     protected async Task<TenantInfo> TenantAsync(string slug)
     {

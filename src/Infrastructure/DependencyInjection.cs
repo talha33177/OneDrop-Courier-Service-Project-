@@ -130,7 +130,6 @@ public static class DependencyInjection
                 options.User.RequireUniqueEmail = false;
                 options.Password.RequiredLength = 8;
                 options.Password.RequireNonAlphanumeric = false;
-                options.Lockout.MaxFailedAccessAttempts = 5;
                 options.SignIn.RequireConfirmedAccount = false;
             })
             .AddEntityFrameworkStores<AppDbContext>()

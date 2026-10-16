@@ -330,6 +330,7 @@ New ones are added there and dated here.
 | 2026-10-13 | The van takes whatever is waiting when it reaches a merchant and visits each pickup point once a day: no pickup cut-off; a parcel booked after the day's visit goes with the next day's pickup (owner) |
 | 2026-10-13 | Only a pickup van collects from merchants (bicycles and motorbikes deliver); a collected parcel stays on the van until the hub scans it in; every hand-over — pickup, delivery run, return list — is checked against what the rider already carries, at the hub's weighed weight (owner) |
 | 2026-10-16 | A live start with no admin named makes the demo admin (`admin@onedrop.test`), so a fresh server can always be signed in to; a named admin never falls back to it. The demo password is public until changed (owner) |
+| 2026-10-16 | Wrong passwords no longer lock a login; a stopped login is still refused and says it was stopped. Nothing now slows guessing at a sign-in password (owner) |
 
 ---
 
@@ -340,9 +341,9 @@ Newest first.
 ### 2026-10-16 (the live site's first admin)
 - **Owner's report:** the owner's teammate put the site live from GitHub (at `delyvo.octopi-digital.com`) and nobody could
   sign in: the owner tried the demo login (`admin@onedrop.test` / `OneDrop#2026`), which only the Development demo seeder
-  makes. `deploy/.env` is git-ignored, so the teammate wrote a `.env` of their own and its `ADMIN_EMAIL` /
-  `ADMIN_PASSWORD` are the only login the live server has. Owner's request: "when the project is live it automatically
-  generates the super admin".
+  makes. Owner's request: "when the project is live it automatically generates the super admin". **Found at the push:**
+  the live site is on IIS (the teammate's `Deploy-Iis.ps1`, settings on the app pool), not the Docker `deploy/`, so the
+  `.env` advice given earlier in the session did not apply to it; the fallback below needs no setting at all.
 - **Done:** outside Development, with `Setup:AdminEmail` empty, `Program.cs` makes the admin from
   `Setup:DefaultAdminEmail` / `Setup:DefaultAdminPassword` (in `appsettings.json`) through `AdminSetup`, with a warning
   in the log; an admin that is named (even with no password) never falls back to it. `deploy/docker-compose.yml` no
@@ -355,6 +356,29 @@ Newest first.
   made). The class's host test was already failing on `main` (the factory's empty `Tenancy:HomeCourierHost` clobbered
   the test's own value); it now sets the value through the app's configuration and passes. **Not done:** the other
   suites and a run on the live server (the change is not committed, so it is not there yet).
+- **Then (live site still locked):** after the push the owner could still not sign in: `admin@onedrop.test` already
+  existed on the live server with a password nobody had, and 5 wrong tries had locked it (the sign-in said "Too many
+  attempts", which only an existing login gets), so the fallback, which never touches an existing admin, did nothing.
+  The owner asked for it to work with nothing for the teammate to do. Added `Scripts/2026/012_DemoAdminPassword.sql`
+  (a one-time DbUp reset of that one login to the demo password, unlocked; creates no login), which the teammate's
+  usual `Deploy-Iis.ps1` runs in its database step. Tested: `LiveSetupTests` 5 of 5 (new: an admin with another
+  password and a lockout is let in with the demo password after the real script, aimed at its email; the old password
+  fails; a login that is not there is not made); `publish.ps1 -Database OneDrop-Test` ran 012 through DbUp (exit 0).
+- **Then (owner): "Remove the too many attempt blocking."** The message was Identity's lockout (five wrong tries, five
+  minutes). Sign-in now calls `PasswordSignInAsync` with `lockoutOnFailure: false` and the limit is gone from
+  `AddAppIdentity`; a login an admin or owner stopped is still refused (a stop is a lock to the end of time, checked
+  whatever the failure setting is) and says "This login has been stopped". Sign-in had no per-address limit, so
+  nothing now slows guessing; only tracking, tracking payment and sign-up have one (30 a minute), left alone.
+  Tested: build 0 warnings; domain 262, architecture 6; integration `SignInTests` (new: eight wrong passwords, never
+  "Too many attempts", the right one signs in and the login's failed count is 0 with no lock; it failed on the old
+  code at the fifth try), `LiveSetupTests` 5 of 5, `ModeratorsTests` 2 of 2 and `StaffTests` 1 of 1 (a stopped login
+  is still refused). Not run: the full integration suite.
+- **Caught by that test:** removing the rule does not free the logins it had already locked. Sign-in refuses a lock
+  whatever the failure setting is (`PreSignInCheck`), so the live admin, and any merchant who had mistyped five times,
+  would have stayed out for good. `Scripts/2026/013_ClearOldLockouts.sql` clears the lock and the count on every login
+  that was not stopped (`Archived = 0`); a stopped one keeps its lock, which is what stopping is. Tested:
+  `SignInTests` 2 of 2 (new: a login locked as the old rule left it is refused, the script lets it in, a stopped one
+  stays out) and `publish.ps1 -Database OneDrop-Test` ran 013 through DbUp (exit 0).
 
 ### 2026-10-16 (places of Bangladesh and the step-by-step area picker)
 - **Owner's request:** the delivery area was one long dropdown; make it Division, then Zone (Dhaka >), then Area (Dhaka > Mirpur >), with every place in Bangladesh.

@@ -29,14 +29,15 @@ public class LoginModel(
             return Page();
         }
 
+        // A wrong password locks nothing; only a login that was stopped (locked until the end of time) is refused as locked
         var result = await signInManager.PasswordSignInAsync(
             Input.Email.Trim(),
             Input.Password,
             Input.RememberMe,
-            lockoutOnFailure: true);
+            lockoutOnFailure: false);
         if (result.IsLockedOut)
         {
-            ModelState.AddModelError("", "Too many attempts. Try again in a few minutes.");
+            ModelState.AddModelError("", "This login has been stopped. Ask whoever gave it to you to let you back in.");
             return Page();
         }
 

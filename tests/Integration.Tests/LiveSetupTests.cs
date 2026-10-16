@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Infrastructure.Seeding;
@@ -95,6 +96,51 @@ public class LiveSetupTests(WebAppFactory factory) : AppTests(factory)
             ("Input.Password", "Default#2026"));
         Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
         Assert.Contains("is not right for", await refused.Content.ReadAsStringAsync(Cancel));
+    }
+
+    [Fact]
+    public async Task The_demo_admin_script_gives_a_locked_out_admin_the_demo_password_and_makes_no_login()
+    {
+        WebAppFactory.RequireDatabase();
+        var setup = Factory.Services.GetRequiredService<AdminSetup>();
+        var email = $"{Guid.NewGuid():N}@admin.example";
+        Assert.True(await setup.EnsureCourierAdminAsync("onedrop", email, "Live admin", "Chosen#2026", Cancel));
+
+        // Locked out, as the old limit on wrong tries left it after guesses at a password nobody had
+        await Sql(
+            "UPDATE [Identity].[User] SET LockoutEnd = DATEADD(HOUR, 1, SYSDATETIMEOFFSET()), AccessFailedCount = 4 " +
+            $"WHERE NormalizedUserName = N'{email.ToUpperInvariant()}'");
+        var before = await Visit("onedrop").PostFormAsync(
+            "/Account/Login",
+            "/Account/Login",
+            ("Input.Email", email),
+            ("Input.Password", WebAppFactory.Password));
+        Assert.Contains("has been stopped", await before.Content.ReadAsStringAsync(Cancel));
+
+        // The real script, aimed at this login instead of admin@onedrop.test
+        var script = await ScriptAsync("012_DemoAdminPassword.sql");
+        Assert.Contains("N'ADMIN@ONEDROP.TEST'", script);
+        script = script.Replace("ADMIN@ONEDROP.TEST", email.ToUpperInvariant());
+        await Sql(script);
+
+        var admin = Visit("onedrop", await SignInCookieAsync("onedrop", email, WebAppFactory.Password));
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/Admin")).StatusCode);
+        var old = await Visit("onedrop").PostFormAsync(
+            "/Account/Login",
+            "/Account/Login",
+            ("Input.Email", email),
+            ("Input.Password", "Chosen#2026"));
+        Assert.Contains("is not right for", await old.Content.ReadAsStringAsync(Cancel));
+
+        // A login that is not there is not made
+        var absent = $"{Guid.NewGuid():N}@absent.example";
+        await Sql(script.Replace(email.ToUpperInvariant(), absent.ToUpperInvariant()));
+        await using var connection = new SqlConnection(WebAppFactory.ConnectionString);
+        await connection.OpenAsync(Cancel);
+        await using var count = new SqlCommand(
+            $"SELECT COUNT(*) FROM [Identity].[User] WHERE NormalizedEmail = N'{absent.ToUpperInvariant()}'",
+            connection);
+        Assert.Equal(0, (int)(await count.ExecuteScalarAsync(Cancel))!);
     }
 
     [Fact]
