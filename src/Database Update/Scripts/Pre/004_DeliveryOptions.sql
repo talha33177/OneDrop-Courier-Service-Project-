@@ -12,6 +12,11 @@
 --          Scripts/2026/008_DeliveryOptions.sql.
 -- Author: Courier team
 -- Date: 2026-10-13
+--       2026-10-16 Also runs on a database that skipped the 2026-10-09 publish, so its rate card never had the extras
+--                  columns (Scripts/Pre/003 had just added Speed and ProductType, every parcel regular and general).
+--                  There, only the two default options are made, nothing is copied from or dropped off the rate card,
+--                  and Scripts/2026/008_DeliveryOptions.sql adds the courier's priced options as on a new database.
+--                  Before, it stopped on "Invalid column name 'ExpressCharge'" and the whole update was rolled back
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 IF OBJECT_ID(N'Parcels.Parcel', N'U') IS NOT NULL AND
    COL_LENGTH(N'Parcels.Parcel', N'Speed') IS NOT NULL
@@ -97,8 +102,18 @@ BEGIN
             Platform.Tenant T
             CROSS JOIN @Options O
         WHERE
-            NOT EXISTS (SELECT 1 FROM Pricing.DeliveryOption D WHERE D.TenantId = T.Id AND D.Kind = O.Kind AND D.Code = O.Code);
+            NOT EXISTS (SELECT 1 FROM Pricing.DeliveryOption D WHERE D.TenantId = T.Id AND D.Kind = O.Kind AND D.Code = O.Code) AND
+            -- Without the extras on the rate card, only the defaults: 008_DeliveryOptions.sql adds the priced ones
+            (O.IsDefault = 1 OR COL_LENGTH(N''Pricing.DeliveryRate'', N''ExpressCharge'') IS NOT NULL);
 
+        ALTER TABLE Parcels.Parcel ADD
+            [SpeedId]       BIGINT NULL,
+            [ProductTypeId] BIGINT NULL;');
+
+    -- Only a rate card that had the extras (the 2026-10-09 publish) has anything to copy across
+    IF COL_LENGTH(N'Pricing.DeliveryRate', N'ExpressCharge') IS NOT NULL
+    BEGIN
+        EXEC (N'
         INSERT INTO Pricing.DeliveryOptionCharge (TenantId, DeliveryOptionId, ServiceArea, Charge, DeliveryDays)
         SELECT
             R.TenantId, D.Id, R.ServiceArea, E.Charge, E.DeliveryDays
@@ -115,11 +130,8 @@ BEGIN
             ON D.TenantId = R.TenantId AND D.Kind = E.Kind AND D.Code = E.Code
         WHERE
             E.Charge IS NOT NULL AND
-            NOT EXISTS (SELECT 1 FROM Pricing.DeliveryOptionCharge C WHERE C.DeliveryOptionId = D.Id AND C.ServiceArea = R.ServiceArea);
-
-        ALTER TABLE Parcels.Parcel ADD
-            [SpeedId]       BIGINT NULL,
-            [ProductTypeId] BIGINT NULL;');
+            NOT EXISTS (SELECT 1 FROM Pricing.DeliveryOptionCharge C WHERE C.DeliveryOptionId = D.Id AND C.ServiceArea = R.ServiceArea);');
+    END;
 
     EXEC (N'
         DECLARE @Codes TABLE (Kind TINYINT, OldValue TINYINT, Code NVARCHAR (30));
@@ -161,8 +173,11 @@ BEGIN
             ALTER TABLE Parcels.Parcel DROP CONSTRAINT [chk_Parcel_ProductType];
         END;
 
-        ALTER TABLE Parcels.Parcel DROP COLUMN [Speed], [ProductType];
+        ALTER TABLE Parcels.Parcel DROP COLUMN [Speed], [ProductType];');
 
+    IF COL_LENGTH(N'Pricing.DeliveryRate', N'ExpressCharge') IS NOT NULL
+    BEGIN
+        EXEC (N'
         IF OBJECT_ID(N''Pricing.chk_DeliveryRate_Extras'', N''C'') IS NOT NULL
         BEGIN
             ALTER TABLE Pricing.DeliveryRate DROP CONSTRAINT [chk_DeliveryRate_Extras];
@@ -175,4 +190,5 @@ BEGIN
 
         ALTER TABLE Pricing.DeliveryRate DROP COLUMN
             [ExpressCharge], [ExpressDays], [LiquidCharge], [FragileCharge], [FreshFoodCharge], [FrozenCharge];');
+    END;
 END;
