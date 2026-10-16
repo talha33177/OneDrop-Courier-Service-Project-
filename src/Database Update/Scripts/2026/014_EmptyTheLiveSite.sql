@@ -109,6 +109,10 @@ BEGIN
         UPDATE Pricing.DeliveryOptionCharge SET UpdatedId = NULL WHERE TenantId = @Tenant AND UpdatedId IN (SELECT UserId FROM @Going);
         UPDATE Delivery.VehicleCapacity     SET UpdatedId = NULL WHERE TenantId = @Tenant AND UpdatedId IN (SELECT UserId FROM @Going);
 
+        -- The merchants go after their logins (a merchant's login points at its merchant), so who last changed a
+        -- merchant is forgotten first, or that login could not go
+        UPDATE Merchants.Merchant           SET UpdatedId = NULL WHERE TenantId = @Tenant AND UpdatedId IN (SELECT UserId FROM @Going);
+
         -- The logins themselves. A super admin has no staff row, so every staff row of this courier goes with them
         DELETE FROM [Identity].StaffMember WHERE TenantId = @Tenant;
         DELETE FROM [Identity].UserToken WHERE UserId IN (SELECT UserId FROM @Going);

@@ -407,6 +407,12 @@ Newest first.
 - **The bug the test caught:** `PRINT` takes no subquery, so the first version of the cleanup failed to run at all
   (error 1046). Counts go into variables first. Had it shipped, the deploy would have stopped with the site on its
   "updating" page.
+- **The bug the live deploy caught (same evening):** it did stop there. On the live site the demo merchants had been
+  last changed by their own logins (`Merchant.UpdatedId`), which the hand-filled test rows never were, so the logins
+  could not go (`FK_Merchant_User`) and then the merchants could not either (`FK_User_Merchant`). DbUp rolled it all
+  back; nothing was lost. Both scripts now forget who last changed a merchant before the logins go. Reproduced on a
+  throwaway LocalDB `Delyvo` (the shipped 014 failed with the same two errors), then the fixed 014 ran through DbUp
+  and `sql/EmptyTheCourier.sql` by hand: 1 super admin and 0 merchants left. The throwaway database was dropped.
 
 ### 2026-10-16 (places of Bangladesh and the step-by-step area picker)
 - **Owner's request:** the delivery area was one long dropdown; make it Division, then Zone (Dhaka >), then Area (Dhaka > Mirpur >), with every place in Bangladesh.
