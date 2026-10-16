@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Delivery.Capacities;
 using Application.Hubs;
 using Domain.Common;
 using Domain.Delivery;
@@ -22,7 +23,7 @@ public sealed record ReturnParcel(
 public sealed record ReturnGroup(string Merchant, string PickupPoint, string Address, string Phone, IReadOnlyList<ReturnParcel> Parcels);
 
 /// <summary>A rider a hub can send a return list with.</summary>
-public sealed record ReturnRider(long Id, string Name, string Phone);
+public sealed record ReturnRider(long Id, string Name, string Phone, Vehicle Vehicle);
 
 /// <summary>A return list as the lists show it. Times are the tenant's.</summary>
 public sealed record ReturnListRow(
@@ -52,7 +53,13 @@ public sealed record HubReturns(IReadOnlyList<ReturnGroup> Waiting, IReadOnlyLis
 /// return charges to the merchant's ledger in the same save, or says why they could not. Hub staff see their own hub's
 /// lists and a rider only their own.
 /// </summary>
-public class ReturnListsHandler(IAppDbContext db, ITenantContext tenantContext, ICurrentUser currentUser, HubDirectory hubs, TimeProvider time)
+public class ReturnListsHandler(
+    IAppDbContext db,
+    ITenantContext tenantContext,
+    ICurrentUser currentUser,
+    HubDirectory hubs,
+    RiderLoads loads,
+    TimeProvider time)
 {
     public static readonly Error NotFound = Error.NotFound("returnList.notFound", "That return list was not found.");
 
@@ -88,7 +95,7 @@ public class ReturnListsHandler(IAppDbContext db, ITenantContext tenantContext, 
         var riders = await db.Riders
             .Where(r => r.HubId == hub.Id && !r.Archived)
             .OrderBy(r => r.Name)
-            .Select(r => new ReturnRider(r.Id, r.Name, r.Phone))
+            .Select(r => new ReturnRider(r.Id, r.Name, r.Phone, r.Vehicle))
             .AsNoTracking()
             .ToListAsync(cancellationToken);
         var since = time.GetUtcNow().UtcDateTime.AddDays(-RecentDays);
@@ -131,6 +138,20 @@ public class ReturnListsHandler(IAppDbContext db, ITenantContext tenantContext, 
         if (codes.Except(parcels.Select(p => p.TrackingCode)).FirstOrDefault() is { } unknown)
         {
             return Error.Validation("returnList.unknown", $"{unknown} was not found.");
+        }
+
+        // A return list is carried like any other load: the rider's vehicle takes it on top of what they hold already
+        var fleet = new Fleet(await db.VehicleCapacities.AsNoTracking().ToListAsync(cancellationToken));
+        var load = await loads.CarriedAsync(rider.Id, cancellationToken: cancellationToken);
+        foreach (var parcel in parcels)
+        {
+            var fits = fleet.Take(rider.Vehicle, load, parcel.TrackingCode, parcel.BilledWeightGrams);
+            if (fits.IsFailure)
+            {
+                return Error.Conflict(fits.Error!.Code, $"{fits.Error.Message} Put fewer parcels on this list, or choose another rider.");
+            }
+
+            load = load.With(parcel.BilledWeightGrams);
         }
 
         var sent = ReturnList.Send(rider, hub.Id, parcels);

@@ -1,6 +1,7 @@
 using FluentValidation;
 using Domain.Common;
 using Domain.Parcels;
+using Domain.Pricing;
 
 namespace Application.Parcels.CreateParcel;
 
@@ -32,12 +33,8 @@ public class CreateParcelValidator : AbstractValidator<CreateParcelCommand>
         RuleFor(command => command.WeightKg)
             .InclusiveBetween(0.01m, Parcel.MaxWeightGrams / 1000m)
             .WithMessage($"The weight must be between 0.01 and {Parcel.MaxWeightGrams / 1000} kg.");
-        RuleFor(command => command.Speed)
-            .IsInEnum()
-            .WithMessage("The speed is regular or express.");
-        RuleFor(command => command.ProductType)
-            .IsInEnum()
-            .WithMessage("What is inside is general, liquid, fragile, freshFood or frozen.");
+        RuleFor(command => command.Speed).MaximumLength(DeliveryOption.MaxNameLength);
+        RuleFor(command => command.ProductType).MaximumLength(DeliveryOption.MaxNameLength);
         RuleFor(command => command)
             .Must(command => GeoPoint.From(command.RecipientLatitude, command.RecipientLongitude).IsSuccess)
             .OverridePropertyName(nameof(CreateParcelCommand.RecipientLatitude))

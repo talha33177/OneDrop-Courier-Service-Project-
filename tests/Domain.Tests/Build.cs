@@ -22,19 +22,54 @@ internal static class Build
     public static readonly RateValues Suburb = new(1000, 100, 20, 1, 50, 2);
     public static readonly RateValues OutsideCity = new(1000, 120, 20, 1, 60, 3);
 
-    /// <summary>The launch extras: express ৳40 in a day, liquid ৳10, fragile ৳20, fresh food ৳30, frozen ৳50.</summary>
-    public static readonly RateExtras NearExtras = new(40, 1, 10, 20, 30, 50);
+    /// <summary>The default speed: everywhere, at no extra, in the rate card's time.</summary>
+    public static DeliveryOption Regular() => Option(11, DeliveryOptionKind.Speed, "regular", "Regular", isDefault: true);
 
-    /// <summary>Outside the city: no express, and no fresh or frozen food.</summary>
-    public static readonly RateExtras FarExtras = new(null, null, 10, 20, null, null);
+    /// <summary>The launch express: ৳40, the day after pickup, inside the city and to a suburb only; goes first.</summary>
+    public static DeliveryOption Express() =>
+        Option(12, DeliveryOptionKind.Speed, "express", "Express", goesFirst: true, near: 40, days: 1);
 
-    /// <summary>A rate with the launch extras for its service area.</summary>
-    public static DeliveryRate RateWithExtras(ServiceArea area)
+    /// <summary>The default contents: everywhere, at no extra.</summary>
+    public static DeliveryOption General() => Option(21, DeliveryOptionKind.Contents, "general", "General", isDefault: true);
+
+    public static DeliveryOption Liquid() => Option(22, DeliveryOptionKind.Contents, "liquid", "Liquid", near: 10, far: 10);
+
+    public static DeliveryOption Fragile() => Option(23, DeliveryOptionKind.Contents, "fragile", "Fragile", near: 20, far: 20);
+
+    /// <summary>The launch frozen: ৳50, inside the city and to a suburb only; goes first.</summary>
+    public static DeliveryOption Frozen() =>
+        Option(25, DeliveryOptionKind.Contents, "frozen", "Frozen", goesFirst: true, near: 50);
+
+    /// <summary>
+    /// A delivery option priced <paramref name="near"/> inside the city and to a suburb and <paramref name="far"/>
+    /// outside it (null: not offered there), a speed delivering in <paramref name="days"/> where it is offered.
+    /// </summary>
+    public static DeliveryOption Option(
+        long id,
+        DeliveryOptionKind kind,
+        string code,
+        string name,
+        bool isDefault = false,
+        bool goesFirst = false,
+        decimal? near = null,
+        decimal? far = null,
+        int? days = null)
     {
-        var rate = Rate(area);
-        rate.ChangeExtras(area == ServiceArea.OutsideCity ? FarExtras : NearExtras);
+        var option = DeliveryOption.Create(
+            kind,
+            code,
+            new DeliveryOptionValues(name, null, kind == DeliveryOptionKind.Contents ? $"{name}: handle with care" : null, "package", goesFirst),
+            (int)id).Value;
+        if (isDefault)
+        {
+            option.MakeDefault();
+        }
 
-        return rate;
+        option.SetCharge(ServiceArea.InsideCity, near, near is null ? null : days);
+        option.SetCharge(ServiceArea.Suburb, near, near is null ? null : days);
+        option.SetCharge(ServiceArea.OutsideCity, far, far is null ? null : days);
+
+        return WithId(option, id);
     }
 
     /// <summary>

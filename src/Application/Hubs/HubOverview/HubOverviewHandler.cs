@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Platform.Staff;
 using Domain.Delivery;
 using Domain.Parcels;
 
@@ -13,12 +14,22 @@ public sealed record HubWork(HubItem Hub, int PickupsOpen, int ToAssign, int Inc
 }
 
 /// <summary>Counts every hub's open work from the pickups, parcels and runs when asked: nothing is stored.</summary>
-public class HubOverviewHandler(IAppDbContext db, HubDirectory hubs, ITenantContext tenantContext, TimeProvider time)
+public class HubOverviewHandler(
+    IAppDbContext db,
+    HubDirectory hubs,
+    StaffAccess staff,
+    ITenantContext tenantContext,
+    TimeProvider time)
 {
-    /// <summary>Every hub of the courier, in name order, with its open work (today's pickups, not tomorrow's list).</summary>
+    /// <summary>
+    /// The hubs the signed-in person works at, in name order, with their open work (today's pickups, not tomorrow's
+    /// list): every hub of the courier for head office, only their own for a hub's staff. Every hub page finds its hub
+    /// in this list, so a hub's staff cannot open another hub's page whatever code they send.
+    /// </summary>
     public async Task<IReadOnlyList<HubWork>> ListAsync(CancellationToken cancellationToken = default)
     {
-        var all = await hubs.ListAsync(cancellationToken);
+        var rights = await staff.CurrentAsync(cancellationToken);
+        var all = (await hubs.ListAsync(cancellationToken)).Where(hub => rights.WorksAt(hub.Id)).ToList();
         var today = tenantContext.Require().Today(time.GetUtcNow().UtcDateTime);
         var pickups = await db.PickupRequests
             .Where(r => r.PickupDate <= today && (r.Status == PickupStatus.Scheduled || r.Status == PickupStatus.Assigned))
@@ -31,8 +42,8 @@ public class HubOverviewHandler(IAppDbContext db, HubDirectory hubs, ITenantCont
             .Select(g => new { HubId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.HubId, x => x.Count, cancellationToken);
         var incoming = await db.Parcels
-            .Where(p => p.TransferToHubId != null)
-            .GroupBy(p => p.TransferToHubId!.Value)
+            .Where(p => p.TransferToHubId != null || p.Status == ParcelStatus.PickedUp)
+            .GroupBy(p => p.TransferToHubId ?? p.PickupHubId)
             .Select(g => new { HubId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.HubId, x => x.Count, cancellationToken);
         var withRiders = await (

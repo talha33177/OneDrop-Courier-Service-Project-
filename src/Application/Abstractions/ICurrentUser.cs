@@ -16,4 +16,7 @@ public interface ICurrentUser
 
     /// <summary>A merchant login's account: the main profile its businesses belong to. Null for an API key.</summary>
     long? AccountId { get; }
+
+    /// <summary>Whether the signed-in login holds <paramref name="role"/> (see <c>Application.Common.Roles</c>).</summary>
+    bool IsInRole(string role);
 }

@@ -16,9 +16,10 @@ public class PickupsModel(RiderDayHandler riders) : PageModel
         return Today is null ? Forbid() : Page();
     }
 
-    public async Task<IActionResult> OnPostAsync(long id, string[] codes, CancellationToken cancellationToken)
+    /// <param name="shown">Every code the list offered, so a parcel booked while the rider was at the door is caught.</param>
+    public async Task<IActionResult> OnPostAsync(long id, string[] codes, string[] shown, CancellationToken cancellationToken)
     {
-        var picked = await riders.CompletePickupAsync(id, codes, cancellationToken);
+        var picked = await riders.CompletePickupAsync(id, codes, shown, cancellationToken);
         if (picked.IsFailure && picked.Error!.Type == Domain.Common.ErrorType.NotFound)
         {
             return NotFound();

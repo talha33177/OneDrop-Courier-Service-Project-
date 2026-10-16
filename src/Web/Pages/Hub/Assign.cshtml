@@ -9,6 +9,10 @@
     var tenant = TenantContext.Require();
     var today = tenant.Today(DateTime.UtcNow);
     var late = shown.Count(p => p.DueOn < today);
+    // The heaviest parcel any rider of this hub can take; a parcel above it needs a bigger vehicle than the hub has
+    var heaviestTaken = Model.Riders.Count == 0 || Model.Riders.Any(r => r.MaxParcelGrams is null)
+        ? int.MaxValue
+        : Model.Riders.Max(r => r.MaxParcelGrams!.Value);
 }
 
 <div class="page-head">
@@ -16,7 +20,7 @@
         <h1>Assign to riders</h1>
         <p>Tick the parcels a rider takes out now and choose the rider. They go on the rider's run sheet for today@(tenant.RiderReturnTime is { } back ? $", to be done and back at the hub by {back:h:mm tt}" : "").</p>
     </div>
-    <div class="page-actions">@await Html.PartialAsync("_HubSwitch", (Model.Work, Model.Hub))</div>
+    <div class="page-actions">@await Html.PartialAsync("_HubSwitch", Model)</div>
 </div>
 
 <partial name="_Alerts" />
@@ -64,9 +68,14 @@
                             @foreach (var p in shown)
                             {
                                 var later = p.HoldUntil is { } day && day > today;
-                                <tr class="@(later || p.Issue is not null ? "later" : "")">
+                                var tooHeavy = p.WeightGrams > heaviestTaken;
+                                <tr class="@(later || p.Issue is not null || tooHeavy ? "later" : "")">
                                     <td class="check-col">
-                                        @if (p.Issue is null)
+                                        @if (tooHeavy)
+                                        {
+                                            <span title="Heavier than any rider's vehicle takes">@Icons.Get("alert")</span>
+                                        }
+                                        else if (p.Issue is null)
                                         {
                                             <input type="checkbox" name="codes" value="@p.TrackingCode" aria-label="Select @p.TrackingCode" data-later="@(later ? "true" : null)" data-grams="@p.WeightGrams" />
                                         }
@@ -75,7 +84,7 @@
                                             <span title="Flagged: clear it on the parcel's page first">@Icons.Get("flag")</span>
                                         }
                                     </td>
-                                    <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.Merchant</div><div class="tag-row">@Statuses.Tags(p.Speed, p.ProductType)</div></td>
+                                    <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.Merchant</div><div class="tag-row">@Statuses.Tags(p.Tags)</div></td>
                                     <td>@p.RecipientName</td>
                                     <td>@p.Area</td>
                                     <td>
@@ -84,7 +93,11 @@
                                         {
                                             <div class="cell-sub">@p.Attempts attempt@(p.Attempts == 1 ? "" : "s")@(p.Reason is null ? "" : $": {p.Reason}")</div>
                                         }
-                                        @if (p.Issue is { } issue)
+                                        @if (tooHeavy)
+                                        {
+                                            <div class="row-note">@Icons.Get("alert") @Money.Kg(p.WeightGrams) is more than any vehicle of this hub takes (@Money.Kg(heaviestTaken)): ask an admin to add a rider on a pickup van or raise the limit under Vehicles</div>
+                                        }
+                                        else if (p.Issue is { } issue)
                                         {
                                             <div class="row-note">@Statuses.Badge(issue) @p.IssueNote: stays here until the flag is cleared</div>
                                         }
@@ -130,15 +143,17 @@
                             <span style="display:flex;gap:10px;align-items:center">
                                 <input type="radio" name="riderId" value="@rider.Id" form="assign" required
                                        data-name="@rider.Name" data-vehicle="@rider.Vehicle.DisplayName().ToLowerInvariant()"
-                                       data-room-parcels="@(rider.MaxParcels - rider.WithThem)" data-room-grams="@(rider.MaxLoadGrams - rider.CarriedGrams)" />
+                                       data-room-parcels="@(rider.MaxParcels - rider.WithThem)" data-room-grams="@(rider.MaxLoadGrams - rider.CarriedGrams)"
+                                       data-max-parcel="@rider.MaxParcelGrams" data-with="@rider.WithThem" data-carried="@rider.CarriedGrams"
+                                       data-max="@rider.MaxParcels" data-load="@rider.MaxLoadGrams" />
                                 <span class="avatar" style="width:32px;height:32px;font-size:12px">@string.Concat(rider.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])))</span>
                                 <span>@rider.Name<small><span class="vehicle">@Icons.Get(Statuses.Icon(rider.Vehicle)) @rider.Vehicle.DisplayName()</span> · @rider.DeliveredToday delivered today</small></span>
                             </span>
                             <span class="load" title="What @rider.Name carries now">
                                 @if (rider.MaxParcels is { } max && rider.MaxLoadGrams is { } load)
                                 {
-                                    <span>@rider.WithThem/@max · @Money.Kg(rider.CarriedGrams) of @Money.Kg(load)</span>
-                                    <span class="meter @(share >= 100 ? "full" : share >= 80 ? "warn" : "")"><span style="width:@share%"></span></span>
+                                    <span data-load-text>@rider.WithThem/@max · @Money.Kg(rider.CarriedGrams) of @Money.Kg(load)</span>
+                                    <span class="meter @(share >= 100 ? "full" : share >= 80 ? "warn" : "")" data-load-meter><span style="width:@share%"></span></span>
                                 }
                                 else
                                 {
@@ -171,11 +186,34 @@
             const rider = riders.find(radio => radio.checked);
             const chosen = boxes.filter(box => box.checked);
             const grams = chosen.reduce((sum, box) => sum + Number(box.dataset.grams || 0), 0);
+            // Each rider's load shows what they carry now; the chosen one also counts the ticked parcels
+            riders.forEach(radio => {
+                const text = radio.closest("label").querySelector("[data-load-text]");
+                const meter = radio.closest("label").querySelector("[data-load-meter]");
+                if (!text || !radio.dataset.max || !radio.dataset.load) {
+                    return;
+                }
+
+                const add = radio.checked ? chosen.length : 0;
+                const addGrams = radio.checked ? grams : 0;
+                const parcelsNow = Number(radio.dataset.with) + add;
+                const gramsNow = Number(radio.dataset.carried) + addGrams;
+                text.textContent = `${parcelsNow}/${radio.dataset.max} · ${kg(gramsNow)} of ${kg(Number(radio.dataset.load))}`;
+                const share = Math.min(100, Math.max(100 * parcelsNow / Number(radio.dataset.max), 100 * gramsNow / Number(radio.dataset.load)));
+                meter.firstElementChild.style.width = `${share}%`;
+                meter.classList.toggle("full", share >= 100);
+                meter.classList.toggle("warn", share >= 80 && share < 100);
+            });
             const parcels = rider?.dataset.roomParcels;
             const weight = rider?.dataset.roomGrams;
+            const maxParcel = rider?.dataset.maxParcel;
+            const heavy = maxParcel ? chosen.filter(box => Number(box.dataset.grams || 0) > Number(maxParcel)) : [];
             const over = parcels !== undefined && (chosen.length > Number(parcels) || grams > Number(weight));
-            room.hidden = !over;
-            if (over) {
+            room.hidden = !over && heavy.length === 0;
+            if (heavy.length > 0) {
+                room.textContent = `${heavy.length} of the ticked parcels weigh more than ${rider.dataset.name}'s ${rider.dataset.vehicle} takes ` +
+                    `(the heaviest single parcel it may carry is ${kg(Number(maxParcel))}, set on Vehicles). Give ${heavy.length === 1 ? "it" : "them"} to a rider on a bigger vehicle.`;
+            } else if (over) {
                 room.textContent = `${chosen.length} parcels, ${kg(grams)}: ${rider.dataset.name}'s ${rider.dataset.vehicle} has room for ` +
                     `${Math.max(0, Number(parcels))} more parcels and ${kg(Math.max(0, Number(weight)))}. The most urgent go; the rest stay here.`;
             }

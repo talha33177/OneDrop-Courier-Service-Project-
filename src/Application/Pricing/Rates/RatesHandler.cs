@@ -12,28 +12,10 @@ public sealed record RateRow(
     decimal ExtraKgCharge,
     decimal CodChargePercent,
     decimal ReturnCharge,
-    int? DeliveryDays)
-{
-    /// <summary>The extras for express and for what is inside; an empty one is not offered in this service area.</summary>
-    public RateExtras Extras { get; init; } = new(null, null, null, null, null, null);
-
-    /// <summary>What <paramref name="product"/> adds here: 0 for general goods, null when it is not carried.</summary>
-    public decimal? ExtraFor(ProductType product)
-    {
-        return product switch
-        {
-            ProductType.General => 0,
-            ProductType.Liquid => Extras.LiquidCharge,
-            ProductType.Fragile => Extras.FragileCharge,
-            ProductType.FreshFood => Extras.FreshFoodCharge,
-            ProductType.Frozen => Extras.FrozenCharge,
-            _ => null
-        };
-    }
-}
+    int? DeliveryDays);
 
 /// <summary>
-/// The courier's rate card, delivery times and extras: shown on the public pricing section and the merchant's
+/// The courier's rate card and delivery times: shown on the public pricing section and the merchant's
 /// calculator, changed by the courier's admin. A change prices, and promises a time for, parcels booked from then on.
 /// </summary>
 public class RatesHandler(IAppDbContext db)
@@ -42,10 +24,7 @@ public class RatesHandler(IAppDbContext db)
     {
         return await db.DeliveryRates
             .OrderBy(r => r.ServiceArea)
-            .Select(r => new RateRow(r.ServiceArea, r.IncludedWeightGrams, r.BaseCharge, r.ExtraKgCharge, r.CodChargePercent, r.ReturnCharge, r.DeliveryDays)
-            {
-                Extras = new RateExtras(r.ExpressCharge, r.ExpressDays, r.LiquidCharge, r.FragileCharge, r.FreshFoodCharge, r.FrozenCharge)
-            })
+            .Select(r => new RateRow(r.ServiceArea, r.IncludedWeightGrams, r.BaseCharge, r.ExtraKgCharge, r.CodChargePercent, r.ReturnCharge, r.DeliveryDays))
             .AsNoTracking()
             .ToListAsync(cancellationToken);
     }
@@ -68,24 +47,6 @@ public class RatesHandler(IAppDbContext db)
         }
 
         var changed = rate.Change(values);
-        if (changed.IsSuccess)
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-
-        return changed;
-    }
-
-    /// <summary>New extras for one service area, for parcels booked from now on. Its rate must be set first.</summary>
-    public async Task<Result> ChangeExtrasAsync(ServiceArea area, RateExtras extras, CancellationToken cancellationToken = default)
-    {
-        var rate = await db.DeliveryRates.SingleOrDefaultAsync(r => r.ServiceArea == area, cancellationToken);
-        if (rate is null)
-        {
-            return Error.Validation("rate.missing", $"Set the {area.DisplayName().ToLowerInvariant()} rate first.");
-        }
-
-        var changed = rate.ChangeExtras(extras);
         if (changed.IsSuccess)
         {
             await db.SaveChangesAsync(cancellationToken);

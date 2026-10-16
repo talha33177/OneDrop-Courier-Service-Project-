@@ -98,8 +98,8 @@ public class OnlinePaymentTests
         dollars.Confirm(Receipt(dollars, amount: 2, currency: "USD"), Today, Now);
         Assert.Equal(OnlinePaymentStatus.Review, dollars.Status);
         Assert.Equal("payment.currency", dollars.Accept(Today).Error?.Code);
-        Assert.Equal("payment.note", dollars.Refund(" ").Error?.Code);
-        Assert.True(dollars.Refund("Refunded in full through SSLCommerz").IsSuccess);
+        Assert.Equal("payment.note", dollars.Refund(" ", Now).Error?.Code);
+        Assert.True(dollars.Refund("Refunded in full through SSLCommerz", Now).IsSuccess);
         Assert.Equal((OnlinePaymentStatus.Refunded, "Refunded in full through SSLCommerz"), (dollars.Status, dollars.Note));
         Assert.Null(dollars.LedgerEntry);
 
@@ -134,6 +134,6 @@ public class OnlinePaymentTests
             var unsaved = OnlinePayment.Start(7, 230, "BDT", Limits).Value;
             unsaved.Confirm(Receipt(unsaved), Today, Now);
         });
-        Assert.Equal("payment.notInReview", payment.Refund("Refunded").Error?.Code);
+        Assert.Equal("payment.notInReview", payment.Refund("Refunded", Now).Error?.Code);
     }
 }

@@ -65,9 +65,9 @@ else
                             {
                                 <div class="mt-xs">@Statuses.Badge(issue)</div>
                             }
-                            @if (row.Speed != Domain.Pricing.DeliverySpeed.Regular || row.ProductType != Domain.Pricing.ProductType.General)
+                            @if (row.Tags.Any)
                             {
-                                <div class="tag-row">@Statuses.Tags(row.Speed, row.ProductType)</div>
+                                <div class="tag-row">@Statuses.Tags(row.Tags)</div>
                             }
                             @if (row.Attempts > 0)
                             {

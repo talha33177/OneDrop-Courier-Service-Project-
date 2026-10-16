@@ -109,12 +109,12 @@ else if (active && s.Pending > 0 && May(MerchantPermissions.Booking))
             @if (d.PickupToday > 0)
             {
                 <strong>@d.PickupToday parcel@(d.PickupToday == 1 ? " goes" : "s go") with today's pickup</strong>
-                <span>Have @(d.PickupToday == 1 ? "it" : "them") packed and labelled.@pickupLeaves@(d.PickupLater > 0 ? $" {d.PickupLater} booked after the cut-off go{(d.PickupLater == 1 ? "es" : "")} tomorrow." : "")</span>
+                <span>Have @(d.PickupToday == 1 ? "it" : "them") packed and labelled.@pickupLeaves The truck takes what you book until it reaches you.@(d.PickupLater > 0 ? $" {d.PickupLater} booked after it came go{(d.PickupLater == 1 ? "es" : "")} tomorrow." : "")</span>
             }
             else
             {
                 <strong>@d.PickupLater parcel@(d.PickupLater == 1 ? " goes" : "s go") with tomorrow's pickup</strong>
-                <span>@(d.PickupLater == 1 ? "It was" : "They were") booked after today's cut-off@(tenant.PickupCutoff is { } cutoff ? $" of {Statuses.Clock(cutoff)}" : "").</span>
+                <span>The truck has already been to @(d.PickupLater == 1 ? "its" : "their") pickup point today.</span>
             }
         </div>
         @if (May(MerchantPermissions.Parcels))

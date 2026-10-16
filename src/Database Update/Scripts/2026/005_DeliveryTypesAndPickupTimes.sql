@@ -9,23 +9,16 @@
 --          extras on the Rates page.
 -- Author: Courier team
 -- Date: 2026-10-09
+--       2026-10-13 The extras moved to Pricing.DeliveryOptionCharge and the columns this set are gone, so a new
+--                  database could no longer run it: the delivery types are now seeded by 008_DeliveryOptions.sql.
+--                  Databases that ran it keep what it set (Scripts/Pre/004 copied it across)
+--       2026-10-13 The 3:00 pm cut-off is gone too (Scripts/Pre/005_DropPickupCutoff.sql): the van takes what is
+--                  booked until it reaches each pickup point. Only the 3:30 pm pickup time is set here now
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 DECLARE @Courier BIGINT = (SELECT Id FROM Platform.Tenant WHERE Slug = N'onedrop');
 
-UPDATE Pricing.DeliveryRate
-SET
-    ExpressCharge = CASE ServiceArea WHEN 3 THEN NULL ELSE 40 END,
-    ExpressDays = CASE ServiceArea WHEN 3 THEN NULL ELSE 1 END,
-    LiquidCharge = 10,
-    FragileCharge = 20,
-    FreshFoodCharge = CASE ServiceArea WHEN 3 THEN NULL ELSE 30 END,
-    FrozenCharge = CASE ServiceArea WHEN 3 THEN NULL ELSE 50 END
-WHERE
-    TenantId = @Courier;
-
 UPDATE Platform.Tenant
 SET
-    PickupCutoff = '15:00',
     PickupTime = '15:30'
 WHERE
     Id = @Courier;

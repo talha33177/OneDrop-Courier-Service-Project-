@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Parcels.Stuck;
 using Domain.Delivery;
 using Domain.Merchants;
 using Domain.Notifications;
@@ -17,10 +18,10 @@ namespace Application.Notifications.Bell;
 public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenantContext tenantContext, TimeProvider time)
 {
     /// <summary>
-    /// For an admin: sign-ups to approve, requests to answer, parcels a hub flagged, work at the hubs (a pickup with no
-    /// rider, a parcel on a hub's shelf), messages that failed, and payouts that wait for the admin: a merchant asking to
-    /// be paid now, a transfer refused by the gateway, an online payment held for a check, or money owed to a merchant
-    /// with no payout account.
+    /// For an admin: sign-ups to approve, requests to answer, parcels a hub flagged, parcels stuck in one place, work at
+    /// the hubs (a pickup with no rider, a parcel on a hub's shelf), messages that failed, and payouts that wait for the
+    /// admin: a merchant asking to be paid now, a transfer refused by the gateway, an online payment held for a check, or
+    /// money owed to a merchant with no payout account.
     /// </summary>
     public async Task<IReadOnlySet<string>> AdminAsync(CancellationToken cancellationToken = default)
     {
@@ -40,7 +41,12 @@ public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenant
             waiting.Add("/Hub/Parcels");
         }
 
-        // Today's pickups: tomorrow's list (parcels booked after the cut-off) is not work yet
+        if (await StuckParcelsHandler.Stuck(db.Parcels, tenantContext.Require(), time.GetUtcNow().UtcDateTime).AnyAsync(cancellationToken))
+        {
+            waiting.Add("/Admin/Stuck");
+        }
+
+        // Today's pickups: tomorrow's list (points the van has already been to today) is not work yet
         var today = tenantContext.Require().Today(time.GetUtcNow().UtcDateTime);
         if (await db.PickupRequests.AnyAsync(r => r.Status == PickupStatus.Scheduled && r.PickupDate <= today, cancellationToken) ||
             await db.Parcels.AnyAsync(p => p.CurrentHubId != null, cancellationToken))
@@ -62,7 +68,8 @@ public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenant
             select lines.Key;
         if (await db.PayoutRequests.AnyAsync(r => r.Status == PayoutRequestStatus.Open, cancellationToken) ||
             await db.Payouts.AnyAsync(p => p.Status == PayoutStatus.Pending && p.FailedAttempts > 0, cancellationToken) ||
-            await db.OnlinePayments.AnyAsync(p => p.Status == OnlinePaymentStatus.Review, cancellationToken) ||
+            await db.OnlinePayments.AnyAsync(p => p.Status == OnlinePaymentStatus.Review ||
+                (p.Status == OnlinePaymentStatus.RefundDue && p.RefundReference == null && p.RefundTriedOn != null), cancellationToken) ||
             await owedWithNoAccount.AnyAsync(cancellationToken))
         {
             waiting.Add("/Admin/Payouts");
@@ -120,7 +127,11 @@ public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenant
             waiting.Add("/Rider");
         }
 
-        if (await db.PickupRequests.AnyAsync(r => r.RiderId == rider && r.Status == PickupStatus.Assigned, cancellationToken))
+        // Only what their list offers: a pickup dated tomorrow is not theirs to collect today
+        var today = tenantContext.Require().Today(time.GetUtcNow().UtcDateTime);
+        if (await db.PickupRequests.AnyAsync(
+            r => r.RiderId == rider && r.Status == PickupStatus.Assigned && r.PickupDate <= today,
+            cancellationToken))
         {
             waiting.Add("/Rider/Pickups");
         }

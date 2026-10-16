@@ -1,0 +1,71 @@
+@page
+@using Application.Parcels.Stuck
+@model Web.Pages.Admin.StuckModel
+@{
+    ViewData["Title"] = "Stuck parcels";
+    var s = Model.Stuck;
+}
+
+<div class="page-head">
+    <div>
+        <h1>Stuck parcels</h1>
+        <p>
+            @if (s.AfterDays is { } days)
+            {
+                @:Parcels that have stayed in one place for more than @(days == 1 ? "1 day" : $"{days} days"): still with the rider who picked them up, at a hub, between hubs, going back, or on hold that long past their day. A note in a parcel's history does not count as a move; scanning it on, assigning it or sending it back does.
+            }
+            else
+            {
+                @:The courier watches for no stuck parcels.
+            }
+        </p>
+    </div>
+    <div class="page-actions"><a class="btn btn-outline" asp-page="/Admin/Settings">@Icons.Get("settings") Change the days</a></div>
+</div>
+
+@if (s.AfterDays is null)
+{
+    <div class="card"><div class="empty">@Icons.Get("clock")<h3>Not watched</h3><p>Set how many days a parcel may stay in one place on <a asp-page="/Admin/Settings">Courier settings</a>, and the parcels that stay longer are listed here and in your bell.</p></div></div>
+    return;
+}
+
+<div class="card">
+    <div class="card-head">
+        <h2>@(s.Count == 1 ? "1 parcel" : $"{s.Count:N0} parcels")</h2>
+        <div class="segmented">
+            <a class="@(Model.Status is null ? "active" : "")" asp-route-status="">All</a>
+            @foreach (var status in StuckParcelsHandler.Watched)
+            {
+                <a class="@(Model.Status == status ? "active" : "")" asp-route-status="@status">@status.DisplayName() · @s.ByStatus.GetValueOrDefault(status)</a>
+            }
+        </div>
+    </div>
+    @if (s.Parcels.Count == 0)
+    {
+        <div class="empty">@Icons.Get("check-circle")<h3>Nothing stuck</h3><p>Every parcel @(Model.Status is { } st ? $"{st.DisplayName().ToLowerInvariant()} " : "")has moved within the last @(s.AfterDays == 1 ? "day" : $"{s.AfterDays} days").</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Parcel</th><th>Status</th><th>Where</th><th>Last moved</th><th class="num">Days</th></tr></thead>
+                <tbody>
+                    @foreach (var p in s.Parcels)
+                    {
+                        <tr>
+                            <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.Merchant</div></td>
+                            <td>@Statuses.Badge(p.Status) @if (p.Issue is { } issue) { @Statuses.Badge(issue) }@if (p.HoldUntil is { } until) { <div class="cell-sub">Held for @until.ToString("d MMM")</div> }</td>
+                            <td>@if (p.HubCode is { } code) { <a asp-page="/Hub/Index" asp-route-hub="@code">@p.Where</a> } else { @p.Where }</td>
+                            <td class="nowrap">@p.MovedOn.ToString("d MMM, h:mm tt")</td>
+                            <td class="num strong negative">@p.Days</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (s.Parcels.Count == StuckParcelsHandler.MaxListed)
+        {
+            <div class="card-foot"><p class="muted">The @StuckParcelsHandler.MaxListed longest stuck are listed; move them on and the next ones show.</p></div>
+        }
+    }
+</div>

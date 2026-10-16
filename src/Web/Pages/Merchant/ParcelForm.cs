@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Application.Parcels.Browse;
 using Application.Parcels.CreateParcel;
 using Domain.Common;
-using Domain.Pricing;
 
 namespace Web.Pages.Merchant;
 
@@ -30,9 +29,11 @@ public class ParcelForm
 
     public decimal WeightKg { get; set; } = 0.5m;
 
-    public DeliverySpeed Speed { get; set; } = DeliverySpeed.Regular;
+    /// <summary>The speed's code; empty for the courier's default.</summary>
+    public string? Speed { get; set; }
 
-    public ProductType ProductType { get; set; } = ProductType.General;
+    /// <summary>What is inside, by its code; empty for the courier's default.</summary>
+    public string? ProductType { get; set; }
 
     public string? ItemDescription { get; set; }
 

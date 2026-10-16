@@ -90,7 +90,14 @@ public sealed class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
             SELECT @Rival, Id, N'Rival Town' FROM Network.Zone WHERE TenantId = @Rival;
             INSERT INTO Pricing.DeliveryRate (TenantId, ServiceArea, IncludedWeightGrams, BaseCharge, ExtraKgCharge, CodChargePercent, ReturnCharge)
             VALUES (@Rival, 1, 500, 70, 20, 0, 20), (@Rival, 2, 500, 110, 20, 0, 40), (@Rival, 3, 500, 140, 25, 0, 70);
-        END
+        END;
+        -- The database scripts give every courier its two default delivery types, but the rival comes after them
+        INSERT INTO Pricing.DeliveryOption (TenantId, Kind, Code, [Name], Icon, IsDefault, SortOrder)
+        SELECT T.Id, O.Kind, O.Code, O.[Name], O.Icon, 1, 1
+        FROM Platform.Tenant T
+        CROSS JOIN (VALUES (1, N'regular', N'Regular', N'truck'), (2, N'general', N'General', N'package')) O (Kind, Code, [Name], Icon)
+        WHERE T.Slug = N'rival' AND
+              NOT EXISTS (SELECT 1 FROM Pricing.DeliveryOption D WHERE D.TenantId = T.Id AND D.Kind = O.Kind AND D.IsDefault = 1);
         """;
 
     public HttpClient ClientFor(string apiKey)
@@ -118,7 +125,10 @@ public sealed class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
             ["Sslcommerz:StoreId"] = "",
             ["Sslcommerz:StorePassword"] = "",
             // No Google Maps in tests: pages fall back to links, and short map links are opened by a stand-in
-            ["GoogleMaps:ApiKey"] = ""
+            ["GoogleMaps:ApiKey"] = "",
+            // The courier is reached at onedrop.localhost here, whatever address a developer is tunnelling to
+            ["Tenancy:RootDomain"] = "localhost",
+            ["Tenancy:HomeCourierHost"] = ""
         };
 
         builder.UseEnvironment("Development");

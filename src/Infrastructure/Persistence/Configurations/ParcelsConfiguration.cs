@@ -4,6 +4,7 @@ using Domain.Delivery;
 using Domain.Merchants;
 using Domain.Network;
 using Domain.Parcels;
+using Domain.Pricing;
 using Infrastructure.Identity;
 
 namespace Infrastructure.Persistence.Configurations;
@@ -38,11 +39,11 @@ public class ParcelConfiguration : IEntityTypeConfiguration<Parcel>
         builder.Property(p => p.RecipientLatitude).HasPrecision(9, 6);
         builder.Property(p => p.RecipientLongitude).HasPrecision(9, 6);
         builder.Ignore(p => p.Pin);
-        builder.Ignore(p => p.IsPriority);
         builder.Property(p => p.HoldReason).HasMaxLength(200);
         builder.Property(p => p.ReturnReason).HasMaxLength(200);
         builder.Property(p => p.IssueNote).HasMaxLength(200);
         builder.Property(p => p.CollectedAmount).HasPrecision(12, 2);
+        builder.Property(p => p.PaidOnline).HasPrecision(12, 2);
         builder.Property(p => p.CodCharge).HasPrecision(10, 2);
         builder.Property(p => p.RowVersion).IsRowVersion();
         builder.Ignore(p => p.Charges);
@@ -53,6 +54,8 @@ public class ParcelConfiguration : IEntityTypeConfiguration<Parcel>
         builder.HasOne<Merchant>().WithMany().HasForeignKey(p => p.MerchantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<PickupPoint>().WithMany().HasForeignKey(p => p.PickupPointId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Area>().WithMany().HasForeignKey(p => p.AreaId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(p => p.Speed).WithMany().HasForeignKey(p => p.SpeedId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(p => p.ProductType).WithMany().HasForeignKey(p => p.ProductTypeId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Hub>().WithMany().HasForeignKey(p => p.PickupHubId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Hub>().WithMany().HasForeignKey(p => p.DeliveryHubId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Hub>().WithMany().HasForeignKey(p => p.CurrentHubId).OnDelete(DeleteBehavior.Restrict);

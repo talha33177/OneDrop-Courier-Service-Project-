@@ -3,6 +3,8 @@
 @{
     ViewData["Title"] = "My pickups";
     var t = Model.Today!;
+    var stops = t.Pickups.Select(p => MapLinks.Stop(p.Pin, p.Address, p.Area)).ToList();
+    var route = MapLinks.Route(stops);
 }
 @section Head {
     <partial name="_RiderApp" />
@@ -12,11 +14,29 @@
     <div class="page-head">
         <div>
             <h1>My pickups</h1>
-            <p>Collect the parcels at each merchant and tick the ones you take. Only parcels booked before the day's cut-off go with you; later ones wait for the next pickup.</p>
+            <p>Collect the parcels at each merchant and tick the ones you take. You visit each merchant once a day: reload the list at the door to see parcels booked a moment ago, because what the merchant books after you leave waits for tomorrow.</p>
         </div>
     </div>
 
     <partial name="_Alerts" />
+
+    @if (route is not null)
+    {
+        <a class="route-card" href="@route" target="_blank" rel="noopener">
+            <span class="stat-icon">@Icons.Get("navigation")</span>
+            <span class="route-text">
+                <strong>See your pickup round on the map</strong>
+                <span>
+                    @stops.Count merchant@(stops.Count == 1 ? "" : "s") in the order you collect, from where you are now.
+                    @if (stops.Count > MapLinks.MaxRouteStops)
+                    {
+                        <text>Google shows the first @MapLinks.MaxRouteStops; open it again from the next stop for the rest.</text>
+                    }
+                </span>
+            </span>
+            @Icons.Get("arrow-right")
+        </a>
+    }
 
     @if (t.Pickups.Count == 0)
     {
@@ -35,7 +55,22 @@
                 <div>@Icons.Get("map-pin") <span>@p.Address, <strong>@p.Area</strong></span></div>
                 <div>@Icons.Get("phone") <a href="tel:@Money.Phone(p.ContactPhone)">@Money.Phone(p.ContactPhone)</a></div>
             </div>
+            <div class="task-actions">
+                <a class="btn btn-outline" href="tel:@Money.Phone(p.ContactPhone)">@Icons.Get("phone") Call</a>
+                @if (p.Pin is { } door)
+                {
+                    <a class="btn btn-outline" href="@MapLinks.Directions(door)" target="_blank" rel="noopener">@Icons.Get("navigation") Navigate</a>
+                }
+                else
+                {
+                    <a class="btn btn-outline" href="@MapLinks.Search($"{p.Address}, {p.Area}, Bangladesh")" target="_blank" rel="noopener">@Icons.Get("map-pin") Map</a>
+                }
+            </div>
             <form method="post" asp-route-id="@p.Id">
+                @foreach (var parcel in p.Parcels)
+                {
+                    <input type="hidden" name="shown" value="@parcel.TrackingCode" />
+                }
                 @if (p.Parcels.Count == 0)
                 {
                     <p class="muted">Nothing left to collect here: the merchant's parcels were cancelled or brought to the hub.</p>

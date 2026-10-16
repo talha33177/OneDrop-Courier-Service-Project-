@@ -18,7 +18,7 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
     {
         WebAppFactory.RequireDatabase();
         var shop = await NewMerchantAsync(area: "Mirpur 10");
-        var collector = await NewRiderAsync("MIR");
+        var collector = await NewRiderAsync("MIR", vehicle: Vehicle.Van);
         var deliverer = await NewRiderAsync("GUL");
         var code = await BookAsync(shop.ApiKey, area: "Gulshan 2", cod: 1250, weightKg: 0.8m);
         var merchant = await SignInAsync("onedrop", shop.Email);
@@ -30,7 +30,9 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
         Assert.Contains("Rider assigned", await hub.SubmitAsync("/Hub/Pickups?hub=MIR", $"/Hub/Pickups?handler=Assign&id={pickupId}&hub=MIR", ("riderId", $"{collector.Id}")));
         var rider = await SignInAsync("onedrop", collector.Email);
         Assert.Contains(code, await rider.PageAsync("/Rider/Pickups"));
-        Assert.Contains("1 parcel collected", await rider.SubmitAsync("/Rider/Pickups", $"/Rider/Pickups?id={pickupId}", ("codes", code)));
+        Assert.Contains(
+            "1 parcel collected",
+            await rider.SubmitAsync("/Rider/Pickups", $"/Rider/Pickups?id={pickupId}", ("codes", code), ("shown", code)));
         Assert.Equal(ParcelStatus.PickedUp, (await ParcelAsync(code)).Status);
 
         // Mirpur receives it and sends it to Gulshan, which receives it and hands it to its rider

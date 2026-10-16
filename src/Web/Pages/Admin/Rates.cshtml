@@ -40,38 +40,4 @@
     }
 </div>
 
-<div class="part-head mt-lg">
-    <div>
-        <h2>Delivery types</h2>
-        <p>What express delivery and each kind of contents add to the delivery charge. Leave one empty and merchants cannot choose it for that service area; fresh food and frozen, for example, may not survive a long trip.</p>
-    </div>
-</div>
-
-<div class="grid grid-3">
-    @foreach (var rate in Model.Rates)
-    {
-        var x = rate.Extras;
-        <form method="post" asp-page-handler="Extras" class="card">
-            <input type="hidden" name="area" value="@rate.ServiceArea" />
-            <div class="card-head"><div><h2>@rate.ServiceArea.DisplayName()</h2><p>Regular: @Statuses.Promise(rate.DeliveryDays).ToLowerInvariant() after pickup</p></div></div>
-            <div class="card-body">
-                <div class="form-grid">
-                    <div class="field"><label>@Icons.Get("zap") Express</label><div class="input-group"><span class="prefix">+৳</span><input type="number" name="expressCharge" value="@x.ExpressCharge?.ToString("0.##")" min="0" step="1" placeholder="Not offered" /></div></div>
-                    <div class="field"><label>Express within</label><div class="input-group"><input type="number" name="expressDays" value="@x.ExpressDays" min="0" max="@DeliveryRate.MaxDeliveryDays" step="1" placeholder="@rate.DeliveryDays" /><span class="suffix">days</span></div></div>
-                    @foreach (var (product, name, value) in new (ProductType, string, decimal?)[]
-                    {
-                        (ProductType.Liquid, "liquidCharge", x.LiquidCharge),
-                        (ProductType.Fragile, "fragileCharge", x.FragileCharge),
-                        (ProductType.FreshFood, "freshFoodCharge", x.FreshFoodCharge),
-                        (ProductType.Frozen, "frozenCharge", x.FrozenCharge)
-                    })
-                    {
-                        <div class="field"><label>@Icons.Get(Statuses.Icon(product)) @product.DisplayName()</label><div class="input-group"><span class="prefix">+৳</span><input type="number" name="@name" value="@value?.ToString("0.##")" min="0" step="1" placeholder="Not carried" /></div></div>
-                    }
-                </div>
-                <p class="hint mt">Express parcels and fresh or frozen food go first at the hub and on the rider's run. Empty express time keeps the regular one.</p>
-            </div>
-            <div class="card-foot"><button class="btn btn-primary" type="submit">Save</button></div>
-        </form>
-    }
-</div>
+<div class="alert alert-info mt-lg" role="note">@Icons.Get("tag")<div><strong>Express, fragile, frozen and the rest</strong> are priced on <a asp-page="/Admin/DeliveryTypes">Delivery types</a>: what each delivery speed and kind of contents adds on top of these rates, and where it is offered.</div></div>

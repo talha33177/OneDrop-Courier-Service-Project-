@@ -70,7 +70,7 @@ public class PayoutsModel(
     public async Task<IActionResult> OnPostCreditAsync(string? number, CancellationToken cancellationToken)
     {
         var credited = await online.AcceptAsync(number, cancellationToken);
-        TempData[credited.IsSuccess ? "Done" : "Problem"] = credited.IsSuccess ? $"{number} was credited to the merchant." : credited.Error!.Message;
+        TempData[credited.IsSuccess ? "Done" : "Problem"] = credited.IsSuccess ? $"{number} was accepted: a merchant's payment is credited to its balance, a recipient's goes to its parcel." : credited.Error!.Message;
 
         return RedirectToPage();
     }

@@ -1,3 +1,4 @@
+using Domain.Common;
 using Domain.Merchants;
 
 namespace Domain.Tests;
@@ -75,6 +76,20 @@ public class MerchantTests
         Assert.True(point.IsDefault);
         point.MakeDefault(false);
         Assert.False(point.IsDefault);
+    }
+
+    [Fact]
+    public void A_pickup_point_keeps_the_door_pinned_on_the_map_and_can_have_it_taken_off()
+    {
+        var pinned = PickupPoint.Create(7, 1, "Shop", "House 1", "01711000002", true, GeoPoint.Find("23.806964, 90.368393")).Value;
+
+        Assert.Equal("23.806964,90.368393", pinned.Pin!.Text);
+
+        // Not pinned: the rider is guided by the address instead, and the pin can be removed again
+        var byAddress = PickupPoint.Create(7, 1, "Shop", "House 1", "01711000002", true).Value;
+        Assert.Null(byAddress.Pin);
+        Assert.True(pinned.Change(1, "Shop", "House 1", "01711000002").IsSuccess);
+        Assert.Null(pinned.Pin);
     }
 
     [Fact]

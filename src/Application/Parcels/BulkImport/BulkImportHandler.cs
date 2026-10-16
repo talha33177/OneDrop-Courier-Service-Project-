@@ -20,11 +20,11 @@ public sealed record ImportResult(IReadOnlyList<CreateParcelResult> Booked, IRea
 /// Books many parcels from a CSV file, as merchants export them from their shop or a spreadsheet. Every row is checked
 /// first; only when all are good are they saved, in one go, so a file is never half booked, and their pickup points
 /// go on the day's pickup list. Columns, with a header row: <c>invoice, recipient_name, recipient_phone,
-/// recipient_address, area, cod_amount, weight_kg</c>, and optionally <c>item_description, note, speed</c> (regular or
-/// express), <c>product_type</c> (general, liquid, fragile, fresh food or frozen) and <c>location</c> (the door's
+/// recipient_address, area, cod_amount, weight_kg</c>, and optionally <c>item_description, note, speed</c> and
+/// <c>product_type</c> (a code or name from the courier's delivery types, such as express or fresh food) and <c>location</c> (the door's
 /// coordinates, or a Google Maps link that holds them).
 /// </summary>
-public class BulkImportHandler(IAppDbContext db, ITenantContext tenantContext, CreateParcelHandler parcels, PickupSchedule pickups)
+public class BulkImportHandler(IAppDbContext db, CreateParcelHandler parcels, PickupSchedule pickups)
 {
     public const int MaxRows = 500;
 
@@ -63,7 +63,7 @@ public class BulkImportHandler(IAppDbContext db, ITenantContext tenantContext, C
         }
 
         var problems = new List<ImportProblem>();
-        var prepared = new List<(Parcel Parcel, string Area, string Hub)>();
+        var prepared = new List<PreparedParcel>();
         foreach (var row in rows)
         {
             string Field(string column)
@@ -76,14 +76,6 @@ public class BulkImportHandler(IAppDbContext db, ITenantContext tenantContext, C
             if (!TryAmount(Field("cod_amount"), out var cod) || !TryAmount(Field("weight_kg"), out var weight))
             {
                 problems.Add(new ImportProblem(row.Line, "cod_amount and weight_kg must be numbers, such as 1250 and 0.5."));
-                continue;
-            }
-
-            if (!TryOption<DeliverySpeed>(Field("speed"), out var speed) || !TryOption<ProductType>(Field("product_type"), out var product))
-            {
-                problems.Add(new ImportProblem(
-                    row.Line,
-                    "speed is regular or express, and product_type general, liquid, fragile, fresh food or frozen (or leave them empty)."));
                 continue;
             }
 
@@ -105,8 +97,8 @@ public class BulkImportHandler(IAppDbContext db, ITenantContext tenantContext, C
                 Area = Field("area"),
                 CodAmount = cod,
                 WeightKg = weight,
-                Speed = speed,
-                ProductType = product,
+                Speed = Field("speed").NullIfBlank(),
+                ProductType = Field("product_type").NullIfBlank(),
                 RecipientLatitude = pin?.Latitude,
                 RecipientLongitude = pin?.Longitude,
                 ItemDescription = Field("item_description").NullIfBlank(),
@@ -134,11 +126,11 @@ public class BulkImportHandler(IAppDbContext db, ITenantContext tenantContext, C
 
         db.Parcels.AddRange(prepared.Select(p => p.Parcel));
         await db.SaveChangesAsync(cancellationToken);
-        await pickups.ScheduleAsync([.. prepared.Select(p => p.Parcel)], cancellationToken);
+        var days = await pickups.ScheduleAsync([.. prepared.Select(p => p.Parcel)], cancellationToken);
 
-        var tenant = tenantContext.Require();
-
-        return new ImportResult([.. prepared.Select(p => CreateParcelHandler.Describe(p.Parcel, p.Area, p.Hub, tenant))], []);
+        return new ImportResult(
+            [.. prepared.Select(p => CreateParcelHandler.Describe(p, days.TryGetValue(p.Parcel.PickupPointId, out var day) ? day : null))],
+            []);
     }
 
     /// <summary>The template a merchant downloads: the header and two example rows.</summary>
@@ -147,29 +139,6 @@ public class BulkImportHandler(IAppDbContext db, ITenantContext tenantContext, C
         return string.Join(",", Columns) + "\r\n" +
             $"INV-1001,Rahim Uddin,01712345678,\"House 12, Road 5\",{exampleArea},1250,0.5,T-shirt,Call before coming,regular,general,\r\n" +
             $"INV-1002,Nadia Islam,01812345678,\"Flat 3B, House 7\",{exampleArea},800,1,Glass vase,,express,fragile,\"23.8103, 90.4125\"\r\n";
-    }
-
-    /// <summary>
-    /// A speed or kind of contents as merchants write it ("express", "Fresh food", "fresh_food"); empty is the default
-    /// (null, regular or general).
-    /// </summary>
-    private static bool TryOption<T>(string text, out T? value)
-        where T : struct, Enum
-    {
-        value = null;
-        var name = text.Replace(" ", "", StringComparison.Ordinal).Replace("_", "", StringComparison.Ordinal);
-        if (name.Length == 0)
-        {
-            return true;
-        }
-
-        if (Enum.TryParse<T>(name, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed) && !int.TryParse(name, out _))
-        {
-            value = parsed;
-            return true;
-        }
-
-        return false;
     }
 
     private static bool TryAmount(string text, out decimal value)

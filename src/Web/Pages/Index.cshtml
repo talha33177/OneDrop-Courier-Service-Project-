@@ -170,13 +170,23 @@
                     {
                         <li>@Icons.Get("check") <span>Delivered @Statuses.AfterPickup(days)</span></li>
                     }
-                    @if (rate.Extras.ExpressCharge is { } express)
+                    @foreach (var speed in Model.DeliveryTypes.Where(o => o.Kind == DeliveryOptionKind.Speed && !o.IsDefault))
                     {
-                        <li>@Icons.Get("check") <span>Express for @Money.Taka(express) more</span></li>
+                        @if (speed.ChargeIn(rate.ServiceArea) is { } extra)
+                        {
+                            <li>@Icons.Get("check") <span>@speed.Name for @Money.Taka(extra) more</span></li>
+                        }
                     }
-                    @if (rate.ExtraFor(Domain.Pricing.ProductType.Frozen) is not null)
+                    @{
+                        var carried = Model.DeliveryTypes
+                            .Where(o => o.Kind == DeliveryOptionKind.Contents && !o.IsDefault && o.ChargeIn(rate.ServiceArea) is not null)
+                            .Select(o => o.Name.ToLowerInvariant())
+                            .ToList();
+                    }
+                    @if (carried.Count > 0)
                     {
-                        <li>@Icons.Get("check") <span>Fragile, fresh and frozen goods carried with care</span></li>
+                        var names = carried.Count == 1 ? carried[0] : string.Join(", ", carried[..^1]) + " and " + carried[^1];
+                        <li>@Icons.Get("check") <span>@(char.ToUpperInvariant(names[0]) + names[1..]) goods carried with care</span></li>
                     }
                 </ul>
             </div>

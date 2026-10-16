@@ -1,7 +1,8 @@
-// The recipient's door on a map, for the booking form. The merchant drops the pin by searching, by clicking the map
-// or by finding the typed address, drags it to correct it, or pastes the location the customer sent (a Google Maps
-// link or coordinates, read by the server, which also opens maps.app.goo.gl short links). The pin is two hidden fields;
-// without a Google Maps key there is no map, and the pasted link is the way to pin.
+// A door on a map: the recipient's on the booking form, a pickup point's in the merchant's settings. The merchant
+// drops the pin by searching, by clicking the map or by finding the typed address, drags it to correct it, or pastes
+// the location the customer sent (a Google Maps link or coordinates, read by the server, which also opens
+// maps.app.goo.gl short links). The pin is two hidden fields; without a Google Maps key there is no map, and the
+// pasted link is the way to pin. The box names the form's area and address fields (data-pin-area, data-pin-address).
 (() => {
     const box = document.querySelector("[data-pin]");
     if (!box) {
@@ -16,8 +17,9 @@
     const link = box.querySelector("[data-pin-link]");
     const use = box.querySelector("[data-pin-use]");
     const open = box.querySelector("[data-pin-open]");
-    const area = form.querySelector("[name='Input.AreaId']");
-    const address = form.querySelector("[name='Input.RecipientAddress']");
+    const field = (name, fallback) => form.querySelector(`[name='${box.dataset[name] || fallback}']`);
+    const area = field("pinArea", "Input.AreaId");
+    const address = field("pinAddress", "Input.RecipientAddress");
     let map;
     let marker;
     let geocoder;
@@ -31,7 +33,7 @@
 
         return [option.textContent.replace(" (suburb)", "").trim(), option.parentElement.label, "Bangladesh"].filter(Boolean).join(", ");
     };
-    const addressText = () => [address.value.trim(), areaText() || "Bangladesh"].filter(Boolean).join(", ");
+    const addressText = () => [address?.value.trim(), areaText() || "Bangladesh"].filter(Boolean).join(", ");
 
     const say = (text, problem) => {
         status.replaceChildren();
@@ -138,7 +140,7 @@
             read();
         }
     });
-    address.addEventListener("input", refresh);
+    address?.addEventListener("input", refresh);
     area?.addEventListener("change", async () => {
         refresh();
         if (map && !pinned()) {

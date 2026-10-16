@@ -9,7 +9,7 @@ namespace Web.Pages.Hub;
 
 /// <summary>
 /// The pickups this hub collects: the day's list of merchants' pickup points (scheduled as parcels are booked), the
-/// rider each is given, and tomorrow's list so far.
+/// rider each is given, and tomorrow's list so far (points the van has been to today).
 /// </summary>
 public class PickupsModel(
     HubOverviewHandler hubs,
@@ -22,10 +22,10 @@ public class PickupsModel(
 
     public IReadOnlyList<RiderLoad> Riders { get; private set; } = [];
 
-    public DateOnly Today { get; private set; }
+    /// <summary>The hub's pickup van riders: the only ones sent to merchants.</summary>
+    public IReadOnlyList<RiderLoad> Vans => [.. Riders.Where(r => r.CollectsPickups)];
 
-    /// <summary>Today's list is closed: the cut-off has passed, so no parcel booked now joins it.</summary>
-    public bool ListClosed { get; private set; }
+    public DateOnly Today { get; private set; }
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
@@ -34,10 +34,7 @@ public class PickupsModel(
             return NotFound();
         }
 
-        var tenant = tenantContext.Require();
-        var now = time.GetUtcNow().UtcDateTime;
-        Today = tenant.Today(now);
-        ListClosed = now >= tenant.PickupCutoffUtc(Today);
+        Today = tenantContext.Require().Today(time.GetUtcNow().UtcDateTime);
         if (Hub is not null)
         {
             Requests = await pickups.ForHubAsync(Hub.Code, cancellationToken) ?? [];
@@ -74,9 +71,19 @@ public class PickupsModel(
         }
 
         var assigned = await pickups.AssignAllAsync(Hub.Code, day, riderId, cancellationToken);
-        TempData[assigned.IsSuccess ? "Done" : "Problem"] = assigned.IsSuccess
-            ? $"{assigned.Value} pickup{(assigned.Value == 1 ? "" : "s")} given to the rider."
-            : assigned.Error!.Message;
+        if (assigned.IsFailure)
+        {
+            TempData["Problem"] = assigned.Error!.Message;
+        }
+        else
+        {
+            var round = assigned.Value;
+            TempData["Done"] = $"{round.Assigned} pickup{(round.Assigned == 1 ? "" : "s")} given to the rider.";
+            if (round.Left > 0)
+            {
+                TempData["Problem"] = $"{round.Left} pickup{(round.Left == 1 ? "" : "s")} stay{(round.Left == 1 ? "s" : "")} on the list: {round.Why}";
+            }
+        }
 
         return RedirectToPage(new { hub = Hub.Code });
     }

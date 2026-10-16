@@ -15,9 +15,9 @@ the next day.
 | Who | What they do |
 |---|---|
 | Merchant | Signs up (approved by the courier), books parcels by form, spreadsheet or API, asks for pickups, prints labels, follows every parcel (by stage, by date, in stats over any period, and a bell of what happened), asks the courier to cancel a parcel on its way or change its cash, confirms the returns a rider brings back, checks a phone number's delivery record, keeps several payout accounts and asks to be paid early, sees its payments and invoices, exports its parcels, and adds moderators who work in the account with a sign-in of their own |
-| Hub staff | Scan parcels in and out (receive, send to the delivery hub, hand back returns), send riders to pickups, hand parcels to riders, send returns back to merchants with a rider, flag a parcel with a problem, close each rider's run with the cash handed in |
+| Hub staff | Each has a job at one hub (hub manager, receiving, line-haul, delivery desk, returns desk, cash desk) and works only its desks there: scan parcels in and out (receive, send to the delivery hub, hand back returns), send riders to pickups, hand parcels to riders, send returns back to merchants with a rider, flag a parcel with a problem, close each rider's run with the cash handed in. A hub manager adds the hub's own staff |
 | Rider | A phone screen: today's pickups, deliveries and returns to hand back, and at each door delivered, partly delivered, on hold or refused |
-| Courier admin | Live dashboard, merchants (approve, suspend, edit), merchants' requests to answer, riders, the rate card, coverage, payouts, reports, failed messages |
+| Courier admin | A super admin does everything; head office staff (operations, accounts, merchant support, customer support, relief) open only the panels their job opens. Live dashboard, merchants (approve, suspend, edit), merchants' requests to answer, riders, the rate card, coverage, payouts, reports, failed messages |
 | Recipient | Public tracking by code, and an SMS when the parcel goes out and when it is delivered |
 
 Prices come from the courier's rate card, per service area (seeded values):
@@ -157,8 +157,10 @@ there are no demo logins at all: a live site starts with only the admin named wh
 
 | Login | Role |
 |---|---|
-| `admin@onedrop.test` | Courier admin |
-| `hub@onedrop.test` | Hub staff (any hub; the hub is picked at the top of each hub page) |
+| `admin@onedrop.test` | Super admin |
+| `hub@onedrop.test` | Relief staff: any desk at any hub (the hub is picked at the top of each hub page) |
+| `mirpur@onedrop.test`, `receiving@onedrop.test` | Mirpur hub manager (every desk there and the hub's staff) and a Mirpur receiving clerk |
+| `accounts@onedrop.test` | Accounts at head office: payouts, adjustments, online payments, reports |
 | `fashion@onedrop.test`, `gadget@onedrop.test`, `beauty@onedrop.test`, `crafts@onedrop.test` | Merchants (Fashion House, Gadget BD, Beauty Shop, Chattogram Crafts) |
 | `organic@onedrop.test` | Organic Bazar, a merchant still waiting for approval |
 | `rider@onedrop.test`, `rider2@` (Mirpur), `rider3@` (Gulshan), `rider4@` (Chattogram), `rider5@` (Dhanmondi), `rider6@` (Uttara) | Riders |

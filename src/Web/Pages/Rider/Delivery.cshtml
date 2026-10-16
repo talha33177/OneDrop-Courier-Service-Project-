@@ -23,10 +23,10 @@
             </div>
             <div class="text-right"><div class="task-cod">@Money.Taka(d.CodAmount)</div><div class="muted" style="font-size:12px">@(d.CodAmount == 0 ? "already paid" : "to collect")</div></div>
         </div>
-        @if (d.Speed != Domain.Pricing.DeliverySpeed.Regular || d.ProductType != Domain.Pricing.ProductType.General)
+        @if (d.Tags.Any)
         {
-            <div class="tag-row">@Statuses.Tags(d.Speed, d.ProductType)</div>
-            @if (Domain.Pricing.DeliveryOptions.Handling(d.ProductType) is { } handling)
+            <div class="tag-row">@Statuses.Tags(d.Tags)</div>
+            @if (d.Tags.Handling is { } handling)
             {
                 <p class="handling">@handling</p>
             }

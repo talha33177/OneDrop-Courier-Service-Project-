@@ -4,7 +4,6 @@ using Application.Parcels.Browse;
 using Application.Parcels.CreateParcel;
 using Application.Parcels.ParcelActions;
 using Domain.Parcels;
-using Domain.Pricing;
 using Web.Authentication;
 
 namespace Web.Api.V1;
@@ -12,8 +11,8 @@ namespace Web.Api.V1;
 /// <summary>
 /// A parcel as the API returns it: its status, where the money stands, the day it should be delivered by (DueOn,
 /// once picked up when a time was promised; Late when still on its way after it), a problem the courier flagged
-/// on it (Issue: inReview or exceptional, with IssueNote; null when there is none), its speed and contents with the
-/// extras they added, the door's pin (null when not pinned) and, while it waits for pickup, the day it is collected.
+/// on it (Issue: inReview or exceptional, with IssueNote; null when there is none), its speed and contents (their codes) with
+/// the extras they added, the door's pin (null when not pinned) and, while it waits for pickup, the day it is collected.
 /// </summary>
 public sealed record ParcelStatusResult(
     string TrackingCode,
@@ -33,13 +32,19 @@ public sealed record ParcelStatusResult(
     bool Late,
     ParcelIssue? Issue,
     string? IssueNote,
-    DeliverySpeed Speed,
-    ProductType ProductType,
+    string Speed,
+    string ProductType,
     decimal SpeedCharge,
     decimal ProductCharge,
     decimal? RecipientLatitude,
     decimal? RecipientLongitude,
-    DateOnly? PickupOn);
+    DateOnly? PickupOn)
+{
+    /// <summary>
+    /// What the recipient paid online before the door (the rider collects the rest); null while it is paid in cash.
+    /// </summary>
+    public decimal? PaidOnline { get; init; }
+}
 
 public sealed record CancelParcelRequest(string? Reason);
 
@@ -116,7 +121,10 @@ public class ParcelsController : ControllerBase
             parcel.ProductCharge,
             parcel.Pin?.Latitude,
             parcel.Pin?.Longitude,
-            parcel.PickupOn));
+            parcel.PickupOn)
+        {
+            PaidOnline = parcel.PaidOnline
+        });
     }
 
     /// <summary>Cancels a parcel not yet picked up.</summary>

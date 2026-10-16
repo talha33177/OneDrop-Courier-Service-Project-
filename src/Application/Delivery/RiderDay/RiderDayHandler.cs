@@ -1,17 +1,23 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Delivery.Capacities;
+using Application.Delivery.Pickups;
+using Application.Pricing.DeliveryOptions;
 using Domain.Common;
 using Domain.Delivery;
 using Domain.Parcels;
 using Domain.Payments;
-using Domain.Pricing;
 
 namespace Application.Delivery.RiderDay;
 
 /// <summary>A parcel waiting at a pickup point, for the rider to tick off.</summary>
 public sealed record PickupParcel(string TrackingCode, string RecipientName, string Area, decimal CodAmount);
 
+/// <summary>
+/// A merchant's door the rider collects from, with it pinned on a map when the merchant pinned it, so the van is
+/// guided to it and the stop sits on the round's route.
+/// </summary>
 public sealed record RiderPickup(
     long Id,
     string Merchant,
@@ -20,7 +26,12 @@ public sealed record RiderPickup(
     string Area,
     string ContactPhone,
     DateOnly Date,
-    IReadOnlyList<PickupParcel> Parcels);
+    IReadOnlyList<PickupParcel> Parcels,
+    decimal? Latitude = null,
+    decimal? Longitude = null)
+{
+    public GeoPoint? Pin => GeoPoint.From(Latitude, Longitude) is { IsSuccess: true } point ? point.Value : null;
+}
 
 /// <summary>
 /// A parcel the rider has to deliver, with everything needed at the door: how to handle it, and the door pinned on a
@@ -41,8 +52,7 @@ public sealed record RiderDelivery(
     int Attempts,
     int MaxAttempts,
     DateOnly? DueOn,
-    DeliverySpeed Speed,
-    ProductType ProductType,
+    DeliveryTags Tags,
     decimal? Latitude,
     decimal? Longitude)
 {
@@ -71,7 +81,13 @@ public sealed record RiderToday(
 /// cash collected), partly delivered, held for another day, or refused. A delivery writes the merchant's ledger lines in
 /// the same save. A rider only ever sees and changes their own work.
 /// </summary>
-public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICurrentUser currentUser, TimeProvider time)
+public class RiderDayHandler(
+    IAppDbContext db,
+    ITenantContext tenantContext,
+    ICurrentUser currentUser,
+    RiderLoads loads,
+    PickupSchedule schedule,
+    TimeProvider time)
 {
     public static readonly Error NotYours = Error.NotFound("rider.parcel", "That parcel is not with you.");
 
@@ -93,9 +109,19 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
             join merchant in db.Merchants on request.MerchantId equals merchant.Id
             join point in db.PickupPoints on request.PickupPointId equals point.Id
             join area in db.Areas on point.AreaId equals area.Id
-            where request.RiderId == rider.Id && request.Status == PickupStatus.Assigned
+            where request.RiderId == rider.Id && request.Status == PickupStatus.Assigned && request.PickupDate <= today
             orderby request.PickupDate, request.Id
-            select new { request, Merchant = merchant.Name, Point = point.Name, point.Address, Area = area.Name, point.ContactPhone })
+            select new
+            {
+                request,
+                Merchant = merchant.Name,
+                Point = point.Name,
+                point.Address,
+                Area = area.Name,
+                point.ContactPhone,
+                point.Latitude,
+                point.Longitude
+            })
             .AsNoTracking()
             .ToListAsync(cancellationToken);
         var pointIds = pickups.Select(p => p.request.PickupPointId).ToList();
@@ -107,7 +133,6 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
             select new
             {
                 parcel.PickupPointId,
-                parcel.Created,
                 Row = new PickupParcel(parcel.TrackingCode, parcel.RecipientName, area.Name, parcel.CodAmount)
             })
             .AsNoTracking()
@@ -119,8 +144,7 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
             join merchant in db.Merchants on parcel.MerchantId equals merchant.Id
             join area in db.Areas on parcel.AreaId equals area.Id
             where attempt.RiderId == rider.Id && attempt.Outcome == null
-            orderby parcel.Speed == DeliverySpeed.Express || parcel.ProductType == ProductType.FreshFood ||
-                parcel.ProductType == ProductType.Frozen descending, area.Name, parcel.Id
+            orderby parcel.Speed!.GoesFirst || parcel.ProductType!.GoesFirst descending, area.Name, parcel.Id
             select new RiderDelivery(
                 parcel.TrackingCode,
                 merchant.Name,
@@ -129,15 +153,21 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
                 parcel.RecipientPhone,
                 parcel.RecipientAddress,
                 area.Name,
-                parcel.CodAmount,
+                // What is left to collect at the door: nothing once the recipient paid online
+                parcel.CodAmount - (parcel.PaidOnline ?? 0),
                 parcel.WeightGrams,
                 parcel.ItemDescription,
                 parcel.Note,
                 parcel.Attempts,
                 tenant.MaxDeliveryAttempts,
                 parcel.DueOn,
-                parcel.Speed,
-                parcel.ProductType,
+                new DeliveryTags(
+                    parcel.Speed!.IsDefault ? null : parcel.Speed.Name,
+                    parcel.Speed.Icon,
+                    parcel.ProductType!.IsDefault ? null : parcel.ProductType.Name,
+                    parcel.ProductType.Icon,
+                    parcel.ProductType.Handling,
+                    parcel.Speed.GoesFirst || parcel.ProductType.GoesFirst),
                 parcel.RecipientLatitude,
                 parcel.RecipientLongitude))
             .AsNoTracking()
@@ -174,12 +204,9 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
                     p.Area,
                     p.ContactPhone,
                     p.request.PickupDate,
-                    [
-                        .. waiting
-                            .Where(w => w.PickupPointId == p.request.PickupPointId &&
-                                w.Created < tenant.PickupCutoffUtc(p.request.PickupDate))
-                            .Select(w => w.Row)
-                    ]))
+                    [.. waiting.Where(w => w.PickupPointId == p.request.PickupPointId).Select(w => w.Row)],
+                    p.Latitude,
+                    p.Longitude))
             ],
             deliveries,
             done,
@@ -194,7 +221,8 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
             trackingCode,
             (parcel, now) => parcel.Deliver(collected, reason, now),
             parcel => parcel.Status == ParcelStatus.Delivered ? AttemptOutcome.Delivered : AttemptOutcome.PartlyDelivered,
-            parcel => parcel.CollectedAmount ?? 0,
+            // The attempt keeps the rider's cash; the parcel counts what was paid online too
+            _ => collected,
             reason,
             cancellationToken);
     }
@@ -218,12 +246,15 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
     }
 
     /// <summary>
-    /// The rider collected <paramref name="trackingCodes"/> at the pickup point; the rest stay with the merchant. Only
-    /// parcels booked before the pickup's cut-off go with it: one booked later waits for the next day's pickup.
+    /// The rider collected <paramref name="trackingCodes"/> at the pickup point; the rest stay with the merchant. This
+    /// is the day's visit to the point: whatever the rider leaves goes with the next day's pickup, which is listed at
+    /// once. A parcel booked while the rider stood at the door is theirs to take, so one that reached the point after
+    /// the list was drawn (it is not among <paramref name="shownCodes"/>) stops the pickup and is offered again.
     /// </summary>
     public async Task<Result<int>> CompletePickupAsync(
         long requestId,
         IReadOnlyCollection<string> trackingCodes,
+        IReadOnlyCollection<string>? shownCodes = null,
         CancellationToken cancellationToken = default)
     {
         var rider = await RiderAsync(cancellationToken);
@@ -236,17 +267,54 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
         }
 
         var tenant = tenantContext.Require();
-        var cutoff = tenant.PickupCutoffUtc(request.PickupDate);
+        if (request.PickupDate > tenant.Today(time.GetUtcNow().UtcDateTime))
+        {
+            return Pickups.PickupsHandler.NotYet;
+        }
+
         var codes = trackingCodes.Select(c => c.Trim().ToUpperInvariant()).ToList();
-        var picked = await db.Parcels
+        var waiting = await db.Parcels
             .Where(p => p.PickupPointId == request.PickupPointId && p.MerchantId == request.MerchantId &&
-                p.Status == ParcelStatus.Pending && p.Created < cutoff && codes.Contains(p.TrackingCode))
+                p.Status == ParcelStatus.Pending)
             .ToListAsync(cancellationToken);
+        var picked = waiting.Where(p => codes.Contains(p.TrackingCode)).ToList();
+        if (!rider!.Vehicle.CollectsPickups())
+        {
+            return Error.Conflict("pickup.vehicle", "Only a pickup van collects from merchants. Ask the hub for a delivery run instead.");
+        }
+
+        // Booked while the rider was at the door: the merchant is owed the collection today, so the list is drawn again
+        var shown = shownCodes?.Select(c => c.Trim().ToUpperInvariant()).ToHashSet();
+        var since = shown is null ? 0 : waiting.Count(p => !shown.Contains(p.TrackingCode));
+        if (since > 0)
+        {
+            return Error.Conflict(
+                "pickup.booked",
+                $"The merchant booked {since} more parcel{(since == 1 ? "" : "s")} while you were here, now on the list. " +
+                "Tick what you are taking and save again.");
+        }
+
+        // Whatever the rider puts in the van must fit it together with what it already carries; the rest waits for the next pickup
+        var fleet = new Fleet(await db.VehicleCapacities.AsNoTracking().ToListAsync(cancellationToken));
+        var load = await loads.CarriedAsync(rider.Id, request.Id, cancellationToken);
+        foreach (var parcel in picked.OrderBy(p => p.Id))
+        {
+            var fits = fleet.Take(rider.Vehicle, load, parcel.TrackingCode, parcel.BilledWeightGrams);
+            if (fits.IsFailure)
+            {
+                return Error.Conflict(
+                    fits.Error!.Code,
+                    $"{fits.Error.Message} Untick what does not fit: the merchant's other parcels come with the next pickup.");
+            }
+
+            load = load.With(parcel.BilledWeightGrams);
+        }
+
         var now = time.GetUtcNow().UtcDateTime;
         var today = tenant.Today(now);
         foreach (var parcel in picked)
         {
-            parcel.PickUp(today);
+            parcel.PickUp(today, rider.Id);
         }
 
         var completed = request.Complete(picked.Count, now);
@@ -256,6 +324,12 @@ public class RiderDayHandler(IAppDbContext db, ITenantContext tenantContext, ICu
         }
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // The van has been here today, so whatever the rider left behind goes with tomorrow's pickup
+        var left = await db.Parcels
+            .Where(p => p.PickupPointId == request.PickupPointId && p.Status == ParcelStatus.Pending)
+            .ToListAsync(cancellationToken);
+        await schedule.ScheduleAsync(left, cancellationToken);
 
         return picked.Count;
     }

@@ -148,7 +148,7 @@ public class RunsHandler(IAppDbContext db, ITenantContext tenantContext, HubDire
                 parcel.RecipientPhone,
                 parcel.RecipientAddress,
                 area.Name,
-                parcel.CodAmount,
+                parcel.CodAmount - (parcel.PaidOnline ?? 0),
                 parcel.Note,
                 parcel.Attempts + 1,
                 tenant.MaxDeliveryAttempts))

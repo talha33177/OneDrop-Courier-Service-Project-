@@ -19,6 +19,49 @@ public sealed record RiderRow(
     int DeliveredToday,
     decimal CashInHand);
 
+/// <summary>One of a rider's runs: its hand-overs, what came of them and the cash collected against handed in.</summary>
+public sealed record RunLine(
+    long Id,
+    DateOnly Date,
+    string Hub,
+    RunStatus Status,
+    int Parcels,
+    int Delivered,
+    int NotDelivered,
+    decimal Collected,
+    decimal? Expected,
+    decimal? HandedIn)
+{
+    /// <summary>
+    /// What the rider kept back of what the hub counted as due at closing; negative when they handed in more. Null while
+    /// the run is open.
+    /// </summary>
+    public decimal? Short => Expected - HandedIn;
+}
+
+/// <summary>One hand-over of a parcel to the rider; <see cref="At"/> is when it was recorded, or given while still out.</summary>
+public sealed record AttemptLine(string TrackingCode, DateTime At, AttemptOutcome? Outcome, decimal Collected, string? Reason);
+
+public sealed record RiderDetails(RiderRow Rider, Period Period, IReadOnlyList<RunLine> Runs, IReadOnlyList<AttemptLine> Attempts)
+{
+    public int Stops => Runs.Sum(r => r.Delivered + r.NotDelivered);
+
+    public int Delivered => Runs.Sum(r => r.Delivered);
+
+    /// <summary>Delivered out of the doors the rider recorded; null before the first.</summary>
+    public double? SuccessRate => Stops == 0 ? null : (double)Delivered / Stops;
+
+    public decimal Collected => Runs.Sum(r => r.Collected);
+
+    /// <summary>Handed in at the runs closed in the period.</summary>
+    public decimal HandedIn => Runs.Sum(r => r.HandedIn ?? 0);
+
+    /// <summary>Kept back over the closed runs; the open ones are still with the rider and counted as cash in hand.</summary>
+    public decimal Short => Runs.Sum(r => r.Short ?? 0);
+
+    public int OpenRuns => Runs.Count(r => r.Status == RunStatus.Open);
+}
+
 public sealed record NewRider(string? Name, string? Phone, long HubId, Vehicle Vehicle, string? Email, string? Password);
 
 /// <summary>
@@ -29,16 +72,88 @@ public class AdminRidersHandler(IAppDbContext db, ITenantContext tenantContext, 
 {
     public static readonly Error NotFound = Error.NotFound("rider.notFound", "That rider was not found.");
 
-    public async Task<IReadOnlyList<RiderRow>> ListAsync(long? hubId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<RiderRow>> ListAsync(long? hubId, CancellationToken cancellationToken = default)
+    {
+        return RowsAsync(hubId is { } only ? db.Riders.Where(r => r.HubId == only) : db.Riders, cancellationToken);
+    }
+
+    /// <summary>
+    /// One rider for the admin: who they are and what they carry now, and over <paramref name="kind"/> their runs, stops,
+    /// deliveries and the cash they collected against the cash they handed in.
+    /// </summary>
+    public async Task<Result<RiderDetails>> DetailsAsync(
+        long id,
+        PeriodKind kind,
+        DateOnly? from,
+        DateOnly? to,
+        CancellationToken cancellationToken = default)
+    {
+        var rider = (await RowsAsync(db.Riders.Where(r => r.Id == id), cancellationToken)).SingleOrDefault();
+        if (rider is null)
+        {
+            return NotFound;
+        }
+
+        var tenant = tenantContext.Require();
+        var period = Period.Of(kind, tenant.Today(time.GetUtcNow().UtcDateTime), from, to);
+        if (period.IsFailure)
+        {
+            return period.Error!;
+        }
+
+        var (first, last) = (period.Value.From, period.Value.To);
+        var runs = await (
+            from run in db.DeliveryRuns
+            join hub in db.Hubs on run.HubId equals hub.Id
+            where run.RiderId == id && run.RunDate >= first && run.RunDate <= last
+            orderby run.RunDate descending, run.Id descending
+            select new RunLine(
+                run.Id,
+                run.RunDate,
+                hub.Code,
+                run.Status,
+                db.DeliveryAttempts.Count(a => a.RunId == run.Id),
+                db.DeliveryAttempts.Count(a => a.RunId == run.Id &&
+                    (a.Outcome == AttemptOutcome.Delivered || a.Outcome == AttemptOutcome.PartlyDelivered)),
+                db.DeliveryAttempts.Count(a => a.RunId == run.Id &&
+                    (a.Outcome == AttemptOutcome.Hold || a.Outcome == AttemptOutcome.Refused)),
+                db.DeliveryAttempts.Where(a => a.RunId == run.Id).Sum(a => (decimal?)a.CollectedAmount) ?? 0,
+                run.CashExpected,
+                run.CashReceived))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        var attempts = await (
+            from attempt in db.DeliveryAttempts
+            join run in db.DeliveryRuns on attempt.RunId equals run.Id
+            join parcel in db.Parcels on attempt.ParcelId equals parcel.Id
+            where attempt.RiderId == id && run.RunDate >= first && run.RunDate <= last
+            orderby attempt.Id descending
+            select new { parcel.TrackingCode, attempt.AssignedOn, attempt.Outcome, attempt.CollectedAmount, attempt.Reason, attempt.CompletedOn })
+            .Take(MaxAttemptsListed)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return new RiderDetails(
+            rider,
+            period.Value,
+            runs,
+            [
+                .. attempts.Select(a => new AttemptLine(
+                    a.TrackingCode,
+                    tenant.Local(a.CompletedOn ?? a.AssignedOn),
+                    a.Outcome,
+                    a.CollectedAmount,
+                    a.Reason))
+            ]);
+    }
+
+    /// <summary>The most of a rider's hand-overs listed on their page, the latest first.</summary>
+    public const int MaxAttemptsListed = 30;
+
+    private async Task<IReadOnlyList<RiderRow>> RowsAsync(IQueryable<Rider> riders, CancellationToken cancellationToken)
     {
         var tenant = tenantContext.Require();
         var todayStart = tenant.StartUtc(tenant.Today(time.GetUtcNow().UtcDateTime));
-        var riders = db.Riders.AsQueryable();
-        if (hubId is { } only)
-        {
-            riders = riders.Where(r => r.HubId == only);
-        }
-
         var rows = await (
             from rider in riders
             join hub in db.Hubs on rider.HubId equals hub.Id
@@ -120,6 +235,12 @@ public class AdminRidersHandler(IAppDbContext db, ITenantContext tenantContext, 
         if (hubId != rider.HubId && await BusyAsync(rider, "moved to another hub", cancellationToken) is { } busy)
         {
             return busy;
+        }
+
+        // What they carry and the pickups they were sent on were sized for the old vehicle
+        if (vehicle != rider.Vehicle && await BusyAsync(rider, "given another vehicle", cancellationToken) is { } loaded)
+        {
+            return loaded;
         }
 
         var changed = rider.Change(hubId, name, phone, vehicle);

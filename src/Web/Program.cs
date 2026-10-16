@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Application;
 using Hangfire;
@@ -10,6 +12,7 @@ using Infrastructure;
 using Infrastructure.Jobs;
 using Infrastructure.Seeding;
 using Application.Abstractions;
+using Application.Common;
 using Web.Authentication;
 using Web.Display;
 using Web.Live;
@@ -50,6 +53,18 @@ builder.Services.ConfigureApplicationCookie(options =>
     // An API caller gets a status code, not the login page
     options.Events.OnRedirectToLogin = context => ApiAwareRedirect(context, StatusCodes.Status401Unauthorized);
     options.Events.OnRedirectToAccessDenied = context => ApiAwareRedirect(context, StatusCodes.Status403Forbidden);
+
+    // A cookie shown on another courier's host is refused outright by TenantUserGuardMiddleware. Checking its security
+    // stamp here would look the login up at the wrong courier, find nobody and quietly sign the visitor out instead
+    options.Events.OnValidatePrincipal = context =>
+    {
+        var current = context.HttpContext.RequestServices.GetRequiredService<ITenantContext>().TenantId;
+        var claimed = context.Principal?.FindFirst(AppClaims.TenantId)?.Value;
+
+        return claimed == current?.ToString(CultureInfo.InvariantCulture)
+            ? SecurityStampValidator.ValidatePrincipalAsync(context)
+            : Task.CompletedTask;
+    };
 });
 builder.Services
     .AddAuthentication()
@@ -74,12 +89,21 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<IOperationsFeed, OperationsFeed>();
 builder.Services.AddSingleton<ReceivedWebhooks>();
 builder.Services.AddScoped<MerchantPermissionFilter>();
+builder.Services.AddScoped<StaffPermissionFilter>();
 builder.Services.AddRazorPages(options =>
 {
     options.Conventions.AuthorizeFolder("/Merchant", Policies.MerchantPortal);
     options.Conventions.AuthorizeFolder("/Platform", Policies.PlatformAdmin);
     options.Conventions.AuthorizeFolder("/Hub", Policies.Operations);
-    options.Conventions.AuthorizeFolder("/Admin", Policies.OperatorAdmin);
+    options.Conventions.AuthorizeFolder("/Admin", Policies.Operations);
+
+    // The staff filter goes first: it leaves the person's rights on the request, which RememberHub reads
+    options.Conventions.AddFolderApplicationModelConvention(
+        "/Hub",
+        model => model.Filters.Add(new ServiceFilterAttribute(typeof(StaffPermissionFilter))));
+    options.Conventions.AddFolderApplicationModelConvention(
+        "/Admin",
+        model => model.Filters.Add(new ServiceFilterAttribute(typeof(StaffPermissionFilter))));
     options.Conventions.AddFolderApplicationModelConvention("/Hub", model => model.Filters.Add(new RememberHub()));
     options.Conventions.AddFolderApplicationModelConvention(
         "/Merchant",

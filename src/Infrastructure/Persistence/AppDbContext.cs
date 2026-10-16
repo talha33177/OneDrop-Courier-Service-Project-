@@ -12,6 +12,7 @@ using Domain.Parcels;
 using Domain.Payments;
 using Domain.Platform;
 using Domain.Pricing;
+using Domain.Staff;
 using Infrastructure.Identity;
 
 namespace Infrastructure.Persistence;
@@ -51,6 +52,7 @@ public class AppDbContext(
     public DbSet<Area> Areas => Set<Area>();
 
     public DbSet<DeliveryRate> DeliveryRates => Set<DeliveryRate>();
+    public DbSet<DeliveryOption> DeliveryOptions => Set<DeliveryOption>();
 
     public DbSet<Merchant> Merchants => Set<Merchant>();
 
@@ -59,6 +61,8 @@ public class AppDbContext(
     public DbSet<MerchantPicture> MerchantPictures => Set<MerchantPicture>();
 
     public DbSet<Moderator> Moderators => Set<Moderator>();
+
+    public DbSet<StaffMember> StaffMembers => Set<StaffMember>();
 
     public DbSet<MerchantPayoutAccount> MerchantPayoutAccounts => Set<MerchantPayoutAccount>();
 

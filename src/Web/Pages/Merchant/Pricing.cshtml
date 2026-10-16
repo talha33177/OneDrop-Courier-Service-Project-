@@ -50,35 +50,26 @@
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td><div class="cell-main">@Icons.Get("zap") Express</div><div class="cell-sub">Sooner, and first on the rider's run</div></td>
-                    @foreach (var rate in Model.Rates)
-                    {
-                        <td class="num">
-                            @if (rate.Extras.ExpressCharge is { } express)
-                            {
-                                <span>+@Money.Taka(express)</span><div class="cell-sub">@Statuses.Promise(rate.Extras.ExpressDays ?? rate.DeliveryDays).ToLowerInvariant()</div>
-                            }
-                            else
-                            {
-                                <span class="faint">Not offered</span>
-                            }
-                        </td>
-                    }
-                </tr>
-                @foreach (var (product, hint) in new (ProductType, string)[]
-                {
-                    (ProductType.Liquid, "Bottles, sealed and kept upright"),
-                    (ProductType.Fragile, "Glass, ceramics, screens"),
-                    (ProductType.FreshFood, "Cakes, fruit, cooked food: delivered first"),
-                    (ProductType.Frozen, "In a cold box, delivered first")
-                })
+                @foreach (var option in Model.DeliveryTypes.Where(o => !o.IsDefault))
                 {
                     <tr>
-                        <td><div class="cell-main">@Icons.Get(Statuses.Icon(product)) @product.DisplayName()</div><div class="cell-sub">@hint</div></td>
+                        <td><div class="cell-main">@Icons.Named(option.Icon) @option.Name</div><div class="cell-sub">@option.Description</div></td>
                         @foreach (var rate in Model.Rates)
                         {
-                            <td class="num">@if (rate.ExtraFor(product) is { } extra) { <span>+@Money.Taka(extra)</span> } else { <span class="faint">Not carried</span> }</td>
+                            <td class="num">
+                                @if (option.ChargeIn(rate.ServiceArea) is { } extra)
+                                {
+                                    <span>+@Money.Taka(extra)</span>
+                                    @if (option.Kind == DeliveryOptionKind.Speed)
+                                    {
+                                        <div class="cell-sub">@Statuses.Promise(option.DaysIn(rate.ServiceArea) ?? rate.DeliveryDays).ToLowerInvariant()</div>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="faint">Not offered</span>
+                                }
+                            </td>
                         }
                     </tr>
                 }
@@ -118,16 +109,18 @@
             <div class="field">
                 <label for="speed">Speed</label>
                 <select id="speed" name="speed">
-                    <option value="Regular">Regular</option>
-                    <option value="Express">Express</option>
+                    @foreach (var speed in Model.DeliveryTypes.Where(o => o.Kind == DeliveryOptionKind.Speed))
+                    {
+                        <option value="@speed.Code" selected="@speed.IsDefault">@speed.Name</option>
+                    }
                 </select>
             </div>
             <div class="field">
                 <label for="productType">What is inside</label>
                 <select id="productType" name="productType">
-                    @foreach (var product in DeliveryOptions.ProductTypes)
+                    @foreach (var product in Model.DeliveryTypes.Where(o => o.Kind == DeliveryOptionKind.Contents))
                     {
-                        <option value="@product">@product.DisplayName()</option>
+                        <option value="@product.Code" selected="@product.IsDefault">@product.Name</option>
                     }
                 </select>
             </div>
@@ -167,7 +160,7 @@
                 result.querySelector("[data-r=total]").textContent = taka(q.total);
                 result.hidden = false;
                 const problem = document.getElementById("calc-problem");
-                problem.textContent = q.problem ? q.problem + " The charges shown are for a regular parcel of general goods." : "";
+                problem.textContent = q.problem ? q.problem + " The charges shown are for the courier's usual delivery." : "";
                 problem.hidden = !q.problem;
             };
             form.addEventListener("input", run);

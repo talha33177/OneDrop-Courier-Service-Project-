@@ -2,9 +2,17 @@
 @model Web.Pages.Hub.IndexModel
 @inject ITenantContext TenantContext
 @{
-    ViewData["Title"] = Model.Hub is null ? "Hub board" : $"{Model.Hub.Name} board";
+    ViewData["Title"] = Model.AllHubs ? "All hubs" : Model.Hub is null ? "Hub board" : $"{Model.Hub.Name} board";
     var b = Model.Board;
+    var all = Model.AllHubs;
     var today = TenantContext.Require().Today(DateTime.UtcNow);
+    var hubNames = Model.Work.ToDictionary(work => work.Hub.Code, work => work.Hub.Name);
+
+    // A step of one hub opens its page there; on the board of every hub, the chooser for that page. A step of a desk
+    // this person does not work shows its count with no link
+    string? Go(string page, object? mode = null) => !Model.MayGo(page, mode) ? null : all
+        ? Url.Page("/Hub/Choose", new { next = page.Split('/')[^1], mode })!
+        : Url.Page(page, new { hub = Model.Hub?.Code, mode })!;
 }
 @section Head {
     <partial name="_Live" />
@@ -12,13 +20,25 @@
 
 <div class="page-head">
     <div>
-        <div class="page-kicker">@Icons.Get("warehouse") @Model.Hub?.Code · @Model.Hub?.Address</div>
-        <h1>@(Model.Hub?.Name ?? "Hub board")</h1>
-        <p>Everything waiting at this hub, in the order the day runs. <span class="badge badge-brand" data-live-status>Live</span></p>
+        @if (all)
+        {
+            <div class="page-kicker">@Icons.Get("warehouse") Every hub · @Model.Work.Count @(Model.Work.Count == 1 ? "hub" : "hubs")</div>
+            <h1>All hubs</h1>
+            <p>Everything waiting across the courier, in the order the day runs. Choose a hub to work at it. <span class="badge badge-brand" data-live-status>Live</span></p>
+        }
+        else
+        {
+            <div class="page-kicker">@Icons.Get("warehouse") @Model.Hub?.Code · @Model.Hub?.Address</div>
+            <h1>@(Model.Hub?.Name ?? "Hub board")</h1>
+            <p>Everything waiting at this hub, in the order the day runs. <span class="badge badge-brand" data-live-status>Live</span></p>
+        }
     </div>
     <div class="page-actions">
-        @await Html.PartialAsync("_HubSwitch", (Model.Work, Model.Hub))
-        <a class="btn btn-primary" asp-page="/Hub/Scan" asp-route-hub="@Model.Hub?.Code">@Icons.Get("scan") Scan parcels</a>
+        @await Html.PartialAsync("_HubSwitch", Model)
+        @if (Model.MayGo("/Hub/Scan", null))
+        {
+            <a class="btn btn-primary" href="@Go("/Hub/Scan")">@Icons.Get("scan") Scan parcels</a>
+        }
     </div>
 </div>
 
@@ -28,65 +48,125 @@
     return;
 }
 
-<div class="tip" data-tip="hub-board">
-    @Icons.Get("bulb")
-    <div>
-        <div class="tip-title">How a day at the hub runs</div>
-        <p>Work through the steps from left to right. A step with a blue number has work waiting; press it to go there.</p>
-    </div>
-</div>
+@{
+    var leaves = TenantContext.Require().PickupTime;
+
+    // The hub's day in three phases, so the six steps read as a shape and not as six equal boxes
+    (string Phase, string PhaseNote, string Title, int Count, string Hint, bool Late, string Page, string? Mode)[] flow =
+    [
+        ("Parcels coming in", leaves is { } truck ? $"The van leaves at {Statuses.Clock(truck)}" : "From merchants and other hubs",
+            "Pickups to send", b.PickupsOpen, "Give each one a van", false, "/Hub/Pickups", null),
+        ("Parcels coming in", "", "Coming in", b.Incoming, "Scan them in as they arrive", false, "/Hub/Scan", "Receive"),
+        ("Sorted here", "What is on the floor now", "Send to other hubs", b.ToDispatchCount, "Scan out in Send mode", false, "/Hub/Scan", "Dispatch"),
+        ("Sorted here", "", "Waiting for a rider", b.ToAssign.Count,
+            b.LateToAssign > 0 ? $"{b.LateToAssign} late: hand these out first" : "Hand them to riders", b.LateToAssign > 0, "/Hub/Assign", null),
+        ("Parcels going out", "Closed off at the end of the day", "Out with riders", b.WithRiders,
+            b.LateRuns > 0
+                ? $"{b.LateRuns} rider{(b.LateRuns == 1 ? " is" : "s are")} late back"
+                : $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} to close", b.LateRuns > 0, "/Hub/Runs", null),
+        ("Parcels going out", "", "Hand back", b.ToHandBackCount, "Send them with a rider, or hand over here", false, "/Hub/Returns", null)
+    ];
+
+    // What needs the operator now, most pressing first: only what they may open, and only what is really waiting
+    (string Icon, string What, string Why, string Action, string Page, string? Mode, bool Urgent)[] jobs =
+    [
+        ("clock", $"{b.LateRuns} rider{(b.LateRuns == 1 ? "" : "s")} late back with cash", "Close the run and count what they handed in", "Close runs", "/Hub/Runs", null, true),
+        ("send", $"{b.LateToAssign} parcel{(b.LateToAssign == 1 ? " is" : "s are")} past the day {(b.LateToAssign == 1 ? "it was" : "they were")} due", "Hand these to a rider before anything else", "Assign first", "/Hub/Assign", null, true),
+        ("truck", $"{b.PickupsOpen} pickup{(b.PickupsOpen == 1 ? "" : "s")} with no van", "Merchants are waiting to be collected from", "Give the round to a van", "/Hub/Pickups", null, false),
+        ("scan", $"{b.Incoming} parcel{(b.Incoming == 1 ? " is" : "s are")} on the way here", "Scan each one in as it reaches the floor", "Open Receive", "/Hub/Scan", "Receive", false),
+        ("send", $"{b.ToAssign.Count} parcel{(b.ToAssign.Count == 1 ? "" : "s")} waiting for a rider", "These are for your own areas", "Assign to riders", "/Hub/Assign", null, false),
+        ("route", $"{b.ToDispatchCount} parcel{(b.ToDispatchCount == 1 ? "" : "s")} to send to other hubs", "Scan them out and bag them per hub", "Open Send", "/Hub/Scan", "Dispatch", false),
+        ("return", $"{b.ToHandBackCount} return{(b.ToHandBackCount == 1 ? "" : "s")} to hand back", "Send them out on a return list, or hand them over here", "Open returns", "/Hub/Returns", null, false),
+        ("cash", $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} still open", "Count the cash when the rider is back", "Close runs", "/Hub/Runs", null, false)
+    ];
+    var counts = new[] { b.LateRuns, b.LateToAssign, b.PickupsOpen, b.Incoming, b.ToAssign.Count, b.ToDispatchCount, b.ToHandBackCount, b.OpenRuns };
+    var needed = jobs.Where((job, at) => counts[at] > 0 && Go(job.Page, job.Mode) is not null).Take(3).ToList();
+}
 
 <div data-live="board">
-    @{
-        (string Title, int Count, string Hint, string Page, string? Mode)[] flow =
-        [
-            ("Pickups to send", b.PickupsOpen, "Give each one a rider", "/Hub/Pickups", null),
-            ("Coming in", b.Incoming, "Scan them in as they arrive", "/Hub/Scan", "Receive"),
-            ("Send to other hubs", b.ToDispatchCount, "Scan out in Send mode", "/Hub/Scan", "Dispatch"),
-            ("Waiting for a rider", b.ToAssign.Count, b.LateToAssign > 0 ? $"{b.LateToAssign} late: hand them out first" : "Hand them to riders", "/Hub/Assign", null),
-            ("Out with riders", b.WithRiders, b.LateRuns > 0 ? $"{b.LateRuns} rider{(b.LateRuns == 1 ? " is" : "s are")} late back" : $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} to close", "/Hub/Runs", null),
-            ("Hand back", b.ToHandBackCount, "Send them with a rider, or hand over here", "/Hub/Returns", null)
-        ];
-    }
-    <nav class="flow" style="--steps:@flow.Length" aria-label="The hub's day">
-        @foreach (var step in flow)
+    <div class="card hub-now">
+        <div class="card-head">
+            <div>
+                <h2>@Icons.Get("bulb") What needs you now</h2>
+                <p>@(all ? "Across every hub, most pressing first" : "At this hub, most pressing first")</p>
+            </div>
+        </div>
+        @if (needed.Count == 0)
         {
-            <a class="flow-step @(step.Count > 0 ? "has-work" : "clear")" href="@Url.Page(step.Page, new { hub = b.Hub.Code, mode = step.Mode })">
-                <span class="flow-title">@step.Title</span>
-                <span class="flow-count">@step.Count</span>
-                <span class="flow-hint">@(step.Count > 0 ? step.Hint : "All clear")</span>
-            </a>
+            <div class="empty">@Icons.Get("check-circle")<h3>Nothing is waiting</h3><p>Every step of the day is clear@(all ? " at every hub" : " here"). Scan a parcel in as soon as it arrives.</p></div>
         }
-    </nav>
+        else
+        {
+            <ol class="hub-jobs">
+                @foreach (var (job, at) in needed.Select((job, at) => (job, at)))
+                {
+                    <li class="hub-job @(job.Urgent ? "urgent" : "")">
+                        <span class="stat-icon @(job.Urgent ? "red" : "")">@Icons.Get(job.Icon)</span>
+                        <div class="hub-job-text">
+                            <strong>@job.What</strong>
+                            <span>@job.Why</span>
+                        </div>
+                        <a class="btn @(at == 0 ? "btn-primary" : "btn-outline") btn-sm" href="@Go(job.Page, job.Mode)">@job.Action @Icons.Get("arrow-right")</a>
+                    </li>
+                }
+            </ol>
+        }
+    </div>
+
+    <div class="hub-phases" aria-label="The hub's day">
+        @foreach (var phase in flow.GroupBy(step => step.Phase))
+        {
+            <section class="hub-phase">
+                <header>
+                    <span class="hub-phase-label">@phase.Key</span>
+                    <span class="hub-phase-note">@phase.Select(step => step.PhaseNote).FirstOrDefault(note => note.Length > 0)</span>
+                </header>
+                <nav class="flow flow-part" style="--steps:@phase.Count()">
+                    @foreach (var step in phase)
+                    {
+                        <a class="flow-step @(step.Late ? "late" : step.Count > 0 ? "has-work" : "clear")" href="@Go(step.Page, step.Mode)">
+                            <span class="flow-title">@step.Title</span>
+                            <span class="flow-count">@step.Count</span>
+                            <span class="flow-hint">@(step.Count > 0 ? step.Hint : "All clear")</span>
+                        </a>
+                    }
+                </nav>
+            </section>
+        }
+    </div>
 
     <div class="grid grid-main">
         <div class="card">
             <div class="card-head">
-                <div><h2>@Icons.Get("send") Waiting for a rider</h2><p>Parcels this hub delivers, scanned in and ready to go out</p></div>
+                <div><h2>@Icons.Get("send") Waiting for a rider</h2><p>Parcels @(all ? "each hub delivers" : "this hub delivers"), scanned in and ready to go out</p></div>
                 @if (b.ToAssign.Count > 0)
                 {
-                    <a class="btn btn-primary btn-sm" asp-page="/Hub/Assign" asp-route-hub="@b.Hub.Code">Assign to riders @Icons.Get("arrow-right")</a>
+                    <a class="btn btn-primary btn-sm" href="@Go("/Hub/Assign")">Assign to riders @Icons.Get("arrow-right")</a>
                 }
             </div>
             @if (b.ToAssign.Count == 0)
             {
-                <div class="empty">@Icons.Get("check-circle")<h3>Nothing waiting</h3><p>Parcels for this hub's areas show up here once scanned in.</p></div>
+                <div class="empty">@Icons.Get("check-circle")<h3>Nothing waiting</h3><p>Parcels for @(all ? "a hub's" : "this hub's") areas show up here once scanned in.</p></div>
             }
             else
             {
                 <div class="table-wrap">
                     <table class="table compact">
-                        <thead><tr><th>Parcel</th><th>Area</th><th>Merchant</th><th>Status</th><th class="num">COD</th></tr></thead>
+                        <thead><tr><th>Parcel</th>@if (all) { <th>Hub</th> }<th>Area</th><th>Merchant</th><th>Status</th><th class="num">COD</th></tr></thead>
                         <tbody>
                             @foreach (var p in b.ToAssign.Take(15))
                             {
                                 var later = p.HoldUntil is { } day && day > today;
                                 <tr class="@(later ? "later" : "")">
                                     <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.RecipientName</div></td>
+                                    @if (all)
+                                    {
+                                        <td><a class="code-link" href="@Url.Page("/Hub/Index", new { hub = p.HubCode })">@p.HubCode</a></td>
+                                    }
                                     <td>@p.Area</td>
                                     <td>@p.Merchant</td>
                                     <td>
-                                        @Statuses.Badge(p.Status) @Statuses.Tags(p.Speed, p.ProductType)
+                                        @Statuses.Badge(p.Status) @Statuses.Tags(p.Tags)
                                         @if (p.Issue is { } issue)
                                         {
                                             <div class="mt-xs">@Statuses.Badge(issue)</div>
@@ -108,17 +188,37 @@
                 </div>
                 @if (b.ToAssign.Count > 15)
                 {
-                    <div class="card-foot muted">And @(b.ToAssign.Count - 15) more. <a asp-page="/Hub/Assign" asp-route-hub="@b.Hub.Code">See them all</a></div>
+                    <div class="card-foot muted">And @(b.ToAssign.Count - 15) more. <a href="@Go("/Hub/Assign")">See them all</a></div>
                 }
             }
         </div>
 
         <div class="stack">
             <div class="card">
-                <div class="card-head"><div><h2>@Icons.Get("route") Send to other hubs</h2><p>Scan each one in Send mode, then bag it for its hub</p></div></div>
+                <div class="card-head"><div><h2>@Icons.Get("route") Send to other hubs</h2><p>@(all ? "What each hub has to send on" : "Scan each one in Send mode, then bag it for its hub")</p></div></div>
                 @if (b.ToDispatch.Count == 0)
                 {
                     <div class="card-body muted">Nothing to send on.</div>
+                }
+                else if (all)
+                {
+                    <div class="table-wrap">
+                        <table class="table compact">
+                            <tbody>
+                                @foreach (var from in b.ToDispatch.GroupBy(group => group.FromHubCode))
+                                {
+                                    var to = from.Select(group => group.HubCode).Distinct().Count();
+                                    <tr>
+                                        <td>
+                                            <a class="code-link" href="@Url.Page("/Hub/Index", new { hub = from.Key })">@from.Key</a> @hubNames.GetValueOrDefault(from.Key)
+                                            <div class="cell-sub">To @to @(to == 1 ? "hub" : "hubs")@(from.Any(group => group.Returns) ? ", returns among them" : "")</div>
+                                        </td>
+                                        <td class="num strong">@from.Sum(group => group.Parcels.Count)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
                 else
                 {
@@ -135,14 +235,33 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="card-foot"><a class="btn btn-outline btn-sm btn-block" asp-page="/Hub/Scan" asp-route-mode="Dispatch" asp-route-hub="@b.Hub.Code">@Icons.Get("scan") Scan to send</a></div>
+                    <div class="card-foot"><a class="btn btn-outline btn-sm btn-block" href="@Go("/Hub/Scan", "Dispatch")">@Icons.Get("scan") Scan to send</a></div>
                 }
             </div>
             <div class="card">
-                <div class="card-head"><div><h2>@Icons.Get("return") Hand back to merchants</h2><p>Returns collected by this hub</p></div></div>
+                <div class="card-head"><div><h2>@Icons.Get("return") Hand back to merchants</h2><p>@(all ? "Returns each hub collected" : "Returns collected by this hub")</p></div></div>
                 @if (b.ToHandBack.Count == 0)
                 {
                     <div class="card-body muted">No returns waiting.</div>
+                }
+                else if (all)
+                {
+                    <div class="table-wrap">
+                        <table class="table compact">
+                            <tbody>
+                                @foreach (var at in b.ToHandBack.GroupBy(group => group.HubCode))
+                                {
+                                    <tr>
+                                        <td>
+                                            <a class="code-link" href="@Url.Page("/Hub/Returns", new { hub = at.Key })">@at.Key</a> @hubNames.GetValueOrDefault(at.Key)
+                                            <div class="cell-sub">For @at.Count() @(at.Count() == 1 ? "merchant" : "merchants")</div>
+                                        </td>
+                                        <td class="num strong">@at.Sum(group => group.Parcels.Count)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
                 else
                 {

@@ -6,6 +6,7 @@
 @inject Application.Notifications.Bell.MerchantBellHandler BellHandler
 @inject Application.Notifications.Bell.AdminBellHandler AdminBell
 @inject Application.Notifications.Bell.MenuWorkHandler MenuWork
+@inject Application.Platform.Staff.StaffAccess StaffAccess
 @{
     var tenant = TenantContext.Tenant;
     var user = Context.User;
@@ -18,12 +19,15 @@
     var isRider = user.IsInRole(Roles.Rider);
     var isPlatform = user.IsInRole(Roles.PlatformAdmin);
     var rights = Context.Items[MerchantPages.RightsKey] as MerchantRights;
-    var panel = isMerchant ? "Merchant panel" : isAdmin ? "Admin panel" : isHub ? "Hub panel" : isRider ? "Rider app" : isPlatform ? "Platform" : "";
-    var role = isMerchant && rights is { IsOwner: false } ? "Moderator" : isMerchant ? "Merchant" : isAdmin ? "Admin" : isHub ? "Hub staff" : isRider ? "Rider" : isPlatform ? "Platform admin" : "";
+    // The courier's staff: a super admin, or a job at one hub or at head office (read once per request)
+    var staff = isAdmin || isHub ? await StaffAccess.CurrentAsync() : null;
+    var atHeadOffice = staff is { AtHeadOffice: true };
+    var panel = isMerchant ? "Merchant panel" : isAdmin ? "Admin panel" : isHub ? (atHeadOffice ? "Head office" : "Hub panel") : isRider ? "Rider app" : isPlatform ? "Platform" : "";
+    var role = isMerchant && rights is { IsOwner: false } ? "Moderator" : isMerchant ? "Merchant" : staff is not null ? staff.Title : isRider ? "Rider" : isPlatform ? "Platform admin" : "";
     var email = user.Identity?.Name ?? "";
-    var menu = Menu.For(user, rights);
+    var menu = Menu.For(user, rights, staff);
     var hasFavourites = Menu.HasFavourites(user);
-    var favourites = hasFavourites ? Menu.Favourites(user, Context.Request.Cookies, rights) : [];
+    var favourites = hasFavourites ? Menu.Favourites(user, Context.Request.Cookies, rights, staff) : [];
     var businesses = isMerchant && CurrentUser.AccountId is not null ? await Businesses.NamesAsync() : [];
     var currentBusiness = businesses.FirstOrDefault(business => business.Id == CurrentUser.MerchantId);
     var currentPicture = currentBusiness is null ? null : Pictures.Url(currentBusiness.Id, currentBusiness.Picture);
@@ -39,12 +43,12 @@
             rights is null || rights.May(Domain.Merchants.MerchantPermissions.Parcels),
             rights is null || rights.May(Domain.Merchants.MerchantPermissions.Payments),
             bellSeen)
-        : isAdmin && tenant is not null
-            ? await AdminBell.ForAsync(bellSeen)
+        : staff is not null && atHeadOffice && staff.May(Domain.Staff.StaffPermissions.HeadOffice) && tenant is not null
+            ? await AdminBell.ForAsync(bellSeen, link => StaffPages.MayFollow(staff, link))
             : null;
     // The menu places where work waits for this person, marked like the bell
     IReadOnlySet<string> work = tenant is null ? new HashSet<string>()
-        : isAdmin ? await MenuWork.AdminAsync()
+        : staff is not null && atHeadOffice ? await MenuWork.AdminAsync()
         : isMerchant && CurrentUser.MerchantId is not null ? await MenuWork.MerchantAsync()
         : isRider ? await MenuWork.RiderAsync()
         : new HashSet<string>();
@@ -149,7 +153,7 @@
                     <a asp-page="/Admin/Guide">How it all fits together</a>
                 </div>
             }
-            else if (isHub && !isAdmin)
+            else if (isHub && staff?.May(Domain.Staff.StaffPermissions.HubWork) == true)
             {
                 <div class="sidebar-help">
                     <strong>@Icons.Get("bulb") Your day at the hub</strong>

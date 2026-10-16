@@ -5,46 +5,91 @@
 @{
     ViewData["Title"] = "Today's pickups";
     var tenant = TenantContext.Require();
-    var cutoff = tenant.PickupCutoff is { } c ? Statuses.Clock(c) : null;
     var leaves = tenant.PickupTime is { } l ? Statuses.Clock(l) : null;
     var waitingToday = Model.Requests.Where(r => r.Status == PickupStatus.Scheduled && r.Date <= Model.Today).ToList();
+    var roundParcels = waitingToday.Sum(r => r.Parcels);
+    var roundGrams = waitingToday.Sum(r => r.BookedGrams);
+    var van = Model.Vans.FirstOrDefault(v => v.MaxParcels is not null && v.MaxLoadGrams is not null);
+    var vanLoads = van is null ? 0 : Math.Max(1, Math.Max((roundParcels + van.MaxParcels!.Value - 1) / van.MaxParcels.Value, (roundGrams + van.MaxLoadGrams!.Value - 1) / van.MaxLoadGrams.Value));
 }
 
 <div class="page-head">
     <div>
         <h1>Today's pickups</h1>
         <p>
-            Every merchant with parcels booked at a pickup point of this hub is on the day's list by itself.
-            @if (cutoff is not null)
-            {
-                <text>The list takes parcels booked before @cutoff@(leaves is null ? "" : $"; the truck leaves at {leaves}"). Parcels booked later go on tomorrow's.</text>
-            }
-            Give each pickup a rider whose vehicle carries it, or one rider the whole round.
+            Every merchant with parcels booked at a pickup point of this hub is on the day's list by itself@(leaves is null ? "" : $"; the truck leaves at {leaves}").
+            The van visits each point once a day and takes whatever is waiting when it gets there, parcels booked a minute earlier too.
+            Once it has been, parcels booked at that point go on tomorrow's list.
+            Only the hub's pickup van collects from merchants; bicycles and motorbikes take parcels to recipients.
+            Give the van the pickups it holds: the parcels booked add up against what it carries.
         </p>
     </div>
-    <div class="page-actions">@await Html.PartialAsync("_HubSwitch", (Model.Work, Model.Hub))</div>
+    <div class="page-actions">@await Html.PartialAsync("_HubSwitch", Model)</div>
 </div>
 
 <partial name="_Alerts" />
 
-@if (Model.Hub is not null && waitingToday.Count > 0 && Model.Riders.Count > 0)
+@if (Model.Hub is not null && Model.Vans.Count == 0)
+{
+    <div class="alert alert-warning">
+        @Icons.Get("truck")
+        <div><strong>This hub has no pickup van rider.</strong> Nobody can be sent to the merchants until an admin adds a rider on a pickup van for @Model.Hub.Name under Riders.</div>
+    </div>
+}
+else if (Model.Hub is not null)
+{
+    <div class="grid grid-3" style="margin-bottom:16px">
+        @foreach (var rider in Model.Vans)
+        {
+            var parcelShare = rider.MaxParcels is { } most ? Math.Min(100, 100 * rider.WithThem / most) : 0;
+            var weightShare = rider.MaxLoadGrams is { } heaviest ? Math.Min(100, (int)(100L * rider.CarriedGrams / heaviest)) : 0;
+            var share = Math.Max(parcelShare, weightShare);
+            <div class="card">
+                <div class="card-body">
+                    <div class="spread"><strong><span class="vehicle">@Icons.Get(Statuses.Icon(rider.Vehicle)) @rider.Name</span></strong><span class="cell-sub">@rider.Vehicle.DisplayName()</span></div>
+                    @if (rider.MaxParcels is { } max && rider.MaxLoadGrams is { } limit)
+                    {
+                        <div class="cell-sub">On the van or to collect: @rider.WithThem of @max parcels · @Money.Kg(rider.CarriedGrams) of @Money.Kg(limit)</div>
+                        <span class="meter @(share >= 100 ? "full" : share >= 80 ? "warn" : "")"><span style="width:@share%"></span></span>
+                    }
+                    else
+                    {
+                        <div class="cell-sub">@rider.WithThem parcels on the van or to collect. No limit set: an admin sets it under Vehicles.</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (Model.Hub is not null && waitingToday.Count > 0 && Model.Vans.Count > 0)
 {
     <form method="post" asp-page-handler="AssignAll" asp-route-hub="@Model.Hub.Code" class="card assign-all">
         <input type="hidden" name="day" value="@Model.Today.ToString("yyyy-MM-dd")" />
         <div class="card-body gap">
             <span class="stat-icon">@Icons.Get("truck")</span>
             <div class="grow">
-                <strong>@waitingToday.Count pickup@(waitingToday.Count == 1 ? "" : "s") today without a rider</strong>
-                <div class="cell-sub">@(Model.ListClosed ? "Today's list is closed." : $"The list is still open until {cutoff}.") Send the truck on the whole round.</div>
+                <strong>@waitingToday.Count pickup@(waitingToday.Count == 1 ? "" : "s") today without a rider · @roundParcels parcels, @Money.Kg(roundGrams)</strong>
+                <div class="cell-sub">
+                    Parcels booked before the van reaches a point still join it.
+                    @if (van is not null && vanLoads > 1)
+                    {
+                        <text> This is more than one van holds (@van.MaxParcels parcels, @Money.Kg(van.MaxLoadGrams!.Value)): the van takes what fits and the rest waits for a second trip or another van.</text>
+                    }
+                    else
+                    {
+                        <text> Send the van on the whole round.</text>
+                    }
+                </div>
             </div>
             <select name="riderId" style="width:auto" required>
-                <option value="">Choose the rider</option>
-                @foreach (var rider in Model.Riders.OrderByDescending(r => r.Vehicle))
+                <option value="">Choose the van</option>
+                @foreach (var rider in Model.Vans)
                 {
-                    <option value="@rider.Id">@rider.Name · @rider.Vehicle.DisplayName().ToLowerInvariant()</option>
+                    <option value="@rider.Id">@rider.Name · @(rider.MaxLoadGrams is null ? $"{rider.WithThem} parcels" : $"{Money.Kg(rider.CarriedGrams)} of {Money.Kg(rider.MaxLoadGrams.Value)}")</option>
                 }
             </select>
-            <button class="btn btn-primary" type="submit">Give all to this rider</button>
+            <button class="btn btn-primary" type="submit">Give the round to this van</button>
         </div>
     </form>
 }
@@ -64,27 +109,32 @@
                     {
                         var later = request.Date > Model.Today;
                         <tr class="@(later ? "row-faint" : "")">
-                            <td class="nowrap"><div class="cell-main">@request.Date.ToString("ddd d MMM")</div><div class="cell-sub">@Statuses.PickupDay(request.Date, Model.Today)@(later ? ", list still open" : "")</div></td>
+                            <td class="nowrap"><div class="cell-main">@request.Date.ToString("ddd d MMM")</div><div class="cell-sub">@Statuses.PickupDay(request.Date, Model.Today)@(later ? ", the van has been here today" : "")</div></td>
                             <td><div class="cell-main">@request.Merchant</div><div class="cell-sub">@Money.Phone(request.MerchantPhone)</div></td>
                             <td>
                                 <div>@request.Address</div>
                                 <div class="cell-sub">@request.Area · @Money.Phone(request.ContactPhone)</div>
+                                <a class="cell-sub" href="@MapLinks.Search($"{request.Address}, {request.Area}, Bangladesh")" target="_blank" rel="noopener">@Icons.Get("map-pin") See on the map</a>
                             </td>
                             <td class="num">@(request.Picked ?? request.Parcels)<div class="cell-sub nowrap">@(request.Picked is null ? (request.BookedGrams > 0 ? Money.Kg(request.BookedGrams) : "to collect") : "picked")</div></td>
                             <td>
                                 @Statuses.Badge(request.Status)
-                                @if (request.Send is { } send)
+                                @if (request.Trips > 1)
                                 {
-                                    <div class="cell-sub"><span class="vehicle" title="The smallest vehicle that carries this pickup">@Icons.Get(Statuses.Icon(send)) Send a @send.DisplayName().ToLowerInvariant()</span></div>
+                                    <div class="cell-sub"><span class="vehicle" title="More than the van holds at once">@Icons.Get("truck") Needs @request.Trips trips of the van</span></div>
                                 }
                             </td>
                             <td>
-                                @if (request.Status is PickupStatus.Scheduled or PickupStatus.Assigned)
+                                @if (later)
+                                {
+                                    <span class="faint">Tomorrow</span>
+                                }
+                                else if (request.Status is PickupStatus.Scheduled or PickupStatus.Assigned)
                                 {
                                     <form method="post" asp-page-handler="Assign" asp-route-id="@request.Id" asp-route-hub="@Model.Hub?.Code" class="gap">
-                                        <select name="riderId" style="width:auto;height:32px" required>
-                                            <option value="">Choose a rider</option>
-                                            @foreach (var rider in Model.Riders)
+                                        <select name="riderId" style="width:auto;height:32px" required disabled="@(Model.Vans.Count == 0)">
+                                            <option value="">Choose the van</option>
+                                            @foreach (var rider in Model.Vans)
                                             {
                                                 <option value="@rider.Id" selected="@(rider.Id == request.RiderId)">@rider.Name · @rider.Vehicle.DisplayName().ToLowerInvariant()</option>
                                             }

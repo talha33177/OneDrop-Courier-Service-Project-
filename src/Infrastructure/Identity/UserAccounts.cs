@@ -86,6 +86,51 @@ public class UserAccounts(UserManager<AppUser> users, ITenantContext tenantConte
             : Error.Validation("login.password", string.Join(" ", reset.Errors.Select(e => e.Description)));
     }
 
+    public async Task<IReadOnlyList<StaffLogin>> InRolesAsync(
+        IReadOnlyList<string> roles,
+        CancellationToken cancellationToken = default)
+    {
+        // The user filter keeps every role's list to this courier
+        var logins = new List<StaffLogin>();
+        foreach (var role in roles)
+        {
+            logins.AddRange(
+                from user in await users.GetUsersInRoleAsync(role)
+                where logins.All(l => l.UserId != user.Id)
+                select new StaffLogin(user.Id, user.DisplayName, user.Email ?? user.UserName ?? "", role, user.Archived, user.Created));
+        }
+
+        return logins;
+    }
+
+    public async Task<Result> ChangeAsync(
+        long userId,
+        string name,
+        string from,
+        string to,
+        CancellationToken cancellationToken = default)
+    {
+        if (await users.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken) is not { } user)
+        {
+            return Error.NotFound("login.notFound", "That login was not found.");
+        }
+
+        user.DisplayName = name;
+        var saved = await users.UpdateAsync(user);
+        if (saved.Succeeded && from != to)
+        {
+            saved = await users.RemoveFromRoleAsync(user, from);
+            if (saved.Succeeded)
+            {
+                saved = await users.AddToRoleAsync(user, to);
+            }
+        }
+
+        return saved.Succeeded
+            ? Result.Success()
+            : Error.Validation("login.change", string.Join(" ", saved.Errors.Select(e => e.Description)));
+    }
+
     public async Task<string?> MerchantEmailAsync(long merchantId, CancellationToken cancellationToken = default)
     {
         return await users.Users

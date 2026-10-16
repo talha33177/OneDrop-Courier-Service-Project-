@@ -29,6 +29,11 @@ public class TenantCatalog(IServiceScopeFactory scopeFactory, IMemoryCache cache
         return tenants.FirstOrDefault(t => t.Id == id);
     }
 
+    public void Forget()
+    {
+        cache.Remove(CacheKey);
+    }
+
     public async Task<IReadOnlyList<TenantInfo>> ListAsync(CancellationToken cancellationToken = default)
     {
         return await cache.GetOrCreateAsync(CacheKey, async entry =>
@@ -51,8 +56,8 @@ public class TenantCatalog(IServiceScopeFactory scopeFactory, IMemoryCache cache
                     t.MaxDeliveryAttempts,
                     t.RiderReturnTime,
                     t.MaxBusinessesPerAccount,
-                    t.PickupCutoff,
-                    t.PickupTime))
+                    t.PickupTime,
+                    t.StuckAfterDays))
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
         }) ?? [];

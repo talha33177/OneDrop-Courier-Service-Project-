@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Application.Hubs.HubOverview;
+using Application.Hubs.HubScan;
 
 namespace Web.Pages.Hub;
 
@@ -18,9 +19,13 @@ public class ChooseModel(HubOverviewHandler overview) : PageModel
 
     public string Next { get; private set; } = "Index";
 
-    public async Task<IActionResult> OnGetAsync(string? next, CancellationToken cancellationToken)
+    /// <summary>The scan page's mode, carried to the hub chosen (the all-hubs board's "Coming in" and "Send" steps).</summary>
+    public ScanMode? Mode { get; private set; }
+
+    public async Task<IActionResult> OnGetAsync(string? next, ScanMode? mode, CancellationToken cancellationToken)
     {
         Next = Targets.FirstOrDefault(t => t.Equals(next, StringComparison.OrdinalIgnoreCase)) ?? "Index";
+        Mode = Next == "Scan" ? mode : null;
         var hubs = await overview.ListAsync(cancellationToken);
         var withWork = hubs
             .Where(work => Next switch
@@ -28,12 +33,13 @@ public class ChooseModel(HubOverviewHandler overview) : PageModel
                 "Pickups" => work.PickupsOpen > 0,
                 "Assign" => work.ToAssign > 0,
                 "Runs" => work.OpenRuns > 0,
+                "Scan" => Mode == ScanMode.Receive && work.Incoming > 0,
                 _ => false
             })
             .ToList();
         if (hubs.Count == 1 || withWork.Count == 1)
         {
-            return RedirectToPage($"/Hub/{Next}", new { hub = (hubs.Count == 1 ? hubs[0] : withWork[0]).Hub.Code });
+            return RedirectToPage($"/Hub/{Next}", new { hub = (hubs.Count == 1 ? hubs[0] : withWork[0]).Hub.Code, mode = Mode });
         }
 
         Busy = [.. hubs.Where(work => work.Total > 0).OrderByDescending(work => work.Total).ThenBy(work => work.Hub.Name)];

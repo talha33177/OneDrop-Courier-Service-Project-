@@ -19,10 +19,11 @@ public enum PickupStatus : byte
 }
 
 /// <summary>
-/// The day's pickup at one of a merchant's pickup points. The courier collects once a day: every parcel booked at the
-/// point before the day's cut-off goes with that day's pickup, so pickups are scheduled as parcels are booked and
-/// never asked for. The hub of the point's zone assigns a rider, who picks the parcels up and completes it. A pickup
-/// the day passed without is carried to the next day.
+/// The day's pickup at one of a merchant's pickup points. The courier visits a point once a day: every parcel booked
+/// there before the pickup van reaches it goes with that day's pickup, so pickups are scheduled as parcels are booked
+/// and never asked for. The hub of the point's zone assigns a rider, who picks the parcels up and completes it, which
+/// is the day's visit: what is booked at the point after it goes with the next day's pickup. A pickup the day passed
+/// without is carried to the next day.
 /// </summary>
 public class PickupRequest : TenantEntity, IMerchantOwned
 {
@@ -67,11 +68,11 @@ public class PickupRequest : TenantEntity, IMerchantOwned
     }
 
     /// <summary>
-    /// The hub sends <paramref name="rider"/>, or another rider instead of the one it sent. Their vehicle must carry
-    /// <paramref name="load"/> in one trip, unless nothing in the courier's <paramref name="fleet"/> does and theirs is
-    /// the biggest.
+    /// The hub sends <paramref name="rider"/>, or another rider instead of the one it sent. Only a pickup van collects,
+    /// and it must carry <paramref name="load"/> on top of what it <paramref name="carries"/> already (see
+    /// <see cref="Fleet.Collect"/>).
     /// </summary>
-    public Result Assign(Rider rider, Fleet fleet, Load load)
+    public Result Assign(Rider rider, Fleet fleet, Load carries, Load load)
     {
         if (!IsOpen)
         {
@@ -83,7 +84,7 @@ public class PickupRequest : TenantEntity, IMerchantOwned
             return Error.Validation("pickup.rider", "Choose an active rider of the hub that collects from this point.");
         }
 
-        var fits = fleet.Collect(rider.Vehicle, load);
+        var fits = fleet.Collect(rider.Vehicle, carries, load);
         if (fits.IsFailure)
         {
             return fits;
@@ -112,17 +113,17 @@ public class PickupRequest : TenantEntity, IMerchantOwned
     }
 
     /// <summary>
-    /// The pickup's day passed without it being made: it goes on the list of <paramref name="today"/> and waits for
-    /// the hub to choose a rider again.
+    /// The pickup's day passed without it being made: it goes on the list of <paramref name="day"/>, today or, when
+    /// the van has been to the point today, tomorrow, and waits for the hub to choose a rider again.
     /// </summary>
-    public Result CarryTo(DateOnly today)
+    public Result CarryTo(DateOnly day)
     {
-        if (!IsOpen || today <= PickupDate)
+        if (!IsOpen || day <= PickupDate)
         {
             return Error.Conflict("pickup.carry", "Only an open pickup whose day has passed is carried to another day.");
         }
 
-        PickupDate = today;
+        PickupDate = day;
         RiderId = null;
         Status = PickupStatus.Scheduled;
 

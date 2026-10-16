@@ -1,0 +1,107 @@
+@page "{id:long}"
+@using Application.Delivery.Riders
+@using Domain.Common
+@using Domain.Delivery
+@model Web.Pages.Admin.RiderModel
+@{
+    var d = Model.Details;
+    var r = d.Rider;
+    ViewData["Title"] = r.Name;
+}
+
+<div class="page-head">
+    <div>
+        <div class="breadcrumb"><a asp-page="/Admin/Riders">Riders</a> <span>/</span> <span>@r.Name</span></div>
+        <h1>@r.Name @if (!r.Active) { <span class="badge badge-cancel">Stopped</span> }</h1>
+        <p>@r.Hub · <span class="vehicle">@Icons.Get(Statuses.Icon(r.Vehicle)) @r.Vehicle.DisplayName()</span> · <a href="tel:@r.Phone">@Money.Phone(r.Phone)</a>@(r.Email is null ? "" : $" · signs in as {r.Email}")</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-outline" asp-page="/Admin/Riders" asp-route-edit="@r.Id" asp-route-hubId="@r.HubId">Edit</a>
+    </div>
+</div>
+
+@if (Model.Problem is { } problem)
+{
+    <div class="alert alert-error">@Icons.Get("alert")<div>@problem</div></div>
+}
+
+<div class="stats">
+    <div class="stat"><div class="stat-icon blue">@Icons.Get("package")</div><div><div class="stat-label">With them now</div><div class="stat-value">@r.WithThem</div><div class="stat-sub">parcels to hand over</div></div></div>
+    <div class="stat"><div class="stat-icon green">@Icons.Get("check-circle")</div><div><div class="stat-label">Delivered today</div><div class="stat-value">@r.DeliveredToday</div></div></div>
+    <div class="stat"><div class="stat-icon">@Icons.Get("cash")</div><div><div class="stat-label">Cash in hand</div><div class="stat-value">@Money.Taka(r.CashInHand)</div><div class="stat-sub">collected on runs not closed yet</div></div></div>
+</div>
+
+@await Html.PartialAsync("_PeriodPicker", (Model.Kind, (DateOnly?)d.Period.From, (DateOnly?)d.Period.To))
+
+<div class="stats">
+    <div class="stat"><div class="stat-icon">@Icons.Get("map-pin")</div><div><div class="stat-label">Doors</div><div class="stat-value">@d.Stops</div><div class="stat-sub">@(d.Runs.Count == 1 ? "1 run" : $"{d.Runs.Count} runs")@(d.OpenRuns > 0 ? $", {d.OpenRuns} still open" : "")</div></div></div>
+    <div class="stat"><div class="stat-icon green">@Icons.Get("check-circle")</div><div><div class="stat-label">Delivered</div><div class="stat-value">@d.Delivered</div><div class="stat-sub">@(d.SuccessRate is { } rate ? $"{Math.Round(rate * 100, MidpointRounding.AwayFromZero)}% of the doors" : "No door recorded yet")</div></div></div>
+    <div class="stat"><div class="stat-icon">@Icons.Get("cash")</div><div><div class="stat-label">Cash collected</div><div class="stat-value">@Money.Taka(d.Collected)</div><div class="stat-sub">@Money.Taka(d.HandedIn) handed in at closing</div></div></div>
+    <div class="stat"><div class="stat-icon @(d.Short > 0 ? "red" : "")">@Icons.Get("alert")</div><div><div class="stat-label">Short</div><div class="stat-value @(d.Short > 0 ? "negative" : "")">@Money.Taka(d.Short)</div><div class="stat-sub">kept back at closing</div></div></div>
+</div>
+
+<div class="card">
+    <div class="card-head"><div><h2>Runs</h2><p>@d.Period.From.ToString("d MMM") to @d.Period.To.ToString("d MMM yyyy")</p></div></div>
+    @if (d.Runs.Count == 0)
+    {
+        <div class="empty">@Icons.Get("bike")<h3>No runs in these days</h3><p>A run opens when a hub hands the rider their first parcel of the day.</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table compact">
+                <thead><tr><th>Day</th><th>Hub</th><th class="num">Parcels</th><th class="num">Delivered</th><th class="num">Not delivered</th><th class="num">Collected</th><th class="num">Handed in</th><th class="num">Short</th><th>Run</th></tr></thead>
+                <tbody>
+                    @foreach (var run in d.Runs)
+                    {
+                        <tr>
+                            <td class="nowrap">@run.Date.ToString("ddd d MMM")</td>
+                            <td><span class="code-link">@run.Hub</span></td>
+                            <td class="num">@run.Parcels</td>
+                            <td class="num">@run.Delivered</td>
+                            <td class="num">@run.NotDelivered</td>
+                            <td class="num">@Money.Taka(run.Collected)</td>
+                            <td class="num">@if (run.HandedIn is { } handedIn) { @Money.Taka(handedIn) } else { <span class="muted">Not yet</span> }</td>
+                            <td class="num @(run.Short > 0 ? "negative strong" : "")">@if (run.Short is { } kept) { @Money.Taka(kept) } else { <span class="muted">—</span> }</td>
+                            <td class="nowrap">
+                                @Statuses.Badge(run.Status)
+                                @if (run.Status == RunStatus.Open)
+                                {
+                                    <a class="btn btn-ghost btn-sm" asp-page="/Hub/RunSheet" asp-route-id="@run.Id">Run sheet</a>
+                                    <a class="btn btn-ghost btn-sm" asp-page="/Hub/Runs" asp-route-hub="@run.Hub">Close</a>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="card">
+    <div class="card-head"><div><h2>Doors</h2><p>The latest @AdminRidersHandler.MaxAttemptsListed hand-overs in these days</p></div></div>
+    @if (d.Attempts.Count == 0)
+    {
+        <div class="empty">@Icons.Get("package")<h3>Nothing handed over in these days</h3></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table compact">
+                <thead><tr><th>Parcel</th><th>When</th><th>What happened</th><th class="num">Collected</th></tr></thead>
+                <tbody>
+                    @foreach (var a in d.Attempts)
+                    {
+                        <tr>
+                            <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@a.TrackingCode">@a.TrackingCode</a></td>
+                            <td class="nowrap">@a.At.ToString("d MMM, h:mm tt")</td>
+                            <td>@Statuses.Badge(a.Outcome)@if (a.Reason is { } why) { <div class="cell-sub">@why</div> }</td>
+                            <td class="num">@Money.Taka(a.Collected)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

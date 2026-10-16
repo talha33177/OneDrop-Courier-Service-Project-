@@ -4,10 +4,10 @@
 @{
     ViewData["Title"] = "Pickups";
     var d = Model.Data;
-    var cutoff = d.Cutoff is { } c ? Statuses.Clock(c) : null;
     var leaves = d.LeavesAt is { } l ? Statuses.Clock(l) : null;
-    var today = d.Points.Sum(p => p.Today);
-    var later = d.Points.Sum(p => p.Later);
+    var today = d.Points.Where(p => p.GoesOn <= Model.Today).Sum(p => p.Waiting);
+    var later = d.Points.Where(p => p.GoesOn > Model.Today).Sum(p => p.Waiting);
+    var visited = d.Points.Any(p => p.GoesOn > Model.Today);
 }
 
 <div class="page-head">
@@ -27,30 +27,26 @@
         <div class="pickup-rule-steps">
             <div>
                 <span class="stat-icon">@Icons.Get("package")</span>
-                <div><strong>Book@(cutoff is null ? "" : $" before {cutoff}")</strong><small>Pack and label the parcel@(cutoff is null ? "" : "; booked later, it goes the next day")</small></div>
+                <div><strong>Book, pack and label</strong><small>Until the truck reaches you, every parcel you book goes with it</small></div>
             </div>
             <div>
                 <span class="stat-icon">@Icons.Get("truck")</span>
-                <div><strong>@(leaves is null ? "Our pickup comes" : $"The truck leaves at {leaves}")</strong><small>It collects from every pickup point on its round</small></div>
+                <div><strong>@(leaves is null ? "Our pickup comes" : $"The truck leaves at {leaves}")</strong><small>It visits each pickup point once a day</small></div>
             </div>
             <div>
                 <span class="stat-icon">@Icons.Get("warehouse")</span>
                 <div><strong>At the hub the same evening</strong><small>Sorted and sent on for delivery</small></div>
             </div>
         </div>
-        <p class="next-pickup @(d.TodayClosed ? "closed" : "")">
+        <p class="next-pickup @(visited ? "closed" : "")">
             @Icons.Get("clock")
-            @if (d.TodayClosed)
+            @if (visited)
             {
-                <span>Today's pickup list closed at @cutoff. A parcel booked now goes <strong>@Statuses.PickupDay(d.NextPickup, Model.Today)</strong>.</span>
-            }
-            else if (cutoff is not null)
-            {
-                <span>Book before <strong>@cutoff today</strong> and the parcel is collected today@(leaves is null ? "" : $", when the truck leaves the hub at {leaves}").</span>
+                <span>The truck has already been to @(d.Points.Count(p => p.GoesOn > Model.Today) == 1 ? "a pickup point" : "some pickup points") of yours today. A parcel booked there now goes <strong>tomorrow</strong>.</span>
             }
             else
             {
-                <span>Every parcel booked today is collected today.</span>
+                <span>A parcel you book before the truck reaches you is collected <strong>today</strong>, even a minute before it arrives. Once it has been to a pickup point, parcels booked there go with the next day's pickup.</span>
             }
         </p>
     </div>
@@ -111,16 +107,16 @@
                         <div>
                             <span><span class="cell-main">@point.Name</span><span class="cell-sub">@point.Area</span></span>
                             <span class="text-right">
-                                <strong>@point.Today</strong> today
-                                @if (point.Later > 0)
+                                <strong>@point.Waiting</strong> @(point.GoesOn > Model.Today ? "tomorrow" : "today")
+                                @if (point.GoesOn > Model.Today)
                                 {
-                                    <span class="cell-sub">@point.Later @(d.TodayClosed ? "with the next pickup" : "booked after the cut-off")</span>
+                                    <span class="cell-sub">The truck has been here today</span>
                                 }
                             </span>
                         </div>
                     }
                 </div>
-                <p class="hint mt">@today parcel@(today == 1 ? "" : "s") go@(today == 1 ? "es" : "") with today's pickup@(later > 0 ? $", {later} with the next" : "").</p>
+                <p class="hint mt">@today parcel@(today == 1 ? "" : "s") go@(today == 1 ? "es" : "") with today's pickup@(later > 0 ? $", {later} with tomorrow's" : "").</p>
                 <p class="hint">Bringing parcels to a hub yourself? Hub staff scan them in at the counter, any day.</p>
             }
         </div>

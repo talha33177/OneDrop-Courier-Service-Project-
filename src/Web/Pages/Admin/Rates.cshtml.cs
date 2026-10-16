@@ -5,7 +5,7 @@ using Domain.Pricing;
 
 namespace Web.Pages.Admin;
 
-/// <summary>The courier's rate card: the admin changes what parcels booked from now on cost.</summary>
+/// <summary>The courier's rate card: the admin changes what parcels booked from now on cost. Delivery types are priced on their own page.</summary>
 public class RatesModel(RatesHandler rates) : PageModel
 {
     public IReadOnlyList<RateRow> Rates { get; private set; } = [];
@@ -31,27 +31,6 @@ public class RatesModel(RatesHandler rates) : PageModel
             cancellationToken);
         TempData[changed.IsSuccess ? "Done" : "Problem"] = changed.IsSuccess
             ? $"{area.DisplayName()} rate saved. Parcels booked from now on use it."
-            : changed.Error!.Message;
-
-        return RedirectToPage();
-    }
-
-    public async Task<IActionResult> OnPostExtrasAsync(
-        ServiceArea area,
-        decimal? expressCharge,
-        int? expressDays,
-        decimal? liquidCharge,
-        decimal? fragileCharge,
-        decimal? freshFoodCharge,
-        decimal? frozenCharge,
-        CancellationToken cancellationToken)
-    {
-        var changed = await rates.ChangeExtrasAsync(
-            area,
-            new RateExtras(expressCharge, expressDays, liquidCharge, fragileCharge, freshFoodCharge, frozenCharge),
-            cancellationToken);
-        TempData[changed.IsSuccess ? "Done" : "Problem"] = changed.IsSuccess
-            ? $"{area.DisplayName()} delivery types saved. Parcels booked from now on use them."
             : changed.Error!.Message;
 
         return RedirectToPage();

@@ -5,6 +5,7 @@ using Application.Parcels.ParcelActions;
 using Application.Parcels.Requests;
 using Domain.Common;
 using Domain.Parcels;
+using Web.Authentication;
 
 namespace Web.Pages.Hub;
 
@@ -18,6 +19,20 @@ public class ParcelModel(ParcelDetailsHandler details, ParcelActionsHandler acti
 
     /// <summary>The merchant's request about the parcel still waiting for the admins' answer, if any.</summary>
     public RequestRow? OpenRequest { get; private set; }
+
+    /// <summary>
+    /// Whether this person's desk uses one of the page's buttons. A hub's own staff are still refused a parcel at
+    /// another hub when they press it.
+    /// </summary>
+    public bool MayUse(string handler)
+    {
+        return MayOpen($"/Hub/Parcel/{handler}");
+    }
+
+    public bool MayOpen(string page)
+    {
+        return StaffPages.Rights(HttpContext) is { } rights && StaffPages.MayOpen(rights, page);
+    }
 
     public async Task<IActionResult> OnGetAsync(string code, CancellationToken cancellationToken)
     {

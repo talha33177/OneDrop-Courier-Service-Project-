@@ -1,0 +1,125 @@
+@page "{id:long?}"
+@model Web.Pages.Merchant.PickupPointModel
+@inject MapsOptions Maps
+@{
+    var point = Model.Point;
+    ViewData["Title"] = point is null ? "Add a pickup point" : $"Pickup point: {point.Name}";
+    var pin = point?.Pin;
+    string Coordinate(decimal? value) => value?.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+}
+
+<div class="page-head">
+    <div>
+        <h1>@(point is null ? "Add a pickup point" : point.Name)</h1>
+        <p>Where our rider collects your parcels. Pin the door on the map and the pickup van is guided straight to it.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" asp-page="/Merchant/Settings">@Icons.Get("arrow-left") Back to settings</a>
+    </div>
+</div>
+
+<partial name="_Alerts" />
+
+<form method="post">
+    <div class="grid grid-side">
+        <div class="card">
+            <div class="card-head"><h2>@Icons.Get("map-pin") The place</h2></div>
+            <div class="card-body">
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="name">Name</label>
+                        <input type="text" id="name" name="name" value="@point?.Name" placeholder="e.g. Warehouse" maxlength="200" required />
+                        <span class="hint">What you call it: "Shop", "Warehouse", "Home".</span>
+                    </div>
+                    <div class="field">
+                        <label for="areaId">Area</label>
+                        @await Html.PartialAsync("_AreaSelect", ("areaId", point?.AreaId, Model.Areas))
+                        <span class="hint">It decides which hub collects from you.</span>
+                    </div>
+                    <div class="field field-full">
+                        <label for="address">Address</label>
+                        <input type="text" id="address" name="address" value="@point?.Address" maxlength="500" required />
+                    </div>
+                    <div class="field">
+                        <label for="phone">Contact phone</label>
+                        <input type="tel" id="phone" name="phone" value="@point?.ContactPhone" required />
+                        <span class="hint">Who the rider calls on arrival.</span>
+                    </div>
+                </div>
+
+                <div class="pin-box mt" data-pin data-pin-url="@Url.Page("/Merchant/PickupPoint", "Pin", new { id = Model.Id })" data-maps="@(Maps.Configured ? "on" : null)" data-pin-area="areaId" data-pin-address="address">
+                    <input type="hidden" name="latitude" value="@Coordinate(pin?.Latitude)" data-pin-lat />
+                    <input type="hidden" name="longitude" value="@Coordinate(pin?.Longitude)" data-pin-lng />
+                    <div class="pin-head">
+                        <div>
+                            <strong>@Icons.Get("map-pin") Your door on the map</strong>
+                            <span class="hint">Optional, but it saves the rider calling you: the pickup van drives to the pin, and your stop sits on its route.</span>
+                        </div>
+                        <button type="button" class="btn btn-ghost btn-sm" data-pin-clear hidden>@Icons.Get("x") Remove the pin</button>
+                    </div>
+                    @if (Maps.Configured)
+                    {
+                        <div class="pin-search" data-pin-search></div>
+                        <div class="pin-map" data-pin-map role="application" aria-label="Map: click or drag the pin to your door"></div>
+                        <div class="pin-actions">
+                            <button type="button" class="btn btn-outline btn-sm" data-pin-find>@Icons.Get("search") Find the address on the map</button>
+                            <span class="hint">Or click the map where the door is, and drag the pin to correct it.</span>
+                        </div>
+                    }
+                    <div class="pin-paste">
+                        <label for="pin-link" class="hint">Or paste a Google Maps link to the place, or its coordinates</label>
+                        <div class="input-group">
+                            <input type="text" id="pin-link" data-pin-link placeholder="https://maps.app.goo.gl/… or 23.8103, 90.4125" autocomplete="off" />
+                            <button type="button" class="btn btn-outline" data-pin-use>Use it</button>
+                        </div>
+                        @if (!Maps.Configured)
+                        {
+                            <a class="hint" data-pin-open target="_blank" rel="noopener" href="https://www.google.com/maps">@Icons.Get("map-pin") Open Google Maps to find your door, then paste its link here</a>
+                        }
+                    </div>
+                    <p class="pin-status" data-pin-status aria-live="polite"></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="stack">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="mb">@(point is null ? "Adding a point" : "This point")</h2>
+                    @if (point is not null)
+                    {
+                        <dl class="kv">
+                            <dt>Used by default</dt><dd>@(point.IsDefault ? "Yes" : "No")</dd>
+                            <dt>On the map</dt>
+                            <dd>
+                                @if (pin is not null)
+                                {
+                                    <a href="@MapLinks.Show(pin)" target="_blank" rel="noopener">Pinned</a>
+                                }
+                                else
+                                {
+                                    <span class="faint">Not pinned</span>
+                                }
+                            </dd>
+                        </dl>
+                    }
+                    <p class="hint">
+                        Your first point is the default one: parcels are collected there unless you choose another when
+                        you book. Changing the area moves which hub collects, so it is refused while parcels or a
+                        pickup are waiting here.
+                    </p>
+                    <div class="form-actions" style="flex-direction:column;align-items:stretch">
+                        <button class="btn btn-primary btn-block" type="submit">@(point is null ? "Add pickup point" : "Save changes")</button>
+                        <a class="btn btn-outline btn-block" asp-page="/Merchant/Settings">Cancel</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script src="~/js/recipient-map.js" asp-append-version="true"></script>
+@if (Maps.Configured)
+{
+    <script async src="https://maps.googleapis.com/maps/api/js?key=@Uri.EscapeDataString(Maps.ApiKey!)&loading=async&libraries=places&region=BD&language=en&callback=initRecipientMap"></script>
+}

@@ -43,6 +43,7 @@
     <Build Include="Platform/Tables/Tenant.sql" />
     <Build Include="Identity/Tables/Role.sql" />
     <Build Include="Identity/Tables/RoleClaim.sql" />
+    <Build Include="Identity/Tables/StaffMember.sql" />
     <Build Include="Identity/Tables/User.sql" />
     <Build Include="Identity/Tables/UserClaim.sql" />
     <Build Include="Identity/Tables/UserLogin.sql" />
@@ -52,6 +53,8 @@
     <Build Include="Network/Tables/Hub.sql" />
     <Build Include="Network/Tables/Zone.sql" />
     <Build Include="Pricing/Tables/DeliveryRate.sql" />
+    <Build Include="Pricing/Tables/DeliveryOption.sql" />
+    <Build Include="Pricing/Tables/DeliveryOptionCharge.sql" />
     <Build Include="Merchants/Tables/Merchant.sql" />
     <Build Include="Merchants/Tables/MerchantApiKey.sql" />
     <Build Include="Merchants/Tables/MerchantPicture.sql" />

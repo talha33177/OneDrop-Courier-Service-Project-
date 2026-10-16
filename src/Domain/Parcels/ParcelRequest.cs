@@ -86,6 +86,13 @@ public class ParcelRequest : TenantEntity, IMerchantOwned
             return Error.Validation("request.reason", "Say why, at most 200 characters.");
         }
 
+        if (kind == ParcelRequestKind.ChangeCod && parcel.PaidOnline is { } paid)
+        {
+            return Error.Conflict(
+                "request.cod.paid",
+                $"The recipient already paid {parcel.TrackingCode}'s ৳{paid:N0} online, so its cash on delivery cannot change.");
+        }
+
         if (kind == ParcelRequestKind.ChangeCod &&
             (newCodAmount is not { } amount || amount is < 0 or > Parcel.MaxCodAmount || amount == parcel.CodAmount))
         {

@@ -11,6 +11,8 @@
         ("Draw the map", "Open hubs, give each a zone, and list the areas you deliver to", setup.Hubs > 0 && setup.Areas > 0, "/Admin/Coverage", "Open coverage"),
         ("Set the delivery rates", "What merchants pay inside the city, in the suburbs and outside", setup.Rates > 0, "/Admin/Rates", "Set rates"),
         ("Add your riders", "Each works from one hub and signs in to the rider app", setup.Riders > 0, "/Admin/Riders", "Add a rider"),
+        ("Put a pickup van at each hub", "Only a pickup van goes to a merchant's door; bicycles and motorbikes deliver",
+            setup.PickupVans > 0, "/Admin/Riders", "Add a van rider"),
         ("Approve or add a merchant", "Shops sign up on the website and wait for you, or you add them yourself",
             setup.ActiveMerchants > 0, d.PendingMerchants > 0 ? "/Admin/Merchants?status=Pending" : "/Admin/NewMerchant",
             d.PendingMerchants > 0 ? "Review sign-ups" : "Add a merchant")
@@ -34,12 +36,15 @@
     <div class="page-actions">
         <a class="btn btn-outline" asp-page="/Admin/Guide">@Icons.Get("help") How it works</a>
         <a class="btn btn-outline" asp-page="/Hub/Choose">@Icons.Get("warehouse") Choose a hub</a>
-        <a class="btn btn-primary" asp-page="/Admin/NewMerchant">@Icons.Get("plus") Add merchant</a>
+        @if (Model.MayOpen("/Admin/NewMerchant"))
+        {
+            <a class="btn btn-primary" asp-page="/Admin/NewMerchant">@Icons.Get("plus") Add merchant</a>
+        }
     </div>
 </div>
 
 <div data-live="dashboard">
-    @if (!setup.Done)
+    @if (!setup.Done && Model.MayOpen("/Admin/Coverage"))
     {
         <div class="card checklist mb">
             <div class="card-head">
@@ -141,7 +146,7 @@
 
     <div class="grid grid-main">
         <div class="card">
-            <div class="card-head"><div><h2>Last 7 days</h2><p>Parcels booked, delivered and returned each day</p></div><a class="btn btn-ghost btn-sm" asp-page="/Admin/Reports">Reports @Icons.Get("arrow-right")</a></div>
+            <div class="card-head"><div><h2>Last 7 days</h2><p>Parcels booked, delivered and returned each day</p></div>@if (Model.MayOpen("/Admin/Reports")) {<a class="btn btn-ghost btn-sm" asp-page="/Admin/Reports">Reports @Icons.Get("arrow-right")</a>}</div>
             <div class="card-body"><partial name="_WeekChart" model="d.Week" /></div>
         </div>
         <div class="card">
@@ -170,7 +175,7 @@
 
     <div class="grid grid-2 mt-lg">
         <div class="card">
-            <div class="card-head"><div><h2>@Icons.Get("warehouse") Hubs</h2><p>Press a hub to open its board</p></div><a class="btn btn-ghost btn-sm" asp-page="/Admin/Coverage">Coverage</a></div>
+            <div class="card-head"><div><h2>@Icons.Get("warehouse") Hubs</h2><p>Press a hub to open its board</p></div>@if (Model.MayOpen("/Admin/Coverage")) {<a class="btn btn-ghost btn-sm" asp-page="/Admin/Coverage">Coverage</a>}</div>
             <div class="table-wrap">
                 <table class="table compact">
                     <thead><tr><th>Hub</th><th class="num">At hub</th><th class="num">For riders</th><th class="num">Coming</th><th class="num">With riders</th></tr></thead>
@@ -190,7 +195,7 @@
             </div>
         </div>
         <div class="card">
-            <div class="card-head"><h2>@Icons.Get("trending") Top merchants this month</h2><a class="btn btn-ghost btn-sm" asp-page="/Admin/Merchants">Merchants</a></div>
+            <div class="card-head"><h2>@Icons.Get("trending") Top merchants this month</h2>@if (Model.MayOpen("/Admin/Merchants")) {<a class="btn btn-ghost btn-sm" asp-page="/Admin/Merchants">Merchants</a>}</div>
             @if (d.TopMerchants.Count == 0)
             {
                 <div class="card-body muted">No parcels booked this month yet.</div>

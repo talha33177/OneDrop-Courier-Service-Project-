@@ -38,11 +38,17 @@ public sealed record CreateParcelCommand
 
     public decimal WeightKg { get; init; }
 
-    /// <summary>regular (the default) or express, where the route offers it.</summary>
-    public DeliverySpeed? Speed { get; init; }
+    /// <summary>
+    /// The speed's code from the courier's delivery types (regular, express and so on), where the route offers it.
+    /// Left out, the courier's default.
+    /// </summary>
+    public string? Speed { get; init; }
 
-    /// <summary>What is inside: general (the default), liquid, fragile, freshFood or frozen, where the route carries it.</summary>
-    public ProductType? ProductType { get; init; }
+    /// <summary>
+    /// What is inside, by its code from the courier's delivery types (general, liquid, fragile, fresh-food, frozen
+    /// and so on), where the route carries it. Left out, the courier's default.
+    /// </summary>
+    public string? ProductType { get; init; }
 
     public string? ItemDescription { get; init; }
 
@@ -59,7 +65,7 @@ public sealed record CreateParcelCommand
 
 /// <param name="DeliveryCharge">The weight's charge plus <see cref="SpeedCharge"/> and <see cref="ProductCharge"/>.</param>
 /// <param name="TotalCharge">What the merchant pays if the parcel is delivered with the whole cash on delivery.</param>
-/// <param name="PickupOn">The day the courier collects it: that day when booked before the pickup cut-off, else the next.</param>
+/// <param name="PickupOn">The day the courier collects it: today, or the next day once the pickup van has been to its pickup point today.</param>
 public sealed record CreateParcelResult(
     string TrackingCode,
     string? MerchantReference,
@@ -72,8 +78,8 @@ public sealed record CreateParcelResult(
     decimal CodCharge,
     decimal TotalCharge,
     DateTime Created,
-    DeliverySpeed Speed,
-    ProductType ProductType,
+    string Speed,
+    string ProductType,
     decimal SpeedCharge,
     decimal ProductCharge,
     DateOnly? PickupOn)

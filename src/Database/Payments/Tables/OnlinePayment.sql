@@ -12,11 +12,16 @@
 --          is credited once (UX_OnlinePayment_LedgerEntry)
 -- Author: Courier team
 -- Date: 2026-10-08
+--       2026-10-12 ParcelId: a recipient paying a parcel's cash on delivery (4.10), which writes no ledger line
+--                  (the parcel takes it as PaidOnline); status 6 RefundDue, and RefundReference, RefundTriedOn (when
+--                  the gateway was last asked) and RefundedOn for money that goes back to the payer. One paid
+--                  payment per parcel (UX_OnlinePayment_Parcel_Paid)
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Payments].[OnlinePayment] (
     [Id]                BIGINT          IDENTITY (1, 1) NOT NULL,
     [TenantId]          BIGINT          NOT NULL,
     [MerchantId]        BIGINT          NOT NULL,
+    [ParcelId]          BIGINT          NULL,
     [Number]            NVARCHAR (20)   CONSTRAINT [DF_OnlinePayment_Number] DEFAULT (concat(N'PAY-', NEXT VALUE FOR [Payments].[OnlinePaymentNumber])) NOT NULL,
     [TransactionId]     NVARCHAR (30)   NOT NULL,
     [Amount]            DECIMAL (12, 2) NOT NULL,
@@ -30,6 +35,9 @@ CREATE TABLE [Payments].[OnlinePayment] (
     [Note]              NVARCHAR (300)  NULL,
     [ConfirmedOn]       DATETIME2 (7)   NULL,
     [LedgerEntryId]     BIGINT          NULL,
+    [RefundReference]   NVARCHAR (80)   NULL,
+    [RefundTriedOn]     DATETIME2 (7)   NULL,
+    [RefundedOn]        DATETIME2 (7)   NULL,
     [RowVersion]        ROWVERSION      NOT NULL,
     [UpdatedId]         BIGINT          NULL,
     [UpdatedOn]         DATETIME2 (7)   DEFAULT (getutcdate()) NOT NULL,
@@ -37,11 +45,12 @@ CREATE TABLE [Payments].[OnlinePayment] (
     PRIMARY KEY CLUSTERED ([Id] ASC),
     CONSTRAINT [FK_OnlinePayment_Tenant] FOREIGN KEY ([TenantId]) REFERENCES [Platform].[Tenant] ([Id]),
     CONSTRAINT [FK_OnlinePayment_Merchant] FOREIGN KEY ([MerchantId]) REFERENCES [Merchants].[Merchant] ([Id]),
+    CONSTRAINT [FK_OnlinePayment_Parcel] FOREIGN KEY ([ParcelId]) REFERENCES [Parcels].[Parcel] ([Id]),
     CONSTRAINT [FK_OnlinePayment_LedgerEntry] FOREIGN KEY ([LedgerEntryId]) REFERENCES [Payments].[LedgerEntry] ([Id]),
     CONSTRAINT [FK_OnlinePayment_User] FOREIGN KEY ([UpdatedId]) REFERENCES [Identity].[User] ([Id]),
     CONSTRAINT [chk_OnlinePayment_Amount] CHECK ([Amount] > (0)),
-    CONSTRAINT [chk_OnlinePayment_Status] CHECK ([Status] BETWEEN 1 AND 5),
-    CONSTRAINT [chk_OnlinePayment_Credit] CHECK (([Status] = 2 AND [LedgerEntryId] IS NOT NULL AND [ConfirmedOn] IS NOT NULL) OR ([Status] <> 2 AND [LedgerEntryId] IS NULL))
+    CONSTRAINT [chk_OnlinePayment_Status] CHECK ([Status] BETWEEN 1 AND 6),
+    CONSTRAINT [chk_OnlinePayment_Credit] CHECK (([ParcelId] IS NULL AND (([Status] = 2 AND [LedgerEntryId] IS NOT NULL AND [ConfirmedOn] IS NOT NULL) OR ([Status] <> 2 AND [LedgerEntryId] IS NULL)) AND [Status] <> 6) OR ([ParcelId] IS NOT NULL AND [LedgerEntryId] IS NULL))
 );
 
 
@@ -68,3 +77,13 @@ CREATE NONCLUSTERED INDEX [IX_OnlinePayment_Tenant_Status]
 GO
 CREATE NONCLUSTERED INDEX [IX_OnlinePayment_Merchant]
     ON [Payments].[OnlinePayment]([MerchantId] ASC, [Id] ASC);
+
+
+GO
+CREATE UNIQUE NONCLUSTERED INDEX [UX_OnlinePayment_Parcel_Paid]
+    ON [Payments].[OnlinePayment]([ParcelId] ASC) WHERE [Status] = 2 AND [ParcelId] IS NOT NULL;
+
+
+GO
+CREATE NONCLUSTERED INDEX [IX_OnlinePayment_Parcel]
+    ON [Payments].[OnlinePayment]([ParcelId] ASC) WHERE [ParcelId] IS NOT NULL;

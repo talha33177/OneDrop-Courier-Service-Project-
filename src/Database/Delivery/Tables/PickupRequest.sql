@@ -1,15 +1,19 @@
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 -- TABLE: Delivery.PickupRequest
 -- Purpose: The day's pickup at one of a merchant's pickup points on PickupDate (the tenant's date). The courier
---          collects once a day: a pickup is scheduled when a parcel is booked at the point, for the day its
---          Platform.Tenant.PickupCutoff puts it on, and collects every parcel pending there that was booked before
---          that day's cut-off. HubId is the hub of the point's zone, which assigns a rider. Status is a TINYINT enum
---          (Domain.Delivery.PickupStatus): 1 Scheduled, 2 Assigned, 3 Completed, 4 Cancelled. One open pickup per
---          point and day; one whose day passed is carried to the next.
+--          visits a point once a day: a pickup is scheduled when a parcel is booked at the point, for today unless
+--          the van has already been to the point today (a Completed pickup), then for tomorrow, and collects every
+--          parcel pending there when the rider gets to the door. HubId is the hub of the point's zone, which assigns
+--          a rider. Status is a TINYINT enum (Domain.Delivery.PickupStatus): 1 Scheduled, 2 Assigned, 3 Completed,
+--          4 Cancelled. One open pickup per point and day; one whose day passed is carried to the next. The code,
+--          not an index, keeps the van from a point twice a day: older databases hold several completed pickups for
+--          one point and day, from before pickups were scheduled.
 -- Author: Courier team
 -- Date: 2026-10-04
 --       2026-10-09 Pickups are scheduled, not asked for: ExpectedParcels and Note dropped
 --                  (Scripts/Pre/003_DeliveryTypesAndPickups.sql), one open pickup per point and day
+--       2026-10-13 No cut-off: the van takes what is booked until it reaches the point, and a point it has been
+--                  to today is listed for tomorrow
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Delivery].[PickupRequest] (
     [Id]              BIGINT         IDENTITY (1, 1) NOT NULL,

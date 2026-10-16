@@ -54,7 +54,7 @@ public class DeliveryTypesTests(WebAppFactory factory) : AppTests(factory)
         var rider = await NewRiderAsync("GUL");
         var hub = await SignInAsync("onedrop", "hub@onedrop.test");
         await hub.SubmitAsync("/Hub/Scan?hub=GUL", "/Hub/Scan?mode=Receive&hub=GUL", ("Code", code));
-        Assert.Contains("tag-express", await hub.PageAsync("/Hub/Assign?hub=GUL"));
+        Assert.Contains("tag-speed", await hub.PageAsync("/Hub/Assign?hub=GUL"));
         await hub.SubmitAsync("/Hub/Assign?hub=GUL", "/Hub/Assign?hub=GUL", ("riderId", $"{rider.Id}"), ("codes", code));
         var door = WebUtility.HtmlDecode(await (await SignInAsync("onedrop", rider.Email)).PageAsync($"/Rider/Delivery/{code}"));
         Assert.Contains("https://www.google.com/maps/dir/?api=1&destination=23.7925,90.4078", door);
@@ -84,13 +84,22 @@ public class DeliveryTypesTests(WebAppFactory factory) : AppTests(factory)
         var quote = await client.GetFromJsonAsync<JsonElement>(
             "/api/v1/charge?area=Gulshan%202&weightKg=1&codAmount=1000&speed=express&productType=freshFood", Json, Cancel);
         Assert.Equal(60 + 40 + 30, quote.GetProperty("deliveryCharge").GetDecimal());
-        Assert.Equal(40, quote.GetProperty("expressCharge").GetDecimal());
+        Assert.Equal("express", quote.GetProperty("speed").GetString());
+        Assert.Equal("fresh-food", quote.GetProperty("productType").GetString());
         Assert.Contains(
-            quote.GetProperty("products").EnumerateArray(),
-            p => p.GetProperty("productType").GetString() == "frozen" && p.GetProperty("charge").GetDecimal() == 50);
+            quote.GetProperty("speeds").EnumerateArray(),
+            s => s.GetProperty("code").GetString() == "express" && s.GetProperty("charge").GetDecimal() == 40 &&
+                s.GetProperty("deliveryDays").GetInt32() == 1);
+        Assert.Contains(
+            quote.GetProperty("contents").EnumerateArray(),
+            p => p.GetProperty("code").GetString() == "frozen" && p.GetProperty("charge").GetDecimal() == 50);
         var far = await client.GetFromJsonAsync<JsonElement>("/api/v1/charge?area=Zindabazar&weightKg=1&codAmount=0", Json, Cancel);
-        Assert.Equal(JsonValueKind.Null, far.GetProperty("expressCharge").ValueKind);
-        Assert.DoesNotContain(far.GetProperty("products").EnumerateArray(), p => p.GetProperty("productType").GetString() == "frozen");
+        Assert.DoesNotContain(far.GetProperty("speeds").EnumerateArray(), s => s.GetProperty("code").GetString() == "express");
+        Assert.DoesNotContain(far.GetProperty("contents").EnumerateArray(), p => p.GetProperty("code").GetString() == "frozen");
+
+        var unknown = await client.GetAsync("/api/v1/charge?area=Gulshan%202&weightKg=1&codAmount=0&speed=rocket", Cancel);
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        Assert.Contains("regular, express", await unknown.Content.ReadAsStringAsync(Cancel));
     }
 
     [Fact]
@@ -126,44 +135,103 @@ public class DeliveryTypesTests(WebAppFactory factory) : AppTests(factory)
             ("Input.RecipientLongitude", "90.4066"));
 
         Assert.Contains("is booked for Banani", WebUtility.HtmlDecode(page));
-        var parcel = await QueryAsync("onedrop", db => db.Parcels.AsNoTracking().SingleAsync(p => p.MerchantId == shop.Id, Cancel));
-        Assert.Equal(DeliverySpeed.Express, parcel.Speed);
-        Assert.Equal(ProductType.Liquid, parcel.ProductType);
+        var parcel = await QueryAsync("onedrop", db => db.Parcels
+            .Include(p => p.Speed)
+            .Include(p => p.ProductType)
+            .AsNoTracking()
+            .SingleAsync(p => p.MerchantId == shop.Id, Cancel));
+        Assert.Equal("express", parcel.Speed?.Code);
+        Assert.Equal("liquid", parcel.ProductType?.Code);
         Assert.Equal(110, parcel.DeliveryCharge);
         Assert.Equal(90.4066m, parcel.RecipientLongitude);
         var shown = await merchant.PageAsync($"/Merchant/Parcel/{parcel.TrackingCode}");
-        Assert.Contains("tag-express", shown);
+        Assert.Contains("tag-speed", shown);
         Assert.Contains("Pinned", shown);
     }
 
+
     [Fact]
-    public async Task The_admin_sets_the_extras_and_only_the_couriers_own_rates_change()
+    public async Task The_admin_adds_a_speed_and_contents_merchants_book_with_and_takes_them_off()
     {
         WebAppFactory.RequireDatabase();
         var admin = await SignInAsync("rival", "admin@rival.test");
+        var run = Random.Shared.Next(1000, 9999);
 
-        var saved = await admin.SubmitAsync(
-            "/Admin/Rates",
-            "/Admin/Rates?handler=Extras",
-            ("area", "InsideCity"),
-            ("expressCharge", "35"),
-            ("expressDays", ""),
-            ("liquidCharge", ""),
-            ("fragileCharge", "15"),
-            ("freshFoodCharge", ""),
-            ("frozenCharge", ""));
-        Assert.Contains("Inside city delivery types saved", saved);
-        Assert.Contains("Set the express charge too", await admin.SubmitAsync(
-            "/Admin/Rates",
-            "/Admin/Rates?handler=Extras",
-            ("area", "Suburb"),
-            ("expressCharge", ""),
-            ("expressDays", "1")));
+        var added = await admin.SubmitAsync(
+            "/Admin/DeliveryTypes",
+            "/Admin/DeliveryTypes?handler=Add&kind=Speed",
+            ("Name", $"Same day {run}"),
+            ("Description", "Delivered before 9 pm"),
+            ("Icon", "clock"),
+            ("GoesFirst", "true"),
+            ("OfferedIn", "InsideCity"),
+            ("Charges[0]", "80"),
+            ("Days[0]", "0"),
+            ("Charges[1]", "15"));
+        Assert.Contains($"Same day {run} added", added);
+        Assert.Contains($"Electronics {run} added", await admin.SubmitAsync(
+            "/Admin/DeliveryTypes",
+            "/Admin/DeliveryTypes?handler=Add&kind=Contents",
+            ("Name", $"Electronics {run}"),
+            ("Handling", "Electronics: keep dry"),
+            ("Icon", "lock"),
+            ("OfferedIn", "InsideCity"),
+            ("Charges[0]", "25")));
+        Assert.Contains("There is already a delivery speed called", await admin.SubmitAsync(
+            "/Admin/DeliveryTypes",
+            "/Admin/DeliveryTypes?handler=Add&kind=Speed",
+            ("Name", $"same day {run}"),
+            ("Icon", "clock")));
 
-        var rival = await QueryAsync("rival", db => db.DeliveryRates.AsNoTracking().SingleAsync(r => r.ServiceArea == ServiceArea.InsideCity, Cancel));
-        Assert.Equal(35, rival.ExpressCharge);
-        Assert.Null(rival.LiquidCharge);
-        var ours = await QueryAsync("onedrop", db => db.DeliveryRates.AsNoTracking().SingleAsync(r => r.ServiceArea == ServiceArea.InsideCity, Cancel));
-        Assert.Equal(40, ours.ExpressCharge);
+        // A merchant books with the new codes, priced from the rival's own rate card and its new extras
+        var shop = Factory.ClientFor(WebAppFactory.Rival);
+        var booked = await shop.PostAsJsonAsync(
+            "/api/v1/parcels",
+            new
+            {
+                RecipientName = "Rina",
+                RecipientPhone = NewPhone(),
+                RecipientAddress = "Road 2",
+                Area = "Rival Town",
+                CodAmount = 300,
+                WeightKg = 0.5m,
+                Speed = $"same-day-{run}",
+                ProductType = $"Electronics {run}"
+            },
+            Cancel);
+        Assert.Equal(HttpStatusCode.Created, booked.StatusCode);
+        var parcel = await booked.Content.ReadFromJsonAsync<JsonElement>(Json, Cancel);
+        Assert.Equal(70 + 80 + 25, parcel.GetProperty("deliveryCharge").GetDecimal());
+        Assert.Equal($"same-day-{run}", parcel.GetProperty("speed").GetString());
+        var code = parcel.GetProperty("trackingCode").GetString()!;
+        var label = WebUtility.HtmlDecode(await admin.PageAsync($"/Hub/Labels?codes={code}"));
+        Assert.Contains($"Same day {run}", label);
+        Assert.Contains("Electronics: keep dry", label);
+
+        // OneDrop Courier sells nothing of the rival's
+        var ours = Factory.ClientFor((await NewMerchantAsync(area: "Mirpur 10")).ApiKey);
+        var refused = await ours.GetAsync($"/api/v1/charge?area=Gulshan%202&weightKg=1&codAmount=0&speed=same-day-{run}", Cancel);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.DoesNotContain($"Same day {run}", await (await SignInAsync("onedrop", "admin@onedrop.test")).PageAsync("/Admin/DeliveryTypes"));
+
+        // The default stays; the new speed is taken off, refused from then on, and the parcel keeps it
+        var options = await QueryAsync("rival", db => db.DeliveryOptions.Include(o => o.Charges).AsNoTracking().ToListAsync(Cancel));
+        var regular = options.Single(o => o.Kind == DeliveryOptionKind.Speed && o.IsDefault);
+        var sameDay = options.Single(o => o.Code == $"same-day-{run}");
+        // Only the area ticked is offered: the suburb's price was typed but not ticked
+        Assert.Equal(ServiceArea.InsideCity, Assert.Single(sameDay.Charges).ServiceArea);
+        Assert.Contains("cannot be taken off", await admin.SubmitAsync("/Admin/DeliveryTypes", $"/Admin/DeliveryTypes?handler=Archive&id={regular.Id}"));
+        Assert.Contains("is no longer offered", await admin.SubmitAsync("/Admin/DeliveryTypes", $"/Admin/DeliveryTypes?handler=Archive&id={sameDay.Id}"));
+        await admin.SubmitAsync(
+            "/Admin/DeliveryTypes",
+            $"/Admin/DeliveryTypes?handler=Archive&id={options.Single(o => o.Code == $"electronics-{run}").Id}");
+        var late = await shop.PostAsJsonAsync(
+            "/api/v1/parcels",
+            new { RecipientName = "Rina", RecipientPhone = NewPhone(), RecipientAddress = "Road 2", Area = "Rival Town", CodAmount = 300, WeightKg = 0.5m, Speed = $"same-day-{run}" },
+            Cancel);
+        Assert.Equal(HttpStatusCode.BadRequest, late.StatusCode);
+        var kept = await shop.GetFromJsonAsync<JsonElement>($"/api/v1/parcels/{code}", Json, Cancel);
+        Assert.Equal($"same-day-{run}", kept.GetProperty("speed").GetString());
+        Assert.Equal(80, kept.GetProperty("speedCharge").GetDecimal());
     }
 }

@@ -36,29 +36,6 @@ public static class TenantTime
         return tenant.RiderReturnTime is { } time ? runDate.ToDateTime(time) : null;
     }
 
-    /// <summary>
-    /// The day a parcel booked at <paramref name="bookedUtc"/> is collected: that day when booked before the cut-off,
-    /// else the next day. With no cut-off, the day it is booked.
-    /// </summary>
-    public static DateOnly PickupDayFor(this TenantInfo tenant, DateTime bookedUtc)
-    {
-        var booked = tenant.Local(bookedUtc);
-        var day = DateOnly.FromDateTime(booked);
-
-        return tenant.PickupCutoff is { } cutoff && TimeOnly.FromDateTime(booked) >= cutoff ? day.AddDays(1) : day;
-    }
-
-    /// <summary>
-    /// The moment, as UTC, after which a parcel booked no longer goes with the pickup of <paramref name="day"/>: that
-    /// day's cut-off, or its end when the courier sets none. A pickup collects the parcels booked before it.
-    /// </summary>
-    public static DateTime PickupCutoffUtc(this TenantInfo tenant, DateOnly day)
-    {
-        return tenant.PickupCutoff is { } cutoff
-            ? TimeZoneInfo.ConvertTimeToUtc(day.ToDateTime(cutoff), tenant.Zone())
-            : tenant.StartUtc(day.AddDays(1));
-    }
-
     /// <summary>A run of <paramref name="runDate"/> still open after its riders were due back.</summary>
     public static bool RunIsLate(this TenantInfo tenant, DateOnly runDate, DateTime utcNow)
     {

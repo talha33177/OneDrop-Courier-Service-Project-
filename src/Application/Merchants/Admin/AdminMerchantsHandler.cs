@@ -25,7 +25,18 @@ public sealed record MerchantRow(
     public string? Account { get; init; }
 }
 
-public sealed record PickupPointView(long Id, string Name, string Address, string Area, long AreaId, string ContactPhone, bool IsDefault);
+/// <param name="Pin">The door on the map, when the merchant pinned it: the rider navigates to it.</param>
+public sealed record PickupPointView(
+    long Id,
+    string Name,
+    string Address,
+    string Area,
+    long AreaId,
+    string ContactPhone,
+    bool IsDefault)
+{
+    public GeoPoint? Pin { get; init; }
+}
 
 public sealed record MerchantView(
     long Id,
@@ -50,7 +61,38 @@ public sealed record MerchantView(
 
     /// <summary>The adjustments the courier wrote on this business, newest first.</summary>
     public IReadOnlyList<AdjustmentRow> Adjustments { get; init; } = [];
+
+    public int Cancelled { get; init; }
+
+    /// <summary>Parcels booked and not yet finished: with the courier, or waiting for their pickup.</summary>
+    public int InProgress => Parcels - Delivered - Returned - Cancelled;
+
+    /// <summary>Returned out of the parcels that reached an end with the courier, as on the merchant's stats page.</summary>
+    public double? ReturnRate => Delivered + Returned == 0 ? null : (double)Returned / (Delivered + Returned);
 }
+
+/// <summary>
+/// Everything around one business the admin may need while on the phone with its merchant: the account it is part of,
+/// the people who work in it, where its money goes, what it was paid and what it asked for.
+/// </summary>
+public sealed record MerchantAccountView(
+    IReadOnlyList<BusinessLine> Businesses,
+    IReadOnlyList<ModeratorLine> Moderators,
+    IReadOnlyList<PayoutAccountLine> PayoutAccounts,
+    IReadOnlyList<PayoutLine> Payouts,
+    IReadOnlyList<RequestLine> Requests);
+
+/// <summary>One business of the account; <see cref="OnTheWay"/> counts its parcels not yet finished.</summary>
+public sealed record BusinessLine(long Id, string Name, MerchantStatus Status, bool IsMain, int OnTheWay, decimal Unpaid);
+
+public sealed record ModeratorLine(string Name, string Email, MerchantPermissions Permissions, bool Stopped);
+
+public sealed record PayoutAccountLine(PayoutMethod Method, string Number, string Name, bool InUse);
+
+public sealed record PayoutLine(string Number, DateOnly UpTo, decimal Amount, PayoutStatus Status, bool Stuck);
+
+/// <summary>A request from the merchant: about a parcel (its tracking code) or to be paid now (no code).</summary>
+public sealed record RequestLine(DateTime Asked, string? TrackingCode, string What, decimal? Amount, string Status, bool Open);
 
 public sealed record AccountLink(long Id, string Name);
 
@@ -160,6 +202,7 @@ public class AdminMerchantsHandler(
                 ? await db.Merchants.Where(a => a.Id == main).Select(a => new AccountLink(a.Id, a.Name)).SingleAsync(cancellationToken)
                 : null,
             PayoutHold = merchant.PayoutHold,
+            Cancelled = counts.GetValueOrDefault(ParcelStatus.Cancelled),
             Adjustments = await (
                 from line in db.LedgerEntries
                 join payout in db.Payouts on line.PayoutId equals (long?)payout.Id into paid
@@ -171,6 +214,107 @@ public class AdminMerchantsHandler(
                 .AsNoTracking()
                 .ToListAsync(cancellationToken)
         };
+    }
+
+    /// <summary>
+    /// The account around business <paramref name="id"/>: every business of it, its moderators and saved payout
+    /// accounts (all the account's), and this business's latest payouts and requests.
+    /// </summary>
+    public async Task<Result<MerchantAccountView>> AccountAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var tenant = tenantContext.Require();
+        var merchant = await db.Merchants.AsNoTracking().SingleOrDefaultAsync(m => m.Id == id, cancellationToken);
+        if (merchant is null)
+        {
+            return NotFound;
+        }
+
+        var accountId = merchant.AccountId;
+        var main = accountId == merchant.Id
+            ? merchant
+            : await db.Merchants.AsNoTracking().SingleAsync(m => m.Id == accountId, cancellationToken);
+        var businesses = await db.Merchants
+            .Where(m => m.Id == accountId || m.MainMerchantId == accountId)
+            .OrderBy(m => m.MainMerchantId != null)
+            .ThenBy(m => m.Name)
+            .Select(m => new BusinessLine(
+                m.Id,
+                m.Name,
+                m.Status,
+                m.MainMerchantId == null,
+                db.Parcels.Count(p => p.MerchantId == m.Id &&
+                    p.Status != ParcelStatus.Delivered &&
+                    p.Status != ParcelStatus.PartlyDelivered &&
+                    p.Status != ParcelStatus.Returned &&
+                    p.Status != ParcelStatus.Cancelled),
+                db.LedgerEntries.Where(e => e.MerchantId == m.Id && e.PayoutId == null).Sum(e => (decimal?)e.Amount) ?? 0))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var moderators = await db.Moderators
+            .Where(m => m.AccountId == accountId)
+            .OrderBy(m => m.Archived)
+            .ThenBy(m => m.Name)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        var emails = await accounts.EmailsAsync([.. moderators.Select(m => m.UserId)], cancellationToken);
+
+        var saved = await db.MerchantPayoutAccounts
+            .Where(a => a.AccountId == accountId && !a.Archived)
+            .OrderBy(a => a.Method)
+            .ThenBy(a => a.Number)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var payouts = await db.Payouts
+            .Where(p => p.MerchantId == id)
+            .OrderByDescending(p => p.Id)
+            .Take(10)
+            .Select(p => new PayoutLine(p.Number, p.UpToDate, p.Amount, p.Status, p.Status == PayoutStatus.Pending && p.FailedAttempts > 0))
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var parcelRequests = await (
+            from request in db.ParcelRequests
+            join parcel in db.Parcels on request.ParcelId equals parcel.Id
+            where request.MerchantId == id
+            orderby request.Id descending
+            select new { request.Created, parcel.TrackingCode, request.Kind, request.NewCodAmount, request.Status })
+            .Take(10)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        var payoutRequests = await db.PayoutRequests
+            .Where(r => r.MerchantId == id)
+            .OrderByDescending(r => r.Id)
+            .Take(5)
+            .Select(r => new { r.Created, r.AmountAsked, r.Status })
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        RequestLine[] requests =
+        [
+            .. parcelRequests.Select(r => new RequestLine(
+                tenant.Local(r.Created),
+                r.TrackingCode,
+                r.Kind == ParcelRequestKind.Cancel ? "Cancel the parcel" : "Change the cash to",
+                r.NewCodAmount,
+                r.Status.ToString(),
+                r.Status == ParcelRequestStatus.Open)),
+            .. payoutRequests.Select(r => new RequestLine(
+                tenant.Local(r.Created),
+                null,
+                "Be paid now",
+                r.AmountAsked,
+                r.Status.ToString(),
+                r.Status == PayoutRequestStatus.Open))
+        ];
+
+        return new MerchantAccountView(
+            businesses,
+            [.. moderators.Select(m => new ModeratorLine(m.Name, emails.GetValueOrDefault(m.UserId, ""), m.Permissions, m.Archived))],
+            [.. saved.Select(a => new PayoutAccountLine(a.Method, a.Number, a.Name, a.IsInUse(main)))],
+            payouts,
+            [.. requests.OrderByDescending(r => r.Asked)]);
     }
 
     public Task<Result<long>> AddAsync(NewMerchant spec, CancellationToken cancellationToken = default)

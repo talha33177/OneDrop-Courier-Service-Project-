@@ -10,8 +10,8 @@ namespace Web.Payments;
 /// Where the payment gateway sends the payer back (<c>/pay/{transaction}/success|fail|cancel</c>) and posts its own
 /// notice (<c>/pay/notice</c>), on the courier's own host. Open to anyone and without an antiforgery token, because the
 /// gateway's site posts here and the merchant's sign-in does not travel with that post; that is safe because nothing
-/// posted is believed: the handler asks the gateway itself. The payer then lands on their payments page, which reads
-/// the answer.
+/// posted is believed: the handler asks the gateway itself. A merchant then lands on its payments page, a recipient on
+/// the parcel's pay page, and the page reads the answer.
 /// </summary>
 [AllowAnonymous]
 [IgnoreAntiforgeryToken]
@@ -29,9 +29,14 @@ public class PaymentReturnController(OnlinePaymentsHandler payments, ITenantCont
         }
 
         var sent = await SentAsync(cancellationToken);
-        var number = await payments.ReturnedAsync(transactionId, outcome, sent("val_id"), cancellationToken);
+        var returned = await payments.ReturnedAsync(transactionId, outcome, sent("val_id"), cancellationToken);
 
-        return number is null ? NotFound() : Redirect($"/Merchant/Payments?payment={Uri.EscapeDataString(number)}");
+        return returned switch
+        {
+            null => NotFound(),
+            { TrackingCode: { } code } => Redirect($"/Track/Pay/{Uri.EscapeDataString(code)}?payment={Uri.EscapeDataString(returned.Number)}"),
+            _ => Redirect($"/Merchant/Payments?payment={Uri.EscapeDataString(returned.Number)}")
+        };
     }
 
     [HttpPost("notice")]

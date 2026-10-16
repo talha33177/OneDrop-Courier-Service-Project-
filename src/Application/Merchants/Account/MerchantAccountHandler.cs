@@ -32,7 +32,12 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
             join area in db.Areas on point.AreaId equals area.Id
             where !point.Archived
             orderby point.IsDefault descending, point.Name
-            select new PickupPointView(point.Id, point.Name, point.Address, area.Name, area.Id, point.ContactPhone, point.IsDefault))
+            select new
+            {
+                View = new PickupPointView(point.Id, point.Name, point.Address, area.Name, area.Id, point.ContactPhone, point.IsDefault),
+                point.Latitude,
+                point.Longitude
+            })
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
@@ -42,7 +47,7 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
             merchant.PayoutMethod,
             merchant.PayoutAccount,
             merchant.PayoutAccountName,
-            points);
+            [.. points.Select(p => p.View with { Pin = GeoPoint.From(p.Latitude, p.Longitude).Value })]);
     }
 
     public async Task<Result> EditProfileAsync(MerchantProfile profile, CancellationToken cancellationToken = default)
@@ -60,6 +65,8 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
         string? name,
         string? address,
         string? phone,
+        decimal? latitude = null,
+        decimal? longitude = null,
         CancellationToken cancellationToken = default)
     {
         var merchantId = currentUser.MerchantId ?? throw new InvalidOperationException("A merchant has pickup points.");
@@ -68,10 +75,16 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
             return Error.Validation("pickupPoint.area", "Choose the pickup point's area.");
         }
 
+        var pin = GeoPoint.From(latitude, longitude);
+        if (pin.IsFailure)
+        {
+            return pin.Error!;
+        }
+
         if (id is null)
         {
             var hasDefault = await db.PickupPoints.AnyAsync(p => p.IsDefault && !p.Archived, cancellationToken);
-            var created = PickupPoint.Create(merchantId, areaId, name, address, phone, isDefault: !hasDefault);
+            var created = PickupPoint.Create(merchantId, areaId, name, address, phone, isDefault: !hasDefault, pin.Value);
             if (created.IsFailure)
             {
                 return created.Error!;
@@ -111,7 +124,7 @@ public class MerchantAccountHandler(IAppDbContext db, ICurrentUser currentUser)
             empty.ForEach(pickup => pickup.Cancel());
         }
 
-        return await SaveAsync(point.Change(areaId, name, address, phone), cancellationToken);
+        return await SaveAsync(point.Change(areaId, name, address, phone, pin.Value), cancellationToken);
     }
 
     public async Task<Result> MakeDefaultAsync(long id, CancellationToken cancellationToken = default)

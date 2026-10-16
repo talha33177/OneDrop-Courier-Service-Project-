@@ -130,7 +130,8 @@ internal sealed class DemoActivity(
         foreach (var (parcel, stage) in parcels.Where(p => p.Stage != Stage.Pending))
         {
             var pickedUpOn = stage == Stage.PickedUp ? today : today.AddDays(-2);
-            parcel.PickUp(pickedUpOn);
+            var van = riders.FirstOrDefault(r => r.HubId == parcel.PickupHubId && r.Vehicle.CollectsPickups());
+            parcel.PickUp(pickedUpOn, van?.Id);
             if (stage == Stage.PickedUp)
             {
                 continue;
@@ -156,7 +157,7 @@ internal sealed class DemoActivity(
         var runs = new Dictionary<long, DeliveryRun>();
         foreach (var hubId in toRiders.Select(p => p.Parcel.DeliveryHubId).Distinct())
         {
-            var rider = riders.First(r => r.HubId == hubId);
+            var rider = riders.First(r => r.HubId == hubId && !r.Vehicle.CollectsPickups());
             var run = DeliveryRun.Open(rider, today);
             db.DeliveryRuns.Add(run);
             runs[hubId] = run;
@@ -228,11 +229,11 @@ internal sealed class DemoActivity(
         db.PickupRequests.Add(PickupRequest.Schedule(merchants[0].Id, first.Id, areaZones[first.AreaId].HubId, today));
         var second = points.Single(p => p.MerchantId == merchants[1].Id);
         var collect = PickupRequest.Schedule(merchants[1].Id, second.Id, areaZones[second.AreaId].HubId, today);
-        var collector = riders.FirstOrDefault(r => r.HubId == collect.HubId);
+        var collector = riders.FirstOrDefault(r => r.HubId == collect.HubId && r.Vehicle.CollectsPickups());
         if (collector is not null)
         {
             var fleet = new Fleet(await db.VehicleCapacities.ToListAsync(cancellationToken));
-            collect.Assign(collector, fleet, Load.Of([]));
+            collect.Assign(collector, fleet, Load.Of([]), Load.Of([]));
         }
 
         db.PickupRequests.Add(collect);

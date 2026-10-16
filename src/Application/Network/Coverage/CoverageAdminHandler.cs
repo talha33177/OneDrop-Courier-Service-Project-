@@ -382,13 +382,14 @@ public class CoverageAdminHandler(IAppDbContext db)
     }
 
     /// <summary>
-    /// Why the hub cannot close yet: its zones would route parcels to a hub that is shut, its riders would sign in to
-    /// no work, and the parcels standing on its shelves would have nowhere to be scanned.
+    /// Why the hub cannot close yet: its zones would route parcels to a hub that is shut, its riders and staff would sign
+    /// in to no work, and the parcels standing on its shelves would have nowhere to be scanned.
     /// </summary>
     private async Task<Error?> HubBusyAsync(Hub hub, CancellationToken cancellationToken)
     {
         var zones = await db.Zones.CountAsync(z => z.HubId == hub.Id && !z.Archived, cancellationToken);
         var riders = await db.Riders.CountAsync(r => r.HubId == hub.Id && !r.Archived, cancellationToken);
+        var staff = await db.StaffMembers.CountAsync(s => s.HubId == hub.Id, cancellationToken);
         var parcels = await db.Parcels.CountAsync(
             p => !ParcelStatuses.Final.Contains(p.Status) &&
                 (p.CurrentHubId == hub.Id || p.TransferToHubId == hub.Id || (p.Status == ParcelStatus.Pending && p.PickupHubId == hub.Id)),
@@ -396,7 +397,7 @@ public class CoverageAdminHandler(IAppDbContext db)
         var pickups = await db.PickupRequests.CountAsync(
             r => r.HubId == hub.Id && (r.Status == PickupStatus.Scheduled || r.Status == PickupStatus.Assigned),
             cancellationToken);
-        if (zones + riders + parcels + pickups == 0)
+        if (zones + riders + staff + parcels + pickups == 0)
         {
             return null;
         }
@@ -412,6 +413,11 @@ public class CoverageAdminHandler(IAppDbContext db)
             open.Add($"{riders} rider{(riders == 1 ? "" : "s")} working from it");
         }
 
+        if (staff > 0)
+        {
+            open.Add($"{staff} staff login{(staff == 1 ? "" : "s")} working there");
+        }
+
         if (parcels > 0)
         {
             open.Add($"{parcels} parcel{(parcels == 1 ? "" : "s")} there or on the way to it");
@@ -425,7 +431,7 @@ public class CoverageAdminHandler(IAppDbContext db)
         return Error.Conflict(
             "hub.busy",
             $"{hub.Name} cannot close yet: {string.Join(", ", open)}. Move its zones to another hub, move or stop its " +
-            "riders, and clear its shelves first.");
+            "riders, move its staff to another hub, and clear its shelves first.");
     }
 
     /// <summary>

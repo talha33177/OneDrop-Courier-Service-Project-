@@ -1,15 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Application.Parcels.Quote;
-using Domain.Pricing;
 using Web.Authentication;
 
 namespace Web.Api.V1;
 
 /// <summary>
 /// GET /api/v1/charge: what a parcel would cost the merchant before it is booked, for a checkout's shipping line or the
-/// merchant's own system. The same route and rate a booking gets now, at the speed (regular or express) and for the
-/// contents (general, liquid, fragile, freshFood or frozen) asked for, with what the route offers of each.
+/// merchant's own system. The same route and rate a booking gets now, at the speed and for the contents asked for (codes
+/// from the courier's delivery types; left out, its defaults), with what the route offers of each.
 /// </summary>
 [ApiController]
 [Route("api/v1/charge")]
@@ -27,8 +26,8 @@ public class ChargeController : ControllerBase
         [FromQuery] decimal codAmount,
         [FromServices] QuoteHandler handler,
         CancellationToken cancellationToken,
-        [FromQuery] DeliverySpeed speed = DeliverySpeed.Regular,
-        [FromQuery] ProductType productType = ProductType.General)
+        [FromQuery] string? speed = null,
+        [FromQuery] string? productType = null)
     {
         var result = await handler.QuoteAsync(areaId, area, pickupPointId, weightKg, codAmount, speed, productType, cancellationToken);
 

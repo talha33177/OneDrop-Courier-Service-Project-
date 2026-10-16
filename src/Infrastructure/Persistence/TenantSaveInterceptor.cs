@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Application.Abstractions;
 using Domain.Common;
+using Domain.Parcels;
 
 namespace Infrastructure.Persistence;
 
@@ -10,7 +11,7 @@ namespace Infrastructure.Persistence;
 /// Isolation layer 2. Before every save:
 /// - new tenant-owned rows are stamped with the current tenant (a row that already names another tenant is refused);
 /// - changes and deletes of another tenant's rows are refused, as is changing a row's TenantId;
-/// - Created, UpdatedOn and UpdatedId are stamped.
+/// - Created, UpdatedOn and UpdatedId are stamped, and a parcel's MovedOn when its status or place changed.
 /// A refused write throws: it is a bug, never a business outcome.
 /// </summary>
 public class TenantSaveInterceptor(ITenantContext tenantContext, ICurrentUser currentUser, TimeProvider time)
@@ -67,7 +68,19 @@ public class TenantSaveInterceptor(ITenantContext tenantContext, ICurrentUser cu
                     break;
             }
         }
+
+        // A parcel has moved when its status or its place changed; a note in its history leaves the time as it was
+        foreach (var entry in context.ChangeTracker.Entries<Parcel>())
+        {
+            if (entry.State == EntityState.Added || (entry.State == EntityState.Modified && MovedProperties.Any(p => entry.Property(p).IsModified)))
+            {
+                entry.Property(nameof(Parcel.MovedOn)).CurrentValue = now;
+            }
+        }
     }
+
+    private static readonly string[] MovedProperties =
+        [nameof(Parcel.Status), nameof(Parcel.CurrentHubId), nameof(Parcel.TransferToHubId), nameof(Parcel.RiderId)];
 
     private void GuardTenant(EntityEntry<ITenantOwned> entry)
     {

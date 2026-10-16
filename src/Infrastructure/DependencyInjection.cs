@@ -120,6 +120,10 @@ public static class DependencyInjection
     /// <summary>Identity stores and options. The web host adds the cookie scheme on top.</summary>
     public static IdentityBuilder AddAppIdentity(this IServiceCollection services)
     {
+        // A stopped moderator or staff member, or one whose role changed, is caught within a minute rather than Identity's
+        // default thirty
+        services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.FromMinutes(1));
+
         return services
             .AddIdentity<AppUser, AppRole>(options =>
             {

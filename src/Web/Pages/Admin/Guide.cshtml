@@ -6,14 +6,15 @@
     [
         ("globe", "Coverage", "Open the hubs, give each the zones it serves, and list the areas merchants can send to. A zone's city decides the rate.", "/Admin/Coverage", "Open coverage"),
         ("tag", "Delivery rates", "What merchants pay inside the city, in the suburbs and outside, by weight, and the cash on delivery charge.", "/Admin/Rates", "Set rates"),
+        ("zap", "Delivery types", "The speeds merchants choose from (regular, express) and the kinds of contents they declare (fragile, frozen), each with what it adds where it is offered.", "/Admin/DeliveryTypes", "Set delivery types"),
         ("truck", "Vehicles", "How much a bicycle, a motorbike or a van carries, so no rider is handed more than they can take.", "/Admin/Vehicles", "Check vehicles"),
-        ("bike", "Riders", "Each rider works from one hub with a vehicle, and signs in to the rider app on their phone.", "/Admin/Riders", "Add riders"),
+        ("bike", "Riders", "Each rider works from one hub with a vehicle, and signs in to the rider app on their phone. Every hub needs a rider on a pickup van: nothing else collects from merchants.", "/Admin/Riders", "Add riders"),
         ("store", "Merchants", "Shops sign up on the website and wait for your approval, or you add them yourself, active at once.", "/Admin/Merchants", "Open merchants")
     ];
     (string Title, string Who, string Text, string Link, string Action)[] day =
     [
         ("Booked", "The merchant", "Books a parcel on its panel, by spreadsheet or through the API. Its charge is fixed by today's rates.", "/Hub/Parcels?tab=Pending", "Parcels not collected yet"),
-        ("Picked up", "The hub, then a rider", "Every parcel booked before the day's cut-off goes on that day's pickup list by itself; later ones go the next day. The pickup hub gives each pickup a rider (or one rider the whole round), who collects the parcels and brings them in.", "/Hub/Choose?next=Pickups", "Today's pickups"),
+        ("Picked up", "The hub, then a rider", "Every parcel booked goes on that day's pickup list by itself, and the van takes whatever is waiting when it reaches the merchant; it visits each pickup point once a day, so what is booked after it has been goes the next day. The pickup hub gives the round to its pickup van (the only vehicle that goes to a merchant), which collects as much as it holds and brings it in.", "/Hub/Choose?next=Pickups", "Today's pickups"),
         ("Scanned in", "Hub staff", "Every parcel that reaches a hub is scanned in (Receive). The scan says what to do with it next.", "/Hub/Choose?next=Scan", "Scan parcels"),
         ("Sent to the delivery hub", "Hub staff", "A parcel another hub delivers is scanned out (Send) and scanned in again there. Skipped when the same hub delivers it.", "/Hub/Choose?next=Scan", "Scan parcels"),
         ("Given to a rider", "Hub staff", "Parcels waiting at the delivery hub are handed to riders for the day. Print the run sheet for the rider to carry.", "/Hub/Choose?next=Assign", "Assign to riders"),

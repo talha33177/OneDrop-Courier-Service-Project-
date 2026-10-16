@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Html;
 using Application.Payments.MerchantPayments;
+using Application.Pricing.DeliveryOptions;
 using Domain.Common;
 using Domain.Delivery;
 using Domain.Merchants;
@@ -64,35 +65,23 @@ public static class Statuses
     }
 
     /// <summary>
-    /// The tags a parcel carries in lists, labels and the rider's app: express, and how to handle what is inside.
-    /// Nothing for a regular parcel of general goods.
+    /// The tags a parcel carries in lists, labels and the rider's app: its speed and what is inside, each unless it is
+    /// the courier's default. Nothing for a regular parcel of general goods.
     /// </summary>
-    public static IHtmlContent Tags(DeliverySpeed speed, ProductType product)
+    public static IHtmlContent Tags(DeliveryTags tags)
     {
-        var tags = new List<string>();
-        if (speed == DeliverySpeed.Express)
+        var html = new List<string>();
+        if (tags.Speed is not null)
         {
-            tags.Add(Tag("express", "zap", "Express"));
+            html.Add(Tag("speed", tags.SpeedIcon, tags.Speed));
         }
 
-        if (product != ProductType.General)
+        if (tags.Contents is not null)
         {
-            tags.Add(Tag(product.ToString().ToLowerInvariant(), Icon(product), product.DisplayName()));
+            html.Add(Tag("contents", tags.ContentsIcon, tags.Contents));
         }
 
-        return new HtmlString(string.Concat(tags));
-    }
-
-    public static string Icon(ProductType product)
-    {
-        return product switch
-        {
-            ProductType.Liquid => "droplet",
-            ProductType.Fragile => "glass",
-            ProductType.FreshFood => "apple",
-            ProductType.Frozen => "snowflake",
-            _ => "package"
-        };
+        return new HtmlString(string.Concat(html));
     }
 
     /// <summary>The day a pickup collects, as merchants read it: "today", "tomorrow", "on Sat 11 Oct".</summary>
@@ -121,7 +110,7 @@ public static class Statuses
 
     private static string Tag(string kind, string icon, string text)
     {
-        return $"""<span class="tag tag-{kind}">{Icons.Get(icon)}{WebUtility.HtmlEncode(text)}</span>""";
+        return $"""<span class="tag tag-{kind}">{Icons.Named(icon)}{WebUtility.HtmlEncode(text)}</span>""";
     }
 
     public static IHtmlContent Badge(ParcelRequestStatus status)
@@ -183,6 +172,7 @@ public static class Statuses
             OnlinePaymentStatus.Failed => Pill("cancel", "Not paid"),
             OnlinePaymentStatus.Review => Pill("hold", "Being checked"),
             OnlinePaymentStatus.Refunded => Pill("return", "Refunded"),
+            OnlinePaymentStatus.RefundDue => Pill("return", "Refund due"),
             _ => Pill("pending", "Waiting")
         };
     }

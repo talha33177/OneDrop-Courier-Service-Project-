@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Application.Common;
 using Application.Merchants.Moderators;
+using Application.Platform.Staff;
 using Web.Authentication;
 
 namespace Web.Display;
@@ -72,6 +73,7 @@ public static class Menu
         [
             new("/Hub", "Hub operations", "warehouse", "/Hub/Index", "/Hub/Choose", "/Hub/Scan", "/Hub/Assign", "/Hub/Runs", "/Hub/RunSheet", "/Hub/Pickups", "/Hub/Returns", "/Hub/Labels"),
             new("/Hub/Parcels", "Parcels", "package", "/Hub/Parcels", "/Hub/Parcel"),
+            new("/Admin/Stuck", "Stuck parcels", "clock", "/Admin/Stuck"),
             new("/Admin/Requests", "Requests", "message", "/Admin/Requests"),
             new("/Admin/Messages", "Failed messages", "x-circle", "/Admin/Messages")
         ]),
@@ -83,13 +85,16 @@ public static class Menu
         new("People",
         [
             new("/Admin/Merchants", "Merchants", "store", "/Admin/Merchants", "/Admin/Merchant", "/Admin/NewMerchant"),
-            new("/Admin/Riders", "Riders", "bike", "/Admin/Riders", "/Admin/Rider")
+            new("/Admin/Riders", "Riders", "bike", "/Admin/Riders", "/Admin/Rider"),
+            new("/Admin/Staff", "Staff", "users", "/Admin/Staff")
         ]),
         new("Setup",
         [
             new("/Admin/Coverage", "Coverage", "globe", "/Admin/Coverage"),
             new("/Admin/Rates", "Delivery rates", "tag", "/Admin/Rates"),
-            new("/Admin/Vehicles", "Vehicles", "truck", "/Admin/Vehicles")
+            new("/Admin/DeliveryTypes", "Delivery types", "zap", "/Admin/DeliveryTypes"),
+            new("/Admin/Vehicles", "Vehicles", "truck", "/Admin/Vehicles"),
+            new("/Admin/Settings", "Courier settings", "settings", "/Admin/Settings")
         ])
     ];
 
@@ -127,38 +132,51 @@ public static class Menu
 
     /// <summary>
     /// The menu of whoever is signed in. <paramref name="rights"/> is the merchant account's: a moderator is shown
-    /// only what their owner ticked, so the menu never offers a page that would be refused.
+    /// only what their owner ticked. <paramref name="staff"/> is the courier's staff member's: each is shown only the
+    /// pages their job opens. So the menu never offers a page that would be refused.
     /// </summary>
-    public static IReadOnlyList<MenuSection> For(ClaimsPrincipal user, MerchantRights? rights = null)
+    public static IReadOnlyList<MenuSection> For(ClaimsPrincipal user, MerchantRights? rights = null, StaffRights? staff = null)
     {
-        // An admin also works the hubs, so the admin's menu already holds them
-        var hubs = user.IsInRole(Roles.TenantAdmin) ? AdminMenu : user.IsInRole(Roles.HubStaff) ? HubMenu : [];
+        // A super admin also works the hubs, so the admin's menu already holds them
+        var hubs = user.IsInRole(Roles.TenantAdmin) ? AdminMenu : user.IsInRole(Roles.HubStaff) ? Staffed(staff) : [];
+        var merchant = rights is null || rights.IsOwner
+            ? MerchantMenu
+            : Allowed(MerchantMenu, page => MerchantPages.Needs.TryGetValue(page, out var needed) && rights.May(needed));
 
         return
         [
-            .. user.IsInRole(Roles.Merchant) ? Allowed(MerchantMenu, rights) : [],
+            .. user.IsInRole(Roles.Merchant) ? merchant : [],
             .. hubs,
             .. user.IsInRole(Roles.Rider) ? RiderMenu : [],
             .. user.IsInRole(Roles.PlatformAdmin) ? PlatformMenu : []
         ];
     }
 
-    /// <summary>The merchant menu as this person may use it. The owner sees all of it.</summary>
-    private static IReadOnlyList<MenuSection> Allowed(IReadOnlyList<MenuSection> menu, MerchantRights? rights)
+    /// <summary>
+    /// A staff member's menu: head office works from the admin's menu, a hub's own staff from the hub's, with their
+    /// hub's people when they manage them; either way only the pages their permissions open.
+    /// </summary>
+    private static IReadOnlyList<MenuSection> Staffed(StaffRights? staff)
     {
-        if (rights is null || rights.IsOwner)
+        if (staff is null)
         {
-            return menu;
+            return [];
         }
 
+        IReadOnlyList<MenuSection> menu = staff.AtHeadOffice
+            ? AdminMenu
+            : [.. HubMenu, new("Your hub", [new("/Admin/Staff", "Hub staff", "users", "/Admin/Staff")])];
+
+        return Allowed(menu, page => StaffPages.MayOpen(staff, page));
+    }
+
+    /// <summary>The menu with only the items whose page <paramref name="opens"/>; a section left empty goes.</summary>
+    private static IReadOnlyList<MenuSection> Allowed(IReadOnlyList<MenuSection> menu, Func<string, bool> opens)
+    {
         return
         [
             .. menu
-                .Select(section => section with
-                {
-                    Items = [.. section.Items.Where(item =>
-                        MerchantPages.Needs.TryGetValue(item.Pages[0], out var needed) && rights.May(needed))]
-                })
+                .Select(section => section with { Items = [.. section.Items.Where(item => opens(item.Pages[0]))] })
                 .Where(section => section.Items.Count > 0)
         ];
     }
@@ -178,9 +196,13 @@ public static class Menu
     /// The person's favourites in the order they were added: from their cookie, or the places a newcomer to their role
     /// goes most until they choose. Anything no longer in their menu is dropped.
     /// </summary>
-    public static IReadOnlyList<MenuItem> Favourites(ClaimsPrincipal user, IRequestCookieCollection cookies, MerchantRights? rights = null)
+    public static IReadOnlyList<MenuItem> Favourites(
+        ClaimsPrincipal user,
+        IRequestCookieCollection cookies,
+        MerchantRights? rights = null,
+        StaffRights? staff = null)
     {
-        var items = For(user, rights).SelectMany(section => section.Items).DistinctBy(item => item.Href).ToDictionary(item => item.Href);
+        var items = For(user, rights, staff).SelectMany(section => section.Items).DistinctBy(item => item.Href).ToDictionary(item => item.Href);
         var chosen = cookies.TryGetValue(CookieName(user), out var saved)
             ? Uri.UnescapeDataString(saved).Split(',', StringSplitOptions.RemoveEmptyEntries)
             : Defaults(user);
@@ -203,6 +225,6 @@ public static class Menu
 
         return user.IsInRole(Roles.TenantAdmin)
             ? ["/Admin", "/Hub/Parcels", "/Hub", "/Admin/Merchants", "/Admin/Payouts"]
-            : ["/Hub", "/Hub/Scan", "/Hub/Assign", "/Hub/Runs"];
+            : ["/Hub", "/Hub/Scan", "/Hub/Assign", "/Hub/Runs", "/Admin", "/Hub/Parcels", "/Admin/Payouts", "/Admin/Merchants"];
     }
 }

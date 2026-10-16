@@ -9,6 +9,7 @@ using Domain.Parcels;
 using Domain.Payments;
 using Domain.Platform;
 using Domain.Pricing;
+using Domain.Staff;
 
 namespace Application.Abstractions;
 
@@ -28,6 +29,8 @@ public interface IAppDbContext
 
     DbSet<DeliveryRate> DeliveryRates { get; }
 
+    DbSet<DeliveryOption> DeliveryOptions { get; }
+
     DbSet<Merchant> Merchants { get; }
 
     DbSet<MerchantApiKey> MerchantApiKeys { get; }
@@ -35,6 +38,8 @@ public interface IAppDbContext
     DbSet<MerchantPicture> MerchantPictures { get; }
 
     DbSet<Moderator> Moderators { get; }
+
+    DbSet<StaffMember> StaffMembers { get; }
 
     DbSet<MerchantPayoutAccount> MerchantPayoutAccounts { get; }
 

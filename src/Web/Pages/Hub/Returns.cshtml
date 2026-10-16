@@ -12,7 +12,7 @@
         <p>Returning parcels this hub collected, by the pickup point they go back to. Send them with a rider on a return list, or hand them over at the counter in the scan page's hand-back mode.</p>
     </div>
     <div class="page-actions">
-        @await Html.PartialAsync("_HubSwitch", (Model.Work, Model.Hub))
+        @await Html.PartialAsync("_HubSwitch", Model)
         <a class="btn btn-outline" asp-page="/Hub/Scan" asp-route-hub="@Model.Hub?.Code" asp-route-mode="HandBack">@Icons.Get("scan") Hand back at the counter</a>
     </div>
 </div>
@@ -96,7 +96,7 @@
                         <option value="">Choose a rider</option>
                         @foreach (var rider in data.Riders)
                         {
-                            <option value="@rider.Id">@rider.Name (@Money.Phone(rider.Phone))</option>
+                            <option value="@rider.Id">@rider.Name · @rider.Vehicle.DisplayName().ToLowerInvariant()</option>
                         }
                     </select>
                     <button class="btn btn-primary" type="submit">@Icons.Get("send") Send with the rider</button>

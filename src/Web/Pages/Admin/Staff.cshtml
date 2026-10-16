@@ -1,0 +1,247 @@
+@page
+@using Application.Platform.Staff
+@using Domain.Staff
+@model Web.Pages.Admin.StaffModel
+@{
+    ViewData["Title"] = Model.Me.AtHeadOffice ? "Staff" : "Hub staff";
+    var me = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+}
+
+@* The options of a job picker: each carries where it is worked and the permissions it starts with, so the page can
+   show the hub picker and tick the job's own boxes as soon as a job is chosen *@
+@functions {
+    private async Task JobOptions(string? selected, bool superAdmin)
+    {
+        if (Model.Me.IsSuperAdmin)
+        {
+            <option value="@StaffHandler.SuperAdmin" data-preset="@((int)StaffPermissions.All)" selected="@superAdmin">Super admin: everything</option>
+        }
+        foreach (var group in Model.Jobs.GroupBy(job => job.AtHub()))
+        {
+            <optgroup label="@(group.Key ? "At one hub" : "Head office")">
+                @foreach (var job in group)
+                {
+                    <option value="@job" data-hub="@(job.AtHub() ? "1" : "")" data-preset="@((int)job.Preset())" selected="@(!superAdmin && job.ToString() == selected)">@job.DisplayName()</option>
+                }
+            </optgroup>
+        }
+    }
+
+    private void Ticks(StaffPermissions ticked)
+    {
+        <div class="tick-list" data-ticks style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr))">
+            @foreach (var permission in Model.Ticks)
+            {
+                <label class="check">
+                    <input type="checkbox" name="Extra" value="@permission" data-bit="@((int)permission)" checked="@((ticked & permission) == permission)" />
+                    <span>@permission.DisplayName()</span>
+                </label>
+            }
+        </div>
+    }
+
+    private async Task HubPicker(long? selected)
+    {
+        <select name="HubId" aria-label="Hub" data-hub-field required style="max-width:220px">
+            @if (Model.Me.AtHeadOffice)
+            {
+                <option value="">Choose the hub</option>
+            }
+            @foreach (var hub in Model.Hubs)
+            {
+                <option value="@hub.Id" selected="@(hub.Id == selected)">@hub.Name (@hub.Code)</option>
+            }
+        </select>
+    }
+}
+
+<div class="page-head">
+    <div>
+        <h1>@ViewData["Title"]</h1>
+        @if (Model.Me.AtHeadOffice)
+        {
+            <p>The courier's own people with a sign-in. Each has a job at one hub or at head office, and may be given more on top of it. Riders are added on <a asp-page="/Admin/Riders">Riders</a>, and merchants add their own people.</p>
+        }
+        else
+        {
+            <p>The people who work at @Model.Me.HubName. You can add them to this hub's desks and give them what you may do yourself.</p>
+        }
+    </div>
+</div>
+
+<partial name="_Alerts" />
+@if (Model.FirstPassword is not null)
+{
+    <div class="alert alert-success" role="status">
+        @Icons.Get("key")
+        <div>
+            <strong>Their first password.</strong> Give it to @(Model.PasswordFor ?? "them") now: it will not be shown again.
+            They sign in at <code>/Account/Login</code> and can change it on their account page.
+            <p class="mt" style="margin-bottom:0"><code style="font-size:16px;letter-spacing:1px">@Model.FirstPassword</code></p>
+        </div>
+    </div>
+}
+@if (Model.Problem is not null && Model.Edit is null)
+{
+    <div class="alert alert-error" role="alert">@Icons.Get("alert")<div>@Model.Problem</div></div>
+}
+
+<div class="grid grid-side">
+    <div class="card">
+        <div class="card-head"><h2>@Icons.Get("users") People</h2></div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Name</th><th>Job</th><th>Where</th><th>Added</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var person in Model.People)
+                    {
+                        var isMe = me == person.UserId.ToString();
+                        var manages = !isMe && StaffHandler.MayManage(Model.Me, person);
+                        var extra = StaffJobs.Each.Where(p => (person.Extra & p) == p).Select(p => p.DisplayName()).ToList();
+                        <tr style="@(person.Stopped ? "opacity:.55" : "")">
+                            <td>
+                                <div class="cell-main">@person.Name @if (isMe) { <span class="badge">You</span> } @if (person.Stopped) { <span class="badge badge-cancel">Stopped</span> }</div>
+                                <div class="cell-sub">@person.Email</div>
+                            </td>
+                            <td>
+                                <div class="cell-main">@person.JobName</div>
+                                @if (extra.Count > 0)
+                                {
+                                    <div class="cell-sub">Also: @string.Join(", ", extra).ToLowerInvariant()</div>
+                                }
+                            </td>
+                            <td class="nowrap">@person.Where</td>
+                            <td class="nowrap">@person.Created.ToString("d MMM yyyy")</td>
+                            <td class="text-right nowrap">
+                                @if (manages)
+                                {
+                                    <a class="btn btn-ghost btn-sm" asp-route-edit="@person.UserId">Edit</a>
+                                    <form method="post" asp-page-handler="Reset" asp-route-id="@person.UserId" class="inline-form">
+                                        <button class="btn btn-ghost btn-sm" type="submit" data-confirm="Their current password stops working, and a new one is shown here once to hand over." data-confirm-title="New password for @person.Name?" data-confirm-ok="Give a new password" data-confirm-tone="calm">New password</button>
+                                    </form>
+                                    @if (person.Stopped)
+                                    {
+                                        <form method="post" asp-page-handler="LetBackIn" asp-route-id="@person.UserId" class="inline-form">
+                                            <button class="btn btn-ghost btn-sm" type="submit">Let back in</button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <form method="post" asp-page-handler="Stop" asp-route-id="@person.UserId" class="inline-form">
+                                            <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@person.Name is signed out and cannot sign in until let back in. What they did stays in the parcels' history." data-confirm-title="Stop @person.Name?" data-confirm-ok="Stop" data-confirm-tone="danger">Stop</button>
+                                        </form>
+                                    }
+                                }
+                                else if (isMe)
+                                {
+                                    <a class="btn btn-ghost btn-sm" href="/Account/Password">Change my password</a>
+                                }
+                            </td>
+                        </tr>
+                        @if (Model.Edit == person.UserId && manages)
+                        {
+                            <tr>
+                                <td colspan="5" style="background:var(--brand-tint)">
+                                    <form method="post" asp-page-handler="Change" asp-route-id="@person.UserId" data-staff-form>
+                                        @if (Model.Problem is not null)
+                                        {
+                                            <div class="alert alert-error mb" role="alert">@Icons.Get("alert")<div>@Model.Problem</div></div>
+                                        }
+                                        <div class="gap">
+                                            <input type="text" name="Name" value="@person.Name" maxlength="@StaffHandler.MaxNameLength" required style="max-width:220px" aria-label="Name" />
+                                            <select name="Job" aria-label="Job" data-job style="max-width:220px">@{ await JobOptions(person.Job?.ToString(), person.IsSuperAdmin); }</select>
+                                            @{ await HubPicker(person.HubId); }
+                                        </div>
+                                        <div class="mt">@{ Ticks(person.Permissions); }</div>
+                                        <div class="gap mt">
+                                            <button class="btn btn-primary btn-sm" type="submit">Save</button>
+                                            <a class="btn btn-ghost btn-sm" asp-page="/Admin/Staff">Cancel</a>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="align-self:start">
+        <div class="card mb">
+            <div class="card-head"><h2>@Icons.Get("plus") Add someone</h2></div>
+            <div class="card-body">
+                <form method="post" asp-page-handler="Add" data-staff-form>
+                    <div class="field"><label for="Name">Name</label><input type="text" id="Name" name="Name" value="@Model.Name" maxlength="@StaffHandler.MaxNameLength" required /></div>
+                    <div class="field"><label for="Email">Email to sign in with</label><input type="email" id="Email" name="Email" value="@Model.Email" required /></div>
+                    <div class="field">
+                        <label for="Job">Job</label>
+                        <select id="Job" name="Job" data-job required>
+                            <option value="">Choose their job</option>
+                            @{ await JobOptions(Model.Job, Model.Job == StaffHandler.SuperAdmin); }
+                        </select>
+                    </div>
+                    <div class="field" data-hub-row>
+                        <label>Hub</label>
+                        @{ await HubPicker(Model.HubId); }
+                    </div>
+                    <div class="field">
+                        <label>What they may do</label>
+                        <p class="hint" style="margin-top:0">The job's own boxes are ticked for it. Tick more when they cover another desk.</p>
+                        @{ Ticks(Model.Extra.Aggregate(StaffPermissions.None, (all, one) => all | one)); }
+                    </div>
+                    <button class="btn btn-primary btn-block" type="submit">Add and show their password</button>
+                    <p class="hint mt">A first password is made for them and shown once. Nobody gives what they may not do themselves, nobody stops themselves, and the last super admin stays one.</p>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>@Icons.Get("help") The jobs</h2></div>
+            <div class="card-body">
+                <ul style="list-style:none;padding:0;margin:0">
+                    @foreach (var job in Model.Jobs)
+                    {
+                        <li class="mb"><strong>@job.DisplayName()</strong> <span class="muted">· @(job.AtHub() ? "one hub" : "head office")</span><div class="hint">@job.What()</div></li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // A job ticks its own boxes (they come with it whatever is posted) and shows the hub picker only for a job at one
+        // hub. Changing the job clears the old job's boxes; only what was ticked by hand on top of it stays.
+        document.querySelectorAll("[data-staff-form]").forEach(form => {
+            const job = form.querySelector("[data-job]");
+            const hub = form.querySelector("[data-hub-field]");
+            // A job at one hub cannot be saved without its hub: the browser says so before anything is sent
+            hub.addEventListener("invalid", () => hub.setCustomValidity(hub.value ? "" : "Choose the hub they work at."));
+            hub.addEventListener("change", () => hub.setCustomValidity(""));
+            let previous = 0;
+            const follow = () => {
+                const option = job.selectedOptions[0];
+                const preset = Number(option?.dataset.preset || 0);
+                const atHub = option?.dataset.hub === "1";
+                hub.disabled = !atHub;
+                hub.closest("[data-hub-row]")?.toggleAttribute("hidden", !atHub);
+                hub.hidden = !atHub && !hub.closest("[data-hub-row]");
+                form.querySelectorAll("[data-bit]").forEach(box => {
+                    const bit = Number(box.dataset.bit);
+                    const own = (preset & bit) !== 0;
+                    if (own) {
+                        box.checked = true;
+                    } else if ((previous & bit) !== 0) {
+                        box.checked = false;
+                    }
+                    box.disabled = own;
+                });
+                previous = preset;
+            };
+            job.addEventListener("change", follow);
+            follow();
+        });
+    </script>
+}

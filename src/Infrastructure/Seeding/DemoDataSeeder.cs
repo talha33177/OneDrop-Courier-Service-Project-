@@ -4,8 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Application.Abstractions;
 using Application.Common;
+using Domain.Common;
 using Domain.Delivery;
 using Domain.Merchants;
+using Domain.Staff;
 using Infrastructure.Identity;
 using Infrastructure.MultiTenancy;
 using Infrastructure.Persistence;
@@ -31,10 +33,11 @@ public class DemoDataSeeder(
         new(
             "onedrop",
             [
-                new("fashion", "Fashion House", "Nusrat Jahan", "Mirpur 10", "House 7, Road 2, Mirpur 10", "01711000001", PayoutMethod.Bkash, MerchantStatus.Active, "od_odfashion001_DevOnlyKeyDoNotUseInProduction01"),
-                new("gadget", "Gadget BD", "Tanvir Ahmed", "Dhanmondi", "Shop 12, Road 27, Dhanmondi", "01711000002", PayoutMethod.Bank, MerchantStatus.Active, "od_odgadget0001_DevOnlyKeyDoNotUseInProduction02"),
-                new("beauty", "Beauty Shop", "Sharmin Akter", "Uttara Sector 7", "House 30, Road 14, Uttara Sector 7", "01711000003", PayoutMethod.Nagad, MerchantStatus.Active, "od_odbeauty0001_DevOnlyKeyDoNotUseInProduction03"),
-                new("crafts", "Chattogram Crafts", "Imran Hossain", "Agrabad", "CDA Avenue, Agrabad", "01711000004", PayoutMethod.Bkash, MerchantStatus.Active, "od_odctgcraft01_DevOnlyKeyDoNotUseInProduction04"),
+                // The doors are pinned, as a merchant pins them, so the rider's round has a route to follow
+                new("fashion", "Fashion House", "Nusrat Jahan", "Mirpur 10", "House 7, Road 2, Mirpur 10", "01711000001", PayoutMethod.Bkash, MerchantStatus.Active, "od_odfashion001_DevOnlyKeyDoNotUseInProduction01", "23.806964,90.368393"),
+                new("gadget", "Gadget BD", "Tanvir Ahmed", "Dhanmondi", "Shop 12, Road 27, Dhanmondi", "01711000002", PayoutMethod.Bank, MerchantStatus.Active, "od_odgadget0001_DevOnlyKeyDoNotUseInProduction02", "23.746466,90.376015"),
+                new("beauty", "Beauty Shop", "Sharmin Akter", "Uttara Sector 7", "House 30, Road 14, Uttara Sector 7", "01711000003", PayoutMethod.Nagad, MerchantStatus.Active, "od_odbeauty0001_DevOnlyKeyDoNotUseInProduction03", "23.874281,90.379845"),
+                new("crafts", "Chattogram Crafts", "Imran Hossain", "Agrabad", "CDA Avenue, Agrabad", "01711000004", PayoutMethod.Bkash, MerchantStatus.Active, "od_odctgcraft01_DevOnlyKeyDoNotUseInProduction04", "22.327564,91.805061"),
                 new("organic", "Organic Bazar", "Farzana Islam", "Mohammadpur", "Ring Road, Mohammadpur", "01711000005", null, MerchantStatus.Pending, null)
             ],
             [
@@ -43,7 +46,18 @@ public class DemoDataSeeder(
                 new("rider3", "Kamal Uddin", "GUL", "01722000003", Vehicle.Motorbike),
                 new("rider4", "Jamal Chowdhury", "CTG", "01722000004", Vehicle.Motorbike),
                 new("rider5", "Nasir Uddin", "DHN", "01722000005", Vehicle.Van),
-                new("rider6", "Habib Rahman", "UTT", "01722000006", Vehicle.Bicycle)
+                new("rider6", "Habib Rahman", "UTT", "01722000006", Vehicle.Bicycle),
+                // Every hub the demo collects from needs a pickup van: nothing else goes to a merchant's door
+                new("van", "Shahin Mollah", "MIR", "01722000007", Vehicle.Van),
+                new("van2", "Babul Akter", "GUL", "01722000008", Vehicle.Van),
+                new("van3", "Delwar Hossain", "CTG", "01722000009", Vehicle.Van),
+                new("van4", "Monir Sheikh", "UTT", "01722000010", Vehicle.Van)
+            ],
+            [
+                new("hub", "Hub staff", StaffJob.Relief, null),
+                new("mirpur", "Karim Mia", StaffJob.HubManager, "MIR"),
+                new("receiving", "Rahim Uddin", StaffJob.Receiving, "MIR"),
+                new("accounts", "Salma Begum", StaffJob.Accounts, null)
             ]),
         new(
             "rival",
@@ -51,7 +65,11 @@ public class DemoDataSeeder(
                 new("shop", "Rival Shop", "Rival Owner", "Rival Town", "Main Road, Rival Town", "01799000001", PayoutMethod.Bkash, MerchantStatus.Active, "od_rivalshop001_DevOnlyKeyDoNotUseInProduction09")
             ],
             [
-                new("rider", "Rival Rider", "RVL", "01799000002", Vehicle.Motorbike)
+                new("rider", "Rival Rider", "RVL", "01799000002", Vehicle.Motorbike),
+                new("van", "Rival Van", "RVL", "01799000003", Vehicle.Van)
+            ],
+            [
+                new("hub", "Hub staff", StaffJob.Relief, null)
             ])
     ];
 
@@ -75,7 +93,12 @@ public class DemoDataSeeder(
             scope.ServiceProvider.GetRequiredService<TenantContext>().Set(tenant);
 
             await EnsureUserAsync(scope, $"admin@{demo.Slug}.test", $"{tenant.Name} admin", Roles.TenantAdmin, password, tenant.Id, null);
-            await EnsureUserAsync(scope, $"hub@{demo.Slug}.test", "Hub staff", Roles.HubStaff, password, tenant.Id, null);
+            foreach (var person in demo.Staff)
+            {
+                var userId = await EnsureUserAsync(
+                    scope, $"{person.Key}@{demo.Slug}.test", person.Name, Roles.HubStaff, password, tenant.Id, null);
+                await EnsureStaffAsync(scope, userId, person, cancellationToken);
+            }
 
             foreach (var merchant in demo.Merchants)
             {
@@ -130,7 +153,8 @@ public class DemoDataSeeder(
         db.Merchants.Add(merchant);
         await db.SaveChangesAsync(cancellationToken);
 
-        db.PickupPoints.Add(PickupPoint.Create(merchant.Id, area.Id, "Shop", demo.Address, demo.Phone, isDefault: true).Value);
+        db.PickupPoints.Add(
+            PickupPoint.Create(merchant.Id, area.Id, "Shop", demo.Address, demo.Phone, isDefault: true, GeoPoint.Find(demo.Pin)).Value);
         if (demo.ApiKey is not null)
         {
             db.MerchantApiKeys.Add(MerchantApiKey.FromPlaintext(merchant.Id, "Demo website", demo.ApiKey).Value);
@@ -201,7 +225,27 @@ public class DemoDataSeeder(
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private sealed record DemoTenant(string Slug, DemoMerchant[] Merchants, DemoRider[] Riders);
+    /// <summary>A staff login with its job, at head office or at a hub, when missing.</summary>
+    private async Task EnsureStaffAsync(AsyncServiceScope scope, long userId, DemoStaff demo, CancellationToken cancellationToken)
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (await db.StaffMembers.AnyAsync(staff => staff.UserId == userId, cancellationToken))
+        {
+            return;
+        }
+
+        var hub = demo.Hub is null ? null : await db.Hubs.FirstOrDefaultAsync(h => h.Code == demo.Hub, cancellationToken);
+        if (demo.Hub is not null && hub is null)
+        {
+            logger.LogWarning("Demo staff {Name} skipped: hub {Hub} does not exist", demo.Name, demo.Hub);
+            return;
+        }
+
+        db.StaffMembers.Add(StaffMember.Add(userId, hub?.Id, demo.Job, StaffPermissions.None).Value);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private sealed record DemoTenant(string Slug, DemoMerchant[] Merchants, DemoRider[] Riders, DemoStaff[] Staff);
 
     private sealed record DemoMerchant(
         string Key,
@@ -212,7 +256,10 @@ public class DemoDataSeeder(
         string Phone,
         PayoutMethod? Payout,
         MerchantStatus Status,
-        string? ApiKey);
+        string? ApiKey,
+        string? Pin = null);
 
     private sealed record DemoRider(string Key, string Name, string Hub, string Phone, Vehicle Vehicle);
+
+    private sealed record DemoStaff(string Key, string Name, StaffJob Job, string? Hub);
 }

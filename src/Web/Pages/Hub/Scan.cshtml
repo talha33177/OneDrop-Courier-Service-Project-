@@ -9,6 +9,8 @@
         (ScanMode.Dispatch, "Send to another hub", "send", "A parcel leaves for the hub that delivers it, or a return for the hub that collected it."),
         (ScanMode.HandBack, "Hand back to merchant", "return", "A returning parcel goes back to its merchant here.")
     ];
+    // Only the modes this person's desk works; the page model already moved them off any other
+    modes = [.. modes.Where(m => Model.Rights.May(ScanModel.Needs(m.Mode)))];
     var current = modes.Single(m => m.Mode == Model.Mode);
 }
 
@@ -19,7 +21,7 @@
     </div>
     <div class="page-actions">
         <button type="button" class="btn btn-ghost btn-sm" data-sound hidden>@Icons.Get("bell") <span>Sound on</span></button>
-        @await Html.PartialAsync("_HubSwitch", (Model.Work, Model.Hub))
+        @await Html.PartialAsync("_HubSwitch", Model)
     </div>
 </div>
 

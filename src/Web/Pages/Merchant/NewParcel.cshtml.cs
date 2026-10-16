@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.AspNetCore.WebUtilities;
 using Application.Abstractions;
 using Application.Common;
 using Application.Merchants.Account;
@@ -8,7 +7,6 @@ using Application.Merchants.Admin;
 using Application.Network.ListAreas;
 using Application.Parcels.CreateParcel;
 using Application.Parcels.Quote;
-using Domain.Common;
 using Domain.Pricing;
 using Web.Display;
 
@@ -67,21 +65,19 @@ public class NewParcelModel(
     }
 
     /// <summary>
-    /// The live quote beside the form, as JSON, with what express and each kind of contents add on the route (null
-    /// where it is not offered). A speed or contents the route does not take is quoted as regular general goods, with
-    /// the reason, so the form can say why.
+    /// The live quote beside the form, as JSON, with what each speed and kind of contents adds on the route and how
+    /// soon each speed delivers (missing where it is not offered). A speed or contents the route does not take is
+    /// quoted at the courier's defaults, with the reason, so the form can say why.
     /// </summary>
     public async Task<IActionResult> OnGetQuoteAsync(
         long? areaId,
         long? pickupPointId,
         decimal weightKg,
         decimal codAmount,
-        DeliverySpeed speed,
-        ProductType productType,
+        string? speed,
+        string? productType,
         CancellationToken cancellationToken)
     {
-        speed = speed == default ? DeliverySpeed.Regular : speed;
-        productType = productType == default ? ProductType.General : productType;
         var quote = await quotes.QuoteAsync(areaId, null, pickupPointId, weightKg, codAmount, speed, productType, cancellationToken);
         string? problem = null;
         if (quote.Error?.Code is "parcel.speed" or "parcel.productType")
@@ -108,10 +104,12 @@ public class NewParcelModel(
             when = q.DeliveryDays is { } days ? Statuses.AfterPickup(days) : null,
             q.SpeedCharge,
             q.ProductCharge,
-            productName = q.ProductType.DisplayName(),
-            express = q.ExpressCharge,
-            expressWhen = q.ExpressDays is { } expressDays ? Statuses.AfterPickup(expressDays) : null,
-            products = q.Products.ToDictionary(p => p.ProductType.ToString(), p => p.Charge),
+            q.SpeedName,
+            productName = q.ProductName,
+            speeds = q.Speeds.ToDictionary(
+                o => o.Code,
+                o => new { extra = o.Charge, when = o.DeliveryDays is { } d ? Statuses.AfterPickup(d) : null }),
+            products = q.Contents.ToDictionary(o => o.Code, o => o.Charge),
             problem
         });
     }
@@ -123,33 +121,7 @@ public class NewParcelModel(
     /// </summary>
     public async Task<IActionResult> OnGetPinAsync(string? link, CancellationToken cancellationToken)
     {
-        var text = link?.Trim() ?? "";
-        var full = GeoPoint.Find(text) is null ? await mapLinks.ExpandAsync(text, cancellationToken) ?? text : text;
-        if (GeoPoint.Find(full) is { } pin)
-        {
-            return new JsonResult(new { pin.Latitude, pin.Longitude });
-        }
-
-        var place = Uri.TryCreate(full, UriKind.Absolute, out var uri) && uri.Host.Contains("google.", StringComparison.OrdinalIgnoreCase)
-            ? QueryHelpers.ParseQuery(uri.Query).GetValueOrDefault("q").FirstOrDefault() ?? PlaceName(uri.AbsolutePath)
-            : null;
-
-        return new JsonResult(new
-        {
-            query = place,
-            problem = place is null
-                ? "That has no location in it. Paste a Google Maps link to the place, or its coordinates, such as 23.8103, 90.4125."
-                : null
-        });
-    }
-
-    /// <summary>The place's name in a link such as /maps/place/Bashundhara+City/…, or null.</summary>
-    private static string? PlaceName(string path)
-    {
-        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var at = Array.IndexOf(parts, "place");
-
-        return at >= 0 && at + 1 < parts.Length ? Uri.UnescapeDataString(parts[at + 1]).Replace('+', ' ') : null;
+        return new JsonResult(await PastedPin.ReadAsync(mapLinks, link, cancellationToken));
     }
 
     private async Task LoadAsync(CancellationToken cancellationToken)

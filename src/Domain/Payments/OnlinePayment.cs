@@ -1,4 +1,5 @@
 using Domain.Common;
+using Domain.Parcels;
 
 namespace Domain.Payments;
 
@@ -20,8 +21,25 @@ public enum OnlinePaymentStatus : byte
     /// </summary>
     Review = 4,
 
-    /// <summary>Held for review, then refunded by the courier through the gateway instead of credited.</summary>
-    Refunded = 5
+    /// <summary>
+    /// The money went back to the payer through the gateway: a held payment the courier refunded instead of crediting,
+    /// or a recipient's payment for a parcel that never reached them.
+    /// </summary>
+    Refunded = 5,
+
+    /// <summary>
+    /// A recipient's payment that must go back to them: the parcel was cancelled or returned, was paid at the door first,
+    /// or the payment arrived for a parcel that could no longer take it. The check job asks the gateway to refund it.
+    /// </summary>
+    RefundDue = 6
+}
+
+/// <summary>What the gateway said of a refund: made, still being made (it gave a reference to ask about), or refused.</summary>
+public enum RefundState
+{
+    Done,
+    Processing,
+    Refused
 }
 
 /// <summary>The smallest and largest payment the gateway takes.</summary>
@@ -44,12 +62,20 @@ public sealed record GatewayReceipt(
     string? RiskNote = null);
 
 /// <summary>
-/// A merchant paying the courier what it owes, online through the payment gateway, with its number (PAY-100001). The
-/// amount is the balance owed when it was started. The gateway knows it by <see cref="TransactionId"/>, a random value,
-/// so a payment can neither be guessed nor mistaken for another database's. Once the gateway confirms the money, the
-/// payment writes one credit on the merchant's balance (an adjustment line, so payouts, statements and reports already
-/// count it) and never a second: money the gateway confirms is credited exactly once, whenever and however often the
-/// confirmation arrives, even after the payment page said it failed.
+/// Money taken online through the payment gateway, with its number (PAY-100001), for one of two things:
+/// <list type="bullet">
+/// <item>A merchant paying the courier what it owes (no <see cref="ParcelId"/>). The amount is the balance owed when it
+/// was started. Once the gateway confirms the money, the payment writes one credit on the merchant's balance (an
+/// adjustment line, so payouts, statements and reports already count it) and never a second: money the gateway
+/// confirms is credited exactly once, whenever and however often the confirmation arrives, even after the payment page
+/// said it failed.</item>
+/// <item>A recipient paying a parcel's cash on delivery before it reaches the door (<see cref="ParcelId"/>). It writes no
+/// line of its own: the parcel takes it (<c>Parcel.TakeOnlinePayment</c>), the rider collects nothing, and the
+/// parcel's own lines pay the merchant when it is delivered. When the parcel cannot take it, or never reaches the
+/// recipient, the payment is refunded through the gateway.</item>
+/// </list>
+/// The gateway knows it by <see cref="TransactionId"/>, a random value, so a payment can neither be guessed nor mistaken
+/// for another database's.
 /// </summary>
 public class OnlinePayment : TenantEntity, IMerchantOwned
 {
@@ -62,6 +88,23 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
     }
 
     public long MerchantId { get; private set; }
+
+    /// <summary>The parcel whose cash on delivery a recipient paid; null for a merchant paying what it owes.</summary>
+    public long? ParcelId { get; private set; }
+
+    public bool IsForParcel => ParcelId is not null;
+
+    /// <summary>The gateway's reference for the refund once asked for it; null before, or when it refused.</summary>
+    public string? RefundReference { get; private set; }
+
+    /// <summary>When the gateway was last asked to refund it, or about its refund.</summary>
+    public DateTime? RefundTriedOn { get; private set; }
+
+    /// <summary>The gateway refused to refund it: asked again later, while the courier sees why.</summary>
+    public bool RefundRefused => Status == OnlinePaymentStatus.RefundDue && RefundReference is null && RefundTriedOn is not null;
+
+    /// <summary>When the gateway said the money was back with the payer, or the courier recorded a refund it made by hand.</summary>
+    public DateTime? RefundedOn { get; private set; }
 
     /// <summary>PAY-100001, from the database sequence on insert.</summary>
     public string Number { get; private set; } = null!;
@@ -140,8 +183,44 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
     }
 
     /// <summary>
-    /// The gateway confirmed the payment. Credited at once when it is the amount asked for and the gateway saw no risk;
-    /// otherwise held for the courier to check. Recording a confirmation again changes nothing.
+    /// Starts a recipient paying <paramref name="parcel"/>'s cash on delivery: while the parcel may still be paid online,
+    /// and within what the gateway takes.
+    /// </summary>
+    public static Result<OnlinePayment> StartForParcel(Parcel parcel, string currency, PaymentLimits limits)
+    {
+        if (parcel.IsNew)
+        {
+            throw new InvalidOperationException("A parcel is paid for once it is booked.");
+        }
+
+        var payable = parcel.CanBePaidOnline();
+        if (payable.IsFailure)
+        {
+            return payable.Error!;
+        }
+
+        if (parcel.CodAmount < limits.Minimum || parcel.CodAmount > limits.Maximum)
+        {
+            return Error.Validation(
+                "payment.limits",
+                $"Online payments take ৳{limits.Minimum:N0} to ৳{limits.Maximum:N0}. Pay this parcel in cash to the rider.");
+        }
+
+        return new OnlinePayment
+        {
+            MerchantId = parcel.MerchantId,
+            ParcelId = parcel.Id,
+            TransactionId = Guid.NewGuid().ToString("N")[..TransactionIdLength],
+            Amount = parcel.CodAmount,
+            Currency = currency,
+            Status = OnlinePaymentStatus.Started
+        };
+    }
+
+    /// <summary>
+    /// The gateway confirmed the payment. When it is the amount asked for and the gateway saw no risk, a merchant's
+    /// payment is credited at once and a recipient's is paid, for its parcel to take; otherwise it is held for the
+    /// courier to check. Recording a confirmation again changes nothing.
     /// </summary>
     public void Confirm(GatewayReceipt receipt, DateOnly today, DateTime now)
     {
@@ -181,6 +260,54 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
         Credit(Amount, today);
     }
 
+    /// <summary>
+    /// A recipient's payment its parcel could not take (already paid at the door, cancelled, the amount changed) or a
+    /// parcel that will never reach the recipient: the money is owed back, and the check job asks the gateway for it.
+    /// </summary>
+    public void OweBack(string reason)
+    {
+        if (!IsForParcel)
+        {
+            throw new InvalidOperationException("A merchant's payment is credited, never owed back by the courier on its own.");
+        }
+
+        if (Status is not (OnlinePaymentStatus.Paid or OnlinePaymentStatus.Review))
+        {
+            return;
+        }
+
+        Status = OnlinePaymentStatus.RefundDue;
+        Note = Clip(reason, MaxNoteLength);
+    }
+
+    /// <summary>What the gateway answered when asked to refund, or about a refund it was making.</summary>
+    public void RefundAnswered(RefundState state, string? reference, string? reason, DateTime now)
+    {
+        if (Status != OnlinePaymentStatus.RefundDue)
+        {
+            return;
+        }
+
+        RefundTriedOn = now;
+        switch (state)
+        {
+            case RefundState.Done:
+                Status = OnlinePaymentStatus.Refunded;
+                RefundReference = Clip(reference, 80) ?? RefundReference;
+                RefundedOn = now;
+                Note = Clip($"Refunded to the payer through the gateway{(RefundReference is null ? "" : $" ({RefundReference})")}.", MaxNoteLength);
+                break;
+            case RefundState.Processing:
+                RefundReference = Clip(reference, 80) ?? RefundReference;
+                break;
+            default:
+                // Asked again on the next check; the courier sees why meanwhile
+                RefundReference = null;
+                Note = Clip($"The gateway refused the refund: {reason ?? "it gave no reason"}", MaxNoteLength);
+                break;
+        }
+    }
+
     /// <summary>The payment page said it failed or was cancelled. Only a payment still waiting is marked; a confirmed one stays.</summary>
     public void Fail(string? reason)
     {
@@ -212,12 +339,15 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
         return Result.Success();
     }
 
-    /// <summary>The courier refunded a payment held for review through the gateway, instead of crediting it.</summary>
-    public Result Refund(string? note)
+    /// <summary>
+    /// The courier refunded a payment held for review, or one owed back that the gateway would not refund, through the
+    /// gateway's own panel, and records it here.
+    /// </summary>
+    public Result Refund(string? note, DateTime now)
     {
-        if (Status != OnlinePaymentStatus.Review)
+        if (Status is not (OnlinePaymentStatus.Review or OnlinePaymentStatus.RefundDue))
         {
-            return Error.Conflict("payment.notInReview", $"{Number} is not waiting for a check.");
+            return Error.Conflict("payment.notInReview", $"{Number} is not waiting for a check or a refund.");
         }
 
         var why = note?.Trim();
@@ -227,6 +357,7 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
         }
 
         Status = OnlinePaymentStatus.Refunded;
+        RefundedOn = now;
         Note = why;
 
         return Result.Success();
@@ -261,6 +392,14 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
 
     private void Credit(decimal amount, DateOnly today)
     {
+        if (IsForParcel)
+        {
+            // The parcel takes a recipient's payment and its own lines pay the merchant; nothing is credited here
+            Status = OnlinePaymentStatus.Paid;
+
+            return;
+        }
+
         var line = LedgerEntry.Adjust(MerchantId, amount, $"Paid online{(Method is null ? "" : $" by {MethodName(Method)}")}, {Number}", today);
         if (line.IsFailure)
         {

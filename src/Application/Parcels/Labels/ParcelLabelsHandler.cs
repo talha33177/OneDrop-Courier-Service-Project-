@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
+using Application.Pricing.DeliveryOptions;
 using Domain.Parcels;
 using Domain.Pricing;
 
@@ -23,8 +24,7 @@ public sealed record ParcelLabel(
     int WeightGrams,
     string? ItemDescription,
     string? Note,
-    DeliverySpeed Speed,
-    ProductType ProductType);
+    DeliveryTags Tags);
 
 /// <summary>
 /// Labels to print and stick on parcels: the ones named, or every parcel still waiting for pickup, newest first. A
@@ -63,8 +63,13 @@ public class ParcelLabelsHandler(IAppDbContext db)
                 parcel.WeightGrams,
                 parcel.ItemDescription,
                 parcel.Note,
-                parcel.Speed,
-                parcel.ProductType))
+                new DeliveryTags(
+                    parcel.Speed!.IsDefault ? null : parcel.Speed.Name,
+                    parcel.Speed.Icon,
+                    parcel.ProductType!.IsDefault ? null : parcel.ProductType.Name,
+                    parcel.ProductType.Icon,
+                    parcel.ProductType.Handling,
+                    parcel.Speed.GoesFirst || parcel.ProductType.GoesFirst)))
             .Take(MaxLabels)
             .AsNoTracking()
             .ToListAsync(cancellationToken);

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Delivery.Pickups;
 using Application.Parcels.Browse;
 using Domain.Delivery;
 using Domain.Merchants;
@@ -60,10 +61,10 @@ public sealed record MerchantDashboard(
     IReadOnlyList<DayCount> Week,
     IReadOnlyList<ParcelRow> Recent)
 {
-    /// <summary>Parcels waiting for pickup that go with today's pickup: booked before today's cut-off.</summary>
+    /// <summary>Parcels waiting for pickup that go with today's pickup: the van has not been to their pickup point yet.</summary>
     public int PickupToday { get; init; }
 
-    /// <summary>Parcels booked after today's cut-off, which go with the next day's pickup.</summary>
+    /// <summary>Parcels waiting at a point the van has already been to today, which go with the next day's pickup.</summary>
     public int PickupLater { get; init; }
 
     /// <summary>The courier has collected from the merchant, or the merchant has dropped a parcel at a hub, at least once.</summary>
@@ -105,7 +106,10 @@ public sealed record TopMerchant(string Name, int Parcels, int Delivered);
 /// <summary>What the courier has set up, in the order it is set up: a parcel needs all of it to travel.</summary>
 public sealed record CourierSetup(int Hubs, int Areas, int Rates, int Riders, int ActiveMerchants)
 {
-    public bool Done => Hubs > 0 && Areas > 0 && Rates > 0 && Riders > 0 && ActiveMerchants > 0;
+    /// <summary>Riders on a pickup van: without one nobody collects from a merchant, so no parcel ever starts.</summary>
+    public int PickupVans { get; init; }
+
+    public bool Done => Hubs > 0 && Areas > 0 && Rates > 0 && Riders > 0 && PickupVans > 0 && ActiveMerchants > 0;
 }
 
 public sealed record AdminDashboard(
@@ -174,8 +178,9 @@ public class DashboardHandler(
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0;
         var stages = await StagesAsync(cancellationToken);
         var recent = await parcels.ListAsync(new ParcelQuery { PageSize = 8 }, cancellationToken);
-        var cutoff = tenant.PickupCutoffUtc(today);
-        var pickupToday = await db.Parcels.CountAsync(p => p.Status == ParcelStatus.Pending && p.Created < cutoff, cancellationToken);
+        var now = time.GetUtcNow().UtcDateTime;
+        var visited = db.PickupRequests.MadeToday(tenant, now).Select(r => r.PickupPointId);
+        var pickupLater = await db.Parcels.CountAsync(p => p.Status == ParcelStatus.Pending && visited.Contains(p.PickupPointId), cancellationToken);
         var todayStart = tenant.StartUtc(today);
         var yesterdayStart = tenant.StartUtc(today.AddDays(-1));
         var booked = new BookedCounts(
@@ -201,8 +206,8 @@ public class DashboardHandler(
             await WeekAsync(tenant, today, cancellationToken),
             recent.Page.Items)
         {
-            PickupToday = pickupToday,
-            PickupLater = stages.Counts.Pending - pickupToday,
+            PickupToday = stages.Counts.Pending - pickupLater,
+            PickupLater = pickupLater,
             HandedOver = handedOver,
             Late = await LateAsync(today, cancellationToken),
             Cod = stages.Cod,
@@ -250,7 +255,8 @@ public class DashboardHandler(
                 db.Parcels.Count(p => p.CurrentHubId == h.Id),
                 db.Parcels.Count(p => p.CurrentHubId == h.Id && p.DeliveryHubId == h.Id &&
                     (p.Status == ParcelStatus.AtHub || p.Status == ParcelStatus.OnHold)),
-                db.Parcels.Count(p => p.TransferToHubId == h.Id),
+                db.Parcels.Count(p => p.TransferToHubId == h.Id ||
+                    (p.Status == ParcelStatus.PickedUp && p.PickupHubId == h.Id)),
                 (from a in db.DeliveryAttempts
                     join run in db.DeliveryRuns on a.RunId equals run.Id
                     where run.HubId == h.Id && a.Outcome == null
@@ -304,6 +310,9 @@ public class DashboardHandler(
                 await db.DeliveryRates.CountAsync(cancellationToken),
                 await db.Riders.CountAsync(r => !r.Archived, cancellationToken),
                 await db.Merchants.CountAsync(m => m.Status == MerchantStatus.Active && !m.Archived, cancellationToken))
+            {
+                PickupVans = await db.Riders.CountAsync(r => !r.Archived && r.Vehicle == Vehicle.Van, cancellationToken)
+            }
         };
     }
 

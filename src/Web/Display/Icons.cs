@@ -81,6 +81,19 @@ public static class Icons
         ["navigation"] = """<polygon points="3 11 22 2 13 21 11 13 3 11"/>"""
     };
 
+    /// <summary>The icons the admin picks from for a delivery speed or a kind of contents.</summary>
+    public static readonly string[] ForDeliveryOptions =
+    [
+        "truck", "zap", "clock", "calendar", "route", "motorbike", "bike", "navigation", "package", "droplet", "glass",
+        "apple", "snowflake", "file", "store", "shield", "lock", "cash", "tag", "flag", "star", "sparkle", "layers", "home"
+    ];
+
+    /// <summary>An icon whose name comes from data (an option the admin made), drawn as a package if the name is unknown.</summary>
+    public static IHtmlContent Named(string? name, string? css = null)
+    {
+        return Get(name is not null && Paths.ContainsKey(name) ? name : "package", css);
+    }
+
     public static IHtmlContent Get(string name, string? css = null)
     {
         var paths = Paths.TryGetValue(name, out var found)

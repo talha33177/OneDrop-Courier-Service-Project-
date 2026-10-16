@@ -6,6 +6,7 @@
 --          RowLevelSecurityTests fails otherwise.
 -- Author: Courier team
 -- Date: 2026-10-04
+--       2026-10-13 Pricing.DeliveryOption and Pricing.DeliveryOptionCharge
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE SECURITY POLICY [Platform].[TenantIsolation]
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[DeliveryAttempt],
@@ -29,6 +30,9 @@ CREATE SECURITY POLICY [Platform].[TenantIsolation]
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[VehicleCapacity],
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[VehicleCapacity] AFTER INSERT,
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[VehicleCapacity] AFTER UPDATE,
+    ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Identity].[StaffMember],
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Identity].[StaffMember] AFTER INSERT,
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Identity].[StaffMember] AFTER UPDATE,
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Identity].[User],
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Identity].[User] AFTER INSERT,
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Identity].[User] AFTER UPDATE,
@@ -85,5 +89,11 @@ CREATE SECURITY POLICY [Platform].[TenantIsolation]
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[PayoutRequest] AFTER UPDATE,
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryRate],
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryRate] AFTER INSERT,
-    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryRate] AFTER UPDATE
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryRate] AFTER UPDATE,
+    ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryOption],
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryOption] AFTER INSERT,
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryOption] AFTER UPDATE,
+    ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryOptionCharge],
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryOptionCharge] AFTER INSERT,
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Pricing].[DeliveryOptionCharge] AFTER UPDATE
 WITH (STATE = ON, SCHEMABINDING = ON);

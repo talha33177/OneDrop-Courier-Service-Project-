@@ -9,12 +9,15 @@ using Domain.Merchants;
 namespace Web.Pages.Admin;
 
 /// <summary>
-/// One merchant for the admin: approve, suspend or reactivate, correct its profile and payout account, hold, release or
-/// pay its payouts now, and write adjustments on its balance.
+/// One merchant for the admin with its whole account: the businesses, moderators, saved payout accounts, payouts and
+/// requests; approve, suspend or reactivate, correct its profile and payout account, hold, release or pay its payouts
+/// now, and write adjustments on its balance.
 /// </summary>
 public class MerchantModel(AdminMerchantsHandler merchants, ParcelListHandler parcels, PayoutsJob job) : PageModel
 {
     public MerchantView Merchant { get; private set; } = null!;
+
+    public MerchantAccountView Account { get; private set; } = null!;
 
     public IReadOnlyList<ParcelRow> Recent { get; private set; } = [];
 
@@ -27,6 +30,7 @@ public class MerchantModel(AdminMerchantsHandler merchants, ParcelListHandler pa
         }
 
         Merchant = found.Value;
+        Account = (await merchants.AccountAsync(id, cancellationToken)).Value;
         Recent = (await parcels.ListAsync(new ParcelQuery { MerchantId = id, PageSize = 10 }, cancellationToken)).Page.Items;
 
         return Page();

@@ -8,6 +8,9 @@
 --       2026-10-05 RiderReturnTime
 --       2026-10-06 MaxBusinessesPerAccount
 --       2026-10-09 PickupCutoff, PickupTime
+--       2026-10-12 StuckAfterDays
+--       2026-10-13 PickupCutoff dropped (Scripts/Pre/005_DropPickupCutoff.sql): the truck takes what is booked until
+--                  it reaches each pickup point, so there is no cut-off
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Platform].[Tenant] (
     [Id]                        BIGINT         IDENTITY (1, 1) NOT NULL,
@@ -23,11 +26,11 @@ CREATE TABLE [Platform].[Tenant] (
     [RiderReturnTime]           TIME (0)       NULL,
     -- Businesses a merchant account may add besides its main profile; NULL for no limit
     [MaxBusinessesPerAccount]   INT            NULL,
-    -- The day's pickup cut-off (the tenant's clock): parcels booked before it are collected that day, later ones the
-    -- next day; NULL for none (collected the day they are booked)
-    [PickupCutoff]              TIME (0)       NULL,
-    -- When the day's pickup leaves the hub, as told to merchants; NULL for not said
+    -- When the day's pickup truck leaves the hub (the tenant's clock), as told to merchants; NULL for not said
     [PickupTime]                TIME (0)       NULL,
+    -- Days a parcel may stay where it is (with a pickup rider, at a hub, between hubs, on hold past its day, going
+    -- back) before the admin is told it is stuck; NULL for not watched
+    [StuckAfterDays]            INT            NULL,
     [Archived]                  BIT            DEFAULT ((0)) NOT NULL,
     [UpdatedId]                 BIGINT         NULL,
     [UpdatedOn]                 DATETIME2 (7)  DEFAULT (getutcdate()) NOT NULL,
@@ -35,7 +38,8 @@ CREATE TABLE [Platform].[Tenant] (
     PRIMARY KEY CLUSTERED ([Id] ASC),
     CONSTRAINT [FK_Tenant_User] FOREIGN KEY ([UpdatedId]) REFERENCES [Identity].[User] ([Id]),
     CONSTRAINT [chk_Tenant_MaxDeliveryAttempts] CHECK ([MaxDeliveryAttempts] BETWEEN 1 AND 10),
-    CONSTRAINT [chk_Tenant_MaxBusinessesPerAccount] CHECK ([MaxBusinessesPerAccount] >= 1)
+    CONSTRAINT [chk_Tenant_MaxBusinessesPerAccount] CHECK ([MaxBusinessesPerAccount] >= 1),
+    CONSTRAINT [chk_Tenant_StuckAfterDays] CHECK ([StuckAfterDays] >= 1)
 );
 
 

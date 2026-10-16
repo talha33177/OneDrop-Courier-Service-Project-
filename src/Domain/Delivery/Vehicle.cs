@@ -16,6 +16,15 @@ public static class Vehicles
 {
     public static readonly Vehicle[] All = [Vehicle.Bicycle, Vehicle.Motorbike, Vehicle.Van];
 
+    /// <summary>
+    /// Whether a rider on the vehicle is sent to collect parcels from merchants. Only the pickup van is: bicycles and
+    /// motorbikes take parcels to recipients and never go to a merchant.
+    /// </summary>
+    public static bool CollectsPickups(this Vehicle vehicle)
+    {
+        return vehicle == Vehicle.Van;
+    }
+
     /// <summary>How the vehicle is written for people: "Bicycle", "Motorbike", "Pickup van".</summary>
     public static string DisplayName(this Vehicle vehicle)
     {

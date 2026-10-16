@@ -1,29 +1,23 @@
+@using Application.Delivery.Pickups
 @using Application.Network.ListAreas
 @using Application.Merchants.Admin
+@using Application.Pricing.DeliveryOptions
 @using Domain.Pricing
 @model (ParcelForm Form, IReadOnlyList<AreaItem> Areas, IReadOnlyList<PickupPointView> Points, bool Editing)
 @inject MapsOptions Maps
 @inject ITenantContext TenantContext
+@inject DeliveryOptionsHandler DeliveryOptions
+@inject PickupSchedule Pickups
 @* The booking form's fields; the summary on the right is filled in by the page's script from the quote *@
 @{
     var f = Model.Form;
     var tenant = TenantContext.Require();
-    var utcNow = DateTime.UtcNow;
-    var pickupDay = tenant.PickupDayFor(utcNow);
-    var today = tenant.Today(utcNow);
-    (DeliverySpeed Value, string Icon, string Hint)[] speeds =
-    [
-        (DeliverySpeed.Regular, "truck", "The usual delivery time"),
-        (DeliverySpeed.Express, "zap", "Sooner, and first on the rider's run")
-    ];
-    (ProductType Value, string Hint)[] products =
-    [
-        (ProductType.General, "Clothes, books, boxed goods"),
-        (ProductType.Liquid, "Bottles: sealed and kept upright"),
-        (ProductType.Fragile, "Glass, ceramics, screens"),
-        (ProductType.FreshFood, "Cakes, fruit, cooked food"),
-        (ProductType.Frozen, "Carried in a cold box")
-    ];
+    var visited = Model.Editing ? new HashSet<long>() : await Pickups.VisitedTodayAsync();
+    var firstPoint = Model.Points.FirstOrDefault(p => p.Id == f.PickupPointId) ?? Model.Points.FirstOrDefault(p => p.IsDefault) ?? Model.Points.FirstOrDefault();
+    var options = await DeliveryOptions.ListAsync();
+    var speeds = options.Where(o => o.Kind == DeliveryOptionKind.Speed).ToList();
+    var products = options.Where(o => o.Kind == DeliveryOptionKind.Contents).ToList();
+    bool Chosen(OptionRow option, string? code) => string.IsNullOrEmpty(code) ? option.IsDefault : option.Code == code;
 }
 <div class="grid grid-side">
     <div class="stack">
@@ -66,7 +60,7 @@
                     }
                 </div>
 
-                <div class="pin-box mt" data-pin data-pin-url="@Url.Page("/Merchant/NewParcel", "Pin")" data-maps="@(Maps.Configured ? "on" : null)">
+                <div class="pin-box mt" data-pin data-pin-url="@Url.Page("/Merchant/NewParcel", "Pin")" data-maps="@(Maps.Configured ? "on" : null)" data-pin-area="Input.AreaId" data-pin-address="Input.RecipientAddress">
                     <input type="hidden" id="Input_RecipientLatitude" name="Input.RecipientLatitude" value="@f.RecipientLatitude?.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)" data-pin-lat />
                     <input type="hidden" id="Input_RecipientLongitude" name="Input.RecipientLongitude" value="@f.RecipientLongitude?.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)" data-pin-lng />
                     <div class="pin-head">
@@ -128,11 +122,11 @@
                         <div class="option-cards">
                             @foreach (var speed in speeds)
                             {
-                                <label class="option-card" data-option="@speed.Value">
-                                    <input type="radio" name="Input.Speed" value="@speed.Value" checked="@(f.Speed == speed.Value)" />
+                                <label class="option-card" data-option="@speed.Code" data-kind="speed">
+                                    <input type="radio" name="Input.Speed" value="@speed.Code" checked="@Chosen(speed, f.Speed)" />
                                     <span class="option-card-body">
-                                        <span class="option-card-title">@Icons.Get(speed.Icon) @speed.Value.DisplayName()</span>
-                                        <small data-option-hint>@speed.Hint</small>
+                                        <span class="option-card-title">@Icons.Named(speed.Icon) @speed.Name</span>
+                                        <small data-option-hint>@speed.Description</small>
                                         <span class="option-card-price" data-option-price></span>
                                     </span>
                                 </label>
@@ -145,11 +139,11 @@
                         <div class="option-cards option-cards-wide">
                             @foreach (var product in products)
                             {
-                                <label class="option-card" data-option="@product.Value">
-                                    <input type="radio" name="Input.ProductType" value="@product.Value" checked="@(f.ProductType == product.Value)" />
+                                <label class="option-card" data-option="@product.Code" data-kind="contents">
+                                    <input type="radio" name="Input.ProductType" value="@product.Code" checked="@Chosen(product, f.ProductType)" />
                                     <span class="option-card-body">
-                                        <span class="option-card-title">@Icons.Get(Statuses.Icon(product.Value)) @product.Value.DisplayName()</span>
-                                        <small data-option-hint>@product.Hint</small>
+                                        <span class="option-card-title">@Icons.Named(product.Icon) @product.Name</span>
+                                        <small data-option-hint>@product.Description</small>
                                         <span class="option-card-price" data-option-price></span>
                                     </span>
                                 </label>
@@ -182,7 +176,7 @@
                 <div class="money-list">
                     <div><span class="muted">Service</span><span data-q="area">Choose an area</span></div>
                     <div><span class="muted">Delivery charge</span><span data-q="delivery">—</span></div>
-                    <div data-q-row="speed" hidden><span class="muted">incl. express</span><span data-q="speed"></span></div>
+                    <div data-q-row="speed" hidden><span class="muted" data-q="speedName">incl. speed</span><span data-q="speed"></span></div>
                     <div data-q-row="product" hidden><span class="muted" data-q="productName">incl. care</span><span data-q="product"></span></div>
                     <div><span class="muted">COD charge</span><span data-q="cod">—</span></div>
                     <div class="total"><span>You pay</span><span data-q="total">—</span></div>
@@ -192,15 +186,13 @@
                 <p class="hint">Charges are taken from the cash we collect. A returned parcel costs the delivery charge plus <span data-q="return">the return charge</span>.</p>
                 @if (!Model.Editing)
                 {
-                    <p class="pickup-note">
+                    <p class="pickup-note" data-pickup-note data-visited="@string.Join(',', visited)" data-point="@firstPoint?.Id">
                         @Icons.Get("truck")
-                        <span>
-                            Goes @Statuses.PickupWith(pickupDay, today, tenant.PickupTime).
-                            @if (tenant.PickupCutoff is { } cutoff)
-                            {
-                                @(pickupDay > today ? $"Today's pickup closed at {Statuses.Clock(cutoff)}." : $"Book before {Statuses.Clock(cutoff)} to go today.")
-                            }
+                        <span data-pickup-today>
+                            Goes with today's pickup@(tenant.PickupTime is { } leaves ? $" (the truck leaves the hub at {Statuses.Clock(leaves)})" : "").
+                            The truck takes every parcel booked until it reaches you.
                         </span>
+                        <span data-pickup-next hidden>The truck has already been to this pickup point today. Goes with tomorrow's pickup.</span>
                     </p>
                 }
                 <div class="form-actions" style="flex-direction:column;align-items:stretch">
@@ -234,8 +226,8 @@
             weightKg: form.querySelector("[name='Input.WeightKg']").value || "0.5",
             codAmount: form.querySelector("[name='Input.CodAmount']").value || "0",
             pickupPointId: form.querySelector("[name='Input.PickupPointId']")?.value ?? "",
-            speed: form.querySelector("[name='Input.Speed']:checked")?.value ?? "Regular",
-            productType: form.querySelector("[name='Input.ProductType']:checked")?.value ?? "General"
+            speed: form.querySelector("[name='Input.Speed']:checked")?.value ?? "",
+            productType: form.querySelector("[name='Input.ProductType']:checked")?.value ?? ""
         });
         const response = await fetch("@Url.Page("/Merchant/NewParcel")?" + params, { credentials: "same-origin" });
         if (!response.ok) {
@@ -257,6 +249,7 @@
         show("cod", taka(q.codCharge));
         show("total", taka(q.total));
         form.querySelector("[data-q-row=speed]").hidden = !q.speedCharge;
+        out("speedName").textContent = "incl. " + q.speedName.toLowerCase();
         out("speed").textContent = taka(q.speedCharge);
         form.querySelector("[data-q-row=product]").hidden = !q.productCharge;
         out("productName").textContent = "incl. " + q.productName.toLowerCase();
@@ -268,16 +261,28 @@
 
         // Each speed and kind of contents shows what it adds on this route, or that the route does not take it
         options.forEach(option => {
-            const value = option.dataset.option;
-            const extra = value === "Regular" ? 0 : value === "Express" ? q.express : q.products[value];
+            const offered = option.dataset.kind === "speed" ? q.speeds[option.dataset.option] : { extra: q.products[option.dataset.option] };
+            const extra = offered?.extra;
             const price = option.querySelector("[data-option-price]");
             option.classList.toggle("unavailable", extra === null || extra === undefined);
-            price.textContent = extra === null || extra === undefined ? "Not offered here" : extra === 0 ? "No extra" : "+" + taka(extra);
-            if (value === "Express" && q.express !== null && q.expressWhen) {
-                option.querySelector("[data-option-hint]").textContent = "Delivered " + q.expressWhen + ", first on the rider's run";
-            }
+            price.textContent = extra === null || extra === undefined ? "Not offered here"
+                : (extra === 0 ? "No extra" : "+" + taka(extra)) + (offered.when ? " · " + offered.when : "");
         });
     };
+    // The truck visits a pickup point once a day: once it has been to the chosen one, the parcel goes tomorrow
+    const note = form.querySelector("[data-pickup-note]");
+    if (note) {
+        const visited = (note.dataset.visited || "").split(",").filter(Boolean);
+        const point = form.querySelector("[name='Input.PickupPointId']");
+        const showDay = () => {
+            const gone = visited.includes(point?.value || note.dataset.point);
+            note.querySelector("[data-pickup-today]").hidden = gone;
+            note.querySelector("[data-pickup-next]").hidden = !gone;
+        };
+        point?.addEventListener("change", showDay);
+        showDay();
+    }
+
     // A full mobile number gets a link to its delivery record, before cash on delivery is sent to it
     const phone = form.querySelector("[name='Input.RecipientPhone']");
     const fraud = form.querySelector("[data-fraud-link]");

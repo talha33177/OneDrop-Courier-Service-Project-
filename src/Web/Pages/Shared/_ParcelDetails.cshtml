@@ -9,7 +9,7 @@
         <div class="card">
             <div class="card-head">
                 <div>
-                    <h2>@Statuses.Badge(Model.Status) @Statuses.Tags(Model.Speed, Model.ProductType) @if (Model.Location is not null) { <span class="muted" style="font-weight:500;font-size:13px">@Model.Location</span> }</h2>
+                    <h2>@Statuses.Badge(Model.Status) @Statuses.Tags(Model.Tags) @if (Model.Location is not null) { <span class="muted" style="font-weight:500;font-size:13px">@Model.Location</span> }</h2>
                 </div>
                 @{ var attemptNumber = Model.Attempts + (Model.Status == ParcelStatus.OutForDelivery ? 1 : 0); }
                 @if (attemptNumber > 0)
@@ -36,9 +36,9 @@
                     var tenant = TenantContext.Require();
                     <p class="hint">@Icons.Get("truck") Collected @Statuses.PickupWith(pickupOn, tenant.Today(DateTime.UtcNow), tenant.PickupTime).</p>
                 }
-                @if (DeliveryOptions.Handling(Model.ProductType) is { } handling && ParcelStatuses.InProgress.Contains(Model.Status))
+                @if (Model.Tags.Handling is { } handling && ParcelStatuses.InProgress.Contains(Model.Status))
                 {
-                    <p class="handling mt">@Icons.Get(Statuses.Icon(Model.ProductType)) @handling</p>
+                    <p class="handling mt">@Icons.Named(Model.Tags.ContentsIcon) @handling</p>
                 }
                 @if (Model.HoldReason is not null && Model.Status == ParcelStatus.OnHold)
                 {
@@ -147,7 +147,11 @@
             <div class="card-head"><h3>@Icons.Get("cash") Money</h3></div>
             <div class="card-body">
                 <div class="money-list">
-                    <div><span class="muted">Cash to collect</span><strong>@Money.Taka(Model.CodAmount)</strong></div>
+                    <div><span class="muted">Cash on delivery</span><strong>@Money.Taka(Model.CodAmount)</strong></div>
+                    @if (Model.PaidOnline is { } paidOnline)
+                    {
+                        <div class="sub"><span class="muted">paid online by the recipient</span><span class="positive">@Money.Taka(paidOnline)</span></div>
+                    }
                     @if (Model.CollectedAmount is { } collected)
                     {
                         <div><span class="muted">Collected</span><strong class="positive">@Money.Taka(collected)</strong></div>
@@ -155,11 +159,11 @@
                     <div><span class="muted">Delivery charge (@Model.ServiceArea.DisplayName())</span><span>@Money.Taka(Model.DeliveryCharge)</span></div>
                     @if (Model.SpeedCharge > 0)
                     {
-                        <div class="sub"><span class="muted">incl. express</span><span>@Money.Taka(Model.SpeedCharge)</span></div>
+                        <div class="sub"><span class="muted">incl. @Model.SpeedName.ToLowerInvariant()</span><span>@Money.Taka(Model.SpeedCharge)</span></div>
                     }
                     @if (Model.ProductCharge > 0)
                     {
-                        <div class="sub"><span class="muted">incl. @Model.ProductType.DisplayName().ToLowerInvariant()</span><span>@Money.Taka(Model.ProductCharge)</span></div>
+                        <div class="sub"><span class="muted">incl. @Model.ProductName.ToLowerInvariant()</span><span>@Money.Taka(Model.ProductCharge)</span></div>
                     }
                     <div><span class="muted">COD charge (@Model.CodChargePercent.ToString("0.##")%)</span><span>@Money.Taka(Model.CodCharge)</span></div>
                     @if (Model.Status is ParcelStatus.Returning or ParcelStatus.Returned)
