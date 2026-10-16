@@ -492,3 +492,214 @@
         });
     }
 })();
+
+// ---------- The area picker: division, then zone, then area (data-area-picker on the area's own select) ----------
+// The field reads the path taken (Dhaka > Mirpur > Mirpur 10), each step opens the next list, and the cross clears it
+(() => {
+    const selects = document.querySelectorAll("select[data-area-picker]");
+    if (selects.length === 0) {
+        return;
+    }
+
+    const el = (tag, className, text) => {
+        const node = document.createElement(tag);
+        if (className) {
+            node.className = className;
+        }
+
+        if (text !== undefined) {
+            node.textContent = text;
+        }
+
+        return node;
+    };
+
+    selects.forEach(select => {
+        const places = [...select.options].filter(option => option.value).map(option => ({
+            id: option.value, name: option.textContent.trim(), division: option.dataset.division, zone: option.dataset.zone
+        }));
+        let division = null;
+        let zone = null;
+        // While the list is being walked the field shows the steps so far, not the area chosen before
+        let browsing = false;
+
+        const root = el("div", "area-picker");
+        const trigger = el("div", "area-trigger");
+        trigger.tabIndex = 0;
+        trigger.setAttribute("role", "combobox");
+        trigger.setAttribute("aria-haspopup", "listbox");
+        const panel = el("div", "area-panel");
+        panel.hidden = true;
+        const heading = el("div", "area-heading");
+        const search = el("input", "area-search");
+        search.type = "search";
+        search.autocomplete = "off";
+        const list = el("div", "area-list");
+        panel.append(heading, search, list);
+        root.append(trigger, panel);
+        select.after(root);
+        select.classList.add("area-native");
+        select.tabIndex = -1;
+
+        const chosen = () => places.find(place => place.id === select.value);
+
+        const clear = () => {
+            division = null;
+            zone = null;
+            if (select.value) {
+                select.value = "";
+                select.dispatchEvent(new Event("input", { bubbles: true }));
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        };
+
+        function close() {
+            panel.hidden = true;
+            browsing = false;
+            root.classList.remove("open");
+            drawTrigger();
+        }
+
+        // Opens the list at the step given, or where the chosen area sits (its zone's areas)
+        const open = (atDivision, atZone) => {
+            const current = chosen();
+            if (atDivision !== undefined) {
+                division = atDivision;
+                zone = atZone;
+            } else if (current) {
+                division = current.division;
+                zone = current.zone;
+            }
+
+            browsing = true;
+            search.value = "";
+            panel.hidden = false;
+            root.classList.add("open");
+            draw();
+            search.focus();
+        };
+
+        // The steps taken so far; each is a button that goes back to that step
+        function drawTrigger() {
+            const current = browsing ? null : chosen();
+            const parts = current ? [current.division, current.zone, current.name] : [division, zone].filter(Boolean);
+            trigger.replaceChildren();
+            const path = el("span", "area-path");
+            if (parts.length === 0) {
+                path.append(el("span", "area-placeholder", "Choose the area"));
+            }
+
+            parts.forEach((part, index) => {
+                const step = el("button", "area-step", part);
+                step.type = "button";
+                step.addEventListener("click", event => {
+                    event.stopPropagation();
+                    open(parts[0], index === 0 ? null : parts[1]);
+                });
+                path.append(step);
+                if (index < parts.length - 1 || !current) {
+                    path.append(el("span", "area-sep", "›"));
+                }
+            });
+            trigger.append(path);
+            if (parts.length > 0) {
+                const cross = el("button", "area-clear", "×");
+                cross.type = "button";
+                cross.setAttribute("aria-label", "Clear the area");
+                cross.addEventListener("click", event => {
+                    event.stopPropagation();
+                    clear();
+                    open(null, null);
+                });
+                trigger.append(cross);
+            }
+
+            trigger.append(el("span", "area-caret"));
+        }
+
+        const pick = place => {
+            select.value = place.id;
+            select.dispatchEvent(new Event("input", { bubbles: true }));
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            close();
+        };
+
+        function draw() {
+            const query = search.value.trim().toLowerCase();
+            const scope = places.filter(place => (!division || place.division === division) && (!zone || place.zone === zone));
+            list.replaceChildren();
+            const row = (label, note, onPick, more) => {
+                const button = el("button", "area-item");
+                button.type = "button";
+                button.append(el("span", "area-item-name", label));
+                if (note) {
+                    button.append(el("small", "area-item-note", note));
+                }
+
+                if (more) {
+                    button.append(el("span", "area-more", "›"));
+                }
+
+                button.addEventListener("click", onPick);
+                list.append(button);
+            };
+
+            if (query) {
+                // Typing looks through every area under the step the picker is at
+                heading.textContent = "Matching areas";
+                scope.filter(place => place.name.toLowerCase().includes(query) || place.zone.toLowerCase().includes(query))
+                    .slice(0, 60)
+                    .forEach(place => row(place.name, place.division + " › " + place.zone, () => pick(place), false));
+            } else if (!division) {
+                heading.textContent = "Select division";
+                [...new Set(places.map(place => place.division))].forEach(name => {
+                    row(name, places.filter(place => place.division === name).length + " areas", () => { division = name; search.value = ""; draw(); drawTrigger(); search.focus(); }, true);
+                });
+            } else if (!zone) {
+                heading.textContent = "Select zone in " + division;
+                [...new Set(scope.map(place => place.zone))].sort((a, b) => a.localeCompare(b)).forEach(name => {
+                    row(name, scope.filter(place => place.zone === name).length + " areas", () => { zone = name; search.value = ""; draw(); drawTrigger(); search.focus(); }, true);
+                });
+            } else {
+                heading.textContent = "Select area in " + zone;
+                scope.sort((a, b) => a.name.localeCompare(b.name)).forEach(place => row(place.name, "", () => pick(place), false));
+            }
+
+            if (!list.hasChildNodes()) {
+                list.append(el("p", "area-none", "No place matches that."));
+            }
+
+            search.placeholder = !division ? "Search every area" : !zone ? "Search " + division : "Search " + zone;
+            list.scrollTop = 0;
+            drawTrigger();
+        }
+
+        trigger.addEventListener("click", () => (panel.hidden ? open() : close()));
+        trigger.addEventListener("keydown", event => {
+            if ((event.key === "Enter" || event.key === " ") && event.target === trigger) {
+                event.preventDefault();
+                panel.hidden ? open() : close();
+            }
+        });
+        search.addEventListener("input", draw);
+        search.addEventListener("keydown", event => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                const first = list.querySelector(".area-item");
+                if (first) {
+                    first.click();
+                }
+            }
+
+            if (event.key === "Escape") {
+                close();
+                trigger.focus();
+            }
+        });
+        // A click inside the picker redraws its own buttons, so where it landed is read from the path it travelled
+        document.addEventListener("click", event => { if (!panel.hidden && !event.composedPath().includes(root)) { close(); } });
+        // The browser refuses to submit with the field empty: open the picker so the person sees where to look
+        select.addEventListener("invalid", () => { if (panel.hidden) { open(); } });
+        drawTrigger();
+    });
+})();

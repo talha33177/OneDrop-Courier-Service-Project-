@@ -28,18 +28,27 @@ public class Zone : TenantEntity, IArchivable
     /// <summary>A suburb of <see cref="City"/> (Savar, Gazipur), charged between the city and outside-city rates.</summary>
     public bool IsSuburb { get; private set; }
 
+    /// <summary>The division the zone is in (Dhaka, Chattogram…): where the address picker files it. Null: not filed.</summary>
+    public string? Division { get; private set; }
+
     public bool Archived { get; private set; }
 
-    public static Result<Zone> Create(string? code, string? name, long hubId, string? city, bool isSuburb)
+    public static Result<Zone> Create(string? code, string? name, long hubId, string? city, bool isSuburb, string? division = null)
     {
         var zone = new Zone();
-        var changed = zone.Change(code, name, hubId, city, isSuburb);
+        var changed = zone.Change(code, name, hubId, city, isSuburb, division);
 
         return changed.IsSuccess ? zone : changed.Error!;
     }
 
-    public Result Change(string? code, string? name, long hubId, string? city, bool isSuburb)
+    public Result Change(string? code, string? name, long hubId, string? city, bool isSuburb, string? division = null)
     {
+        var knownDivision = Divisions.Find(division);
+        if (division.NullIfBlank() is not null && knownDivision is null)
+        {
+            return Error.Validation("zone.division", "Choose one of Bangladesh's eight divisions.");
+        }
+
         var shortCode = Codes.Read(code, "zone.code", "Give the zone a short code, such as MIR: letters and digits, at most 20.");
         if (shortCode.IsFailure)
         {
@@ -63,6 +72,7 @@ public class Zone : TenantEntity, IArchivable
         HubId = hubId;
         City = town;
         IsSuburb = isSuburb;
+        Division = knownDivision;
 
         return Result.Success();
     }

@@ -3,6 +3,7 @@
 -- Purpose: A part of the coverage map served by one hub: a city area (Mirpur), a suburb (Savar) or a district
 --          (Sylhet). City and IsSuburb decide a parcel's service area: another city is outside the city, a suburb of
 --          the pickup's city is a suburb, the rest inside the city (Domain.Pricing.ServiceAreas).
+--          2026-10-16: Division (one of the eight; NULL: not filed) is where the address picker lists the zone.
 -- Author: Courier team
 -- Date: 2026-10-04
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -14,6 +15,7 @@ CREATE TABLE [Network].[Zone] (
     [HubId]     BIGINT         NOT NULL,
     [City]      NVARCHAR (60)  NOT NULL,
     [IsSuburb]  BIT            NOT NULL,
+    [Division]  NVARCHAR (30)  NULL,
     [Archived]  BIT            DEFAULT ((0)) NOT NULL,
     [UpdatedId] BIGINT         NULL,
     [UpdatedOn] DATETIME2 (7)  DEFAULT (getutcdate()) NOT NULL,

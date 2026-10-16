@@ -65,6 +65,15 @@ public class CoverageTests
     }
 
     [Fact]
+    public void A_zone_is_filed_under_one_of_the_eight_divisions_or_none()
+    {
+        Assert.Equal("Sylhet", Zone.Create("MOU", "Moulvibazar", 3, "Moulvibazar", isSuburb: false, " sylhet ").Value.Division);
+        Assert.Null(Zone.Create("MOU", "Moulvibazar", 3, "Moulvibazar", isSuburb: false).Value.Division);
+        Assert.Equal("zone.division", Zone.Create("MOU", "Moulvibazar", 3, "Moulvibazar", isSuburb: false, "Atlantis").Error!.Code);
+        Assert.Equal(8, Divisions.All.Count);
+    }
+
+    [Fact]
     public void A_zone_needs_a_code_a_name_and_a_city()
     {
         Assert.Equal("zone.code", Zone.Create(" ", "Savar", 3, "Dhaka", isSuburb: true).Error!.Code);

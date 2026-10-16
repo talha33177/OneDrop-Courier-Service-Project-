@@ -80,9 +80,10 @@ public class CoverageModel(CoverageHandler coverage, CoverageAdminHandler admin)
         long hubId,
         string? city,
         bool isSuburb,
+        string? division,
         CancellationToken cancellationToken)
     {
-        var added = await admin.AddZoneAsync(new NewZone(code, name, hubId, city, isSuburb), cancellationToken);
+        var added = await admin.AddZoneAsync(new NewZone(code, name, hubId, city, isSuburb, division), cancellationToken);
 
         return Answer(added, $"{name} is on the map. Add its areas next.", ("/Admin/Coverage?tab=Areas", "Add its areas"));
     }
@@ -94,9 +95,10 @@ public class CoverageModel(CoverageHandler coverage, CoverageAdminHandler admin)
         long hubId,
         string? city,
         bool isSuburb,
+        string? division,
         CancellationToken cancellationToken)
     {
-        var changed = await admin.EditZoneAsync(id, new NewZone(code, name, hubId, city, isSuburb), cancellationToken);
+        var changed = await admin.EditZoneAsync(id, new NewZone(code, name, hubId, city, isSuburb, division), cancellationToken);
 
         return Answer(changed, "Zone saved. It prices parcels booked from now on.");
     }

@@ -79,10 +79,11 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
         // Before choosing, the admin sees every hub; its steps open the chooser, and the hub menu offers every hub
         var all = await admin.PageAsync("/Hub");
         Assert.Contains("<h1>All hubs</h1>", all);
-        Assert.Contains("<option value=\"*\" selected=\"selected\">All hubs", all);
+        Assert.Matches("<a href=\"\\?hub=\\*\" class=\"current[^\"]*\">\\s*<span>All hubs</span>", all);
         Assert.Contains("/Hub/Choose?next=Pickups", all);
         Assert.Contains("/Hub/Choose?next=Scan&mode=Receive", all);
-        Assert.Contains("<option value=\"MIR\">Mirpur hub (MIR)", all);
+        Assert.Contains("<a href=\"?hub=MIR\"", all);
+        Assert.Contains("<span>Mirpur hub (MIR)</span>", all);
 
         var one = await admin.PageAsync("/Hub?hub=MIR");
         Assert.Contains("<h1>Mirpur hub</h1>", one);

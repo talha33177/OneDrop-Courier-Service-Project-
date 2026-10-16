@@ -27,13 +27,14 @@ public sealed record ZoneRow(
     long HubId,
     string Hub,
     bool Active,
-    int Areas);
+    int Areas,
+    string? Division = null);
 
 public sealed record AreaRow(long Id, string Name, long ZoneId, string Zone, string City, string Hub, bool Active, int Parcels);
 
 public sealed record NewHub(string? Code, string? Name, string? Address, string? Phone);
 
-public sealed record NewZone(string? Code, string? Name, long HubId, string? City, bool IsSuburb);
+public sealed record NewZone(string? Code, string? Name, long HubId, string? City, bool IsSuburb, string? Division = null);
 
 /// <summary>
 /// The courier's own coverage map, kept by its admin: open and close hubs, draw zones on them with the city and
@@ -87,7 +88,8 @@ public class CoverageAdminHandler(IAppDbContext db)
                 z.HubId,
                 z.Hub!.Name,
                 !z.Archived,
-                db.Areas.Count(a => a.ZoneId == z.Id && !a.Archived)))
+                db.Areas.Count(a => a.ZoneId == z.Id && !a.Archived),
+                z.Division))
             .AsNoTracking()
             .ToListAsync(cancellationToken);
     }
@@ -189,7 +191,7 @@ public class CoverageAdminHandler(IAppDbContext db)
             return NoHub;
         }
 
-        var zone = Zone.Create(spec.Code, spec.Name, spec.HubId, spec.City, spec.IsSuburb);
+        var zone = Zone.Create(spec.Code, spec.Name, spec.HubId, spec.City, spec.IsSuburb, spec.Division);
         if (zone.IsFailure)
         {
             return zone.Error!;
@@ -232,7 +234,7 @@ public class CoverageAdminHandler(IAppDbContext db)
             return busy;
         }
 
-        var changed = zone.Change(spec.Code, spec.Name, spec.HubId, spec.City, spec.IsSuburb);
+        var changed = zone.Change(spec.Code, spec.Name, spec.HubId, spec.City, spec.IsSuburb, spec.Division);
         if (changed.IsSuccess)
         {
             await db.SaveChangesAsync(cancellationToken);

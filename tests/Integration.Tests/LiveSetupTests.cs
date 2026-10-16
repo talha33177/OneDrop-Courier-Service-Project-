@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Infrastructure.Seeding;
 
@@ -56,11 +57,54 @@ public class LiveSetupTests(WebAppFactory factory) : AppTests(factory)
     }
 
     [Fact]
+    public async Task A_live_start_with_no_admin_named_makes_the_demo_admin_and_a_named_one_never_falls_back_to_it()
+    {
+        WebAppFactory.RequireDatabase();
+        var demo = $"{Guid.NewGuid():N}@demo.example";
+
+        // Production, nobody named: the default admin is made, so a fresh server can be signed in to
+        await using (var live = Factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Setup:AdminEmail", "");
+            builder.UseSetting("Setup:DefaultAdminEmail", demo);
+            builder.UseSetting("Setup:DefaultAdminPassword", "Default#2026");
+        }))
+        {
+            _ = live.Services;
+        }
+
+        var admin = Visit("onedrop", await SignInCookieAsync("onedrop", demo, "Default#2026"));
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/Admin")).StatusCode);
+
+        // An admin named without a password stops the start with the reason, and the default is not used in its place
+        var other = $"{Guid.NewGuid():N}@demo.example";
+        await using var named = Factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Setup:AdminEmail", $"{Guid.NewGuid():N}@named.example");
+            builder.UseSetting("Setup:AdminPassword", "");
+            builder.UseSetting("Setup:DefaultAdminEmail", other);
+            builder.UseSetting("Setup:DefaultAdminPassword", "Default#2026");
+        });
+        Assert.ThrowsAny<Exception>(() => named.Services);
+        var refused = await Visit("onedrop").PostFormAsync(
+            "/Account/Login",
+            "/Account/Login",
+            ("Input.Email", other),
+            ("Input.Password", "Default#2026"));
+        Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
+        Assert.Contains("is not right for", await refused.Content.ReadAsStringAsync(Cancel));
+    }
+
+    [Fact]
     public async Task A_home_courier_host_serves_the_courier_on_an_address_of_its_own()
     {
         WebAppFactory.RequireDatabase();
+        // Through the app's configuration, like the factory's own empty value that it has to come after
         await using var live = Factory.WithWebHostBuilder(builder =>
-            builder.UseSetting("Tenancy:HomeCourierHost", "courier.example"));
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Tenancy:HomeCourierHost"] = "courier.example" })));
         var client = live.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("http://courier.example"),

@@ -322,17 +322,6 @@
                     </details>
                 </nav>
             }
-            @if (Environment.IsDevelopment())
-            {
-                <div class="demo-strip no-print">
-                    <strong>Demo mode</strong>
-                    <span>No real SMS or money leaves this computer.</span>
-                    <a asp-page="/Dev/Sms">SMS inbox</a>
-                    <a asp-page="/Dev/Emails">Email outbox</a>
-                    <a asp-page="/Dev/Payouts">Payouts sent</a>
-                    <a asp-page="/Dev/Webhooks">Webhooks received</a>
-                </div>
-            }
             <main class="content">
                 @RenderBody()
             </main>

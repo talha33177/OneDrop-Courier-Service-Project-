@@ -6,7 +6,8 @@ nothing, the app, and Caddy in front of it for HTTPS. The files are in [`deploy/
 ## What the live site starts with
 
 - The courier (OneDrop Courier) with its 16 hubs, 21 zones, 87 areas and rate card, from the database scripts.
-- One admin, named in `deploy/.env`.
+- One admin, named in `deploy/.env`. With nothing set there it is the demo login **`admin@onedrop.test` /
+  `OneDrop#2026`**, made on the first start, so a fresh server always has someone who can sign in.
 - Nothing else: no demo logins, merchants, riders or parcels. Those exist only in Development; the live app runs as
   Production, where the demo seeder, the demo sign-in buttons and the `/Dev` pages are off.
 
@@ -51,7 +52,7 @@ nano .env
 |---|---|
 | `SITE_ADDRESS` | The address from step 2 |
 | `SA_PASSWORD` | SQL Server's `sa` password: at least 8 characters from three of upper case, lower case, digits, symbols. **Set once**: SQL Server takes it only when its data volume is first created, so changing it later locks the app out |
-| `ADMIN_EMAIL`, `ADMIN_NAME`, `ADMIN_PASSWORD` | The courier's admin, made on the first start. The password needs at least 8 characters with an upper case letter, a lower case letter and a digit |
+| `ADMIN_EMAIL`, `ADMIN_NAME`, `ADMIN_PASSWORD` | The courier's admin, made on the first start. **Optional**: left empty, the admin is the demo login `admin@onedrop.test` / `OneDrop#2026`, which is public (it is in the README), so set your own before real merchants use the site. The password needs at least 8 characters with an upper case letter, a lower case letter and a digit. An admin who already exists is never changed: a different email later adds a second admin |
 | `EMAIL_*` | Optional. A mail server for merchants' payout emails (Gmail: `smtp.gmail.com`, port 587, an app password) |
 | `SSLCOMMERZ_*` | Optional. An SSLCommerz store; the sandbox (`https://sandbox.sslcommerz.com/`) until it goes live (`https://securepay.sslcommerz.com/`) |
 | `GOOGLE_MAPS_API_KEY` | Optional. A Google Maps browser key for the booking form's map and the parcel pages' small maps. In Google Cloud turn on Maps JavaScript API, Places API (New), Geocoding API and Maps Embed API, and restrict the key to `https://<SITE_ADDRESS>/*`. Without it merchants paste a Google Maps link and riders still get directions |
@@ -69,11 +70,14 @@ docker compose logs -f web          # wait for "Setup: created the admin" and "A
 The `database` service runs first and exits once the database is ready (`docker compose ps -a` shows it as
 `Exited (0)`); the app starts after it.
 
-Then open `https://SITE_ADDRESS`, sign in with the admin's email and password, and:
+Then open `https://SITE_ADDRESS`, sign in with the admin's email and password (the demo login above when `.env` names
+none), and:
 
 1. Change the password (the account menu at the top right, **Change password**).
-2. Empty `ADMIN_PASSWORD` in `.env` and run `docker compose up -d`. The admin stays: a start never changes an admin
-   that exists, it only makes one that is missing.
+2. If you set `ADMIN_PASSWORD` in `.env`, empty it and run `docker compose up -d`. The admin stays: a start never
+   changes an admin that exists, it only makes one that is missing. With `ADMIN_EMAIL` still named, emptying the
+   password never brings the demo admin back; with `ADMIN_EMAIL` empty too, the start makes `admin@onedrop.test` if it
+   is missing (an existing one, whatever its password now is, is left as it is).
 3. Follow the setup checklist on the admin's dashboard: add riders (each gets a login), then approve the merchants who
    sign up on the site, or add them yourself. The map and the rate card are already there; **How it works** in the menu
    explains the rest.
@@ -143,7 +147,8 @@ is added with a data script like `src/Database Update/Scripts/2026/001_SeedCouri
 | What you see | Why, and what to do |
 |---|---|
 | The browser says the connection is not secure, or `docker compose logs caddy` shows a failed challenge | The address does not point at the server yet, or port 80 is closed. Fix DNS or the firewall; Caddy keeps trying |
-| `web` stops at start with "Setup: could not create the admin" | The admin's password does not meet the rules above |
+| `web` stops at start with "Setup: could not create the admin" | The admin's password does not meet the rules above, or `ADMIN_EMAIL` is set with no `ADMIN_PASSWORD` (a named admin never falls back to the demo one) |
+| You cannot sign in with `admin@onedrop.test` | `.env` names another admin (`ADMIN_EMAIL`): its email and password are the login, and the demo admin was never made. Empty `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` and run `docker compose up -d` to get the demo admin as well (`docker compose logs web \| grep -i setup` says which was made) |
 | `database` exits with an error | `docker compose logs database`. After the first start this is usually `SA_PASSWORD` changed in `.env`: put the first one back |
 | Everyone was signed out after an update | The `keys` volume was removed |
 | Anything else | `docker compose logs web`; every request and error is logged there |

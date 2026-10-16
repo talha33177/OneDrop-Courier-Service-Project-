@@ -52,7 +52,9 @@ services:
       ConnectionStrings__Database: Server=sql,1433;Database=OneDrop;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=true;MultipleActiveResultSets=true
       Tenancy__HomeCourierHost: ${SITE_ADDRESS:?Set SITE_ADDRESS in deploy/.env}
       Links__PortalUrlFormat: https://${SITE_ADDRESS}/
-      Setup__AdminEmail: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in deploy/.env}
+      # The first admin, made on the first start. With no ADMIN_EMAIL the app makes its demo admin instead
+      # (Setup:DefaultAdminEmail in appsettings.json), so a fresh server always has someone who can sign in
+      Setup__AdminEmail: ${ADMIN_EMAIL:-}
       Setup__AdminName: ${ADMIN_NAME:-}
       Setup__AdminPassword: ${ADMIN_PASSWORD:-}
       Email__Host: ${EMAIL_HOST:-}

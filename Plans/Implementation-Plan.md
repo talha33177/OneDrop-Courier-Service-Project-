@@ -329,12 +329,38 @@ New ones are added there and dated here.
 | 2026-10-13 | Delivery speeds and kinds of contents are the admin's rows, priced per service area; parcels point at them and keep their extras; the API takes a fixed code made from the first name (owner) |
 | 2026-10-13 | The van takes whatever is waiting when it reaches a merchant and visits each pickup point once a day: no pickup cut-off; a parcel booked after the day's visit goes with the next day's pickup (owner) |
 | 2026-10-13 | Only a pickup van collects from merchants (bicycles and motorbikes deliver); a collected parcel stays on the van until the hub scans it in; every hand-over — pickup, delivery run, return list — is checked against what the rider already carries, at the hub's weighed weight (owner) |
+| 2026-10-16 | A live start with no admin named makes the demo admin (`admin@onedrop.test`), so a fresh server can always be signed in to; a named admin never falls back to it. The demo password is public until changed (owner) |
 
 ---
 
 ## Daily log
 
 Newest first.
+
+### 2026-10-16 (the live site's first admin)
+- **Owner's report:** the owner's teammate put the site live from GitHub (at `delyvo.octopi-digital.com`) and nobody could
+  sign in: the owner tried the demo login (`admin@onedrop.test` / `OneDrop#2026`), which only the Development demo seeder
+  makes. `deploy/.env` is git-ignored, so the teammate wrote a `.env` of their own and its `ADMIN_EMAIL` /
+  `ADMIN_PASSWORD` are the only login the live server has. Owner's request: "when the project is live it automatically
+  generates the super admin".
+- **Done:** outside Development, with `Setup:AdminEmail` empty, `Program.cs` makes the admin from
+  `Setup:DefaultAdminEmail` / `Setup:DefaultAdminPassword` (in `appsettings.json`) through `AdminSetup`, with a warning
+  in the log; an admin that is named (even with no password) never falls back to it. `deploy/docker-compose.yml` no
+  longer requires `ADMIN_EMAIL`; `.env.example`, `Deployment.md` and Project-Context say so, with the risk: the
+  password is public until it is changed at `/Account/Password`. A server that already names its own admin is
+  untouched: to get the demo admin there, empty `ADMIN_EMAIL` and `ADMIN_PASSWORD` in its `.env`.
+- **Tested:** build 0 warnings; `docker compose config` shows the three settings pass through (empty, named, and the
+  `#` in a password kept); integration `LiveSetupTests` 4 of 4 (new: a Production start with nobody named makes the
+  default admin and it signs in to `/Admin`, and a named admin with no password stops the start and the default is not
+  made). The class's host test was already failing on `main` (the factory's empty `Tenancy:HomeCourierHost` clobbered
+  the test's own value); it now sets the value through the app's configuration and passes. **Not done:** the other
+  suites and a run on the live server (the change is not committed, so it is not there yet).
+
+### 2026-10-16 (places of Bangladesh and the step-by-step area picker)
+- **Owner's request:** the delivery area was one long dropdown; make it Division, then Zone (Dhaka >), then Area (Dhaka > Mirpur >), with every place in Bangladesh.
+- **Done:** `Zone.Division`, `Divisions`, `010_BangladeshPlaces.sql` (53 district zones and about 485 upazila areas, launch zones filed by division), a Division field on the Coverage zone forms, and the picker: the same `_AreaSelect` partial (so booking, sign-up, new business, pickup points, rates and the admin's new merchant all use it) with a search box. Without a script it stays an ordinary grouped select. Also today: the hub menu marks hubs with work with a red badge, "Coming in" counts parcels on the van, the assign page shows the chosen rider's load including ticked parcels, and the sign-in page no longer lists demo accounts.
+- **Tested:** build 0 warnings; domain 262, architecture 6; both databases published; integration `CoverageAdminTests`, `SchemaMatchesModelTests`, `ParcelApiTests`, `RowLevelSecurityTests` (18) and `PortalPagesTests`, `IsolationTests`, `DeliveryTypesTests`, `DailyPickupTests` pass (the hub-menu test was updated for the new menu). The picker was clicked through on the sign-up page.
+- **Worth knowing:** the district hubs are a first guess (for example Faridpur on the Motijheel hub); the admin changes them on Coverage. Upazila names come from memory of the official list: have the owner skim them.
 
 ### 2026-10-16 (pickup pins on the rider's route, a plainer hub board, 4.17)
 - **Owner's request:** the map is for the rider's route (every pickup and delivery stop from where they are), so the merchant's pickup point needs a pin too; make the Hub operations page easier for the operator.

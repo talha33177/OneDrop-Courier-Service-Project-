@@ -158,6 +158,13 @@
                                             <input type="text" name="code" value="@z.Code" required maxlength="20" style="max-width:110px" aria-label="Code" />
                                             <input type="text" name="name" value="@z.Name" required maxlength="200" style="max-width:200px" aria-label="Name" />
                                             <input type="text" name="city" value="@z.City" required maxlength="60" style="max-width:150px" aria-label="City" />
+                                            <select name="division" style="max-width:150px" aria-label="Division">
+                                                <option value="">No division</option>
+                                                @foreach (var division in Domain.Network.Divisions.All)
+                                                {
+                                                    <option value="@division" selected="@(division == z.Division)">@division</option>
+                                                }
+                                            </select>
                                             @* A zone taken off the map may hang on a hub that has since closed, so its own hub is always listed *@
                                             <select name="hubId" style="max-width:200px" aria-label="Hub">
                                                 @foreach (var hub in Model.Hubs.Where(h => h.Active || h.Id == z.HubId))
@@ -186,6 +193,17 @@
                     <div class="field"><label for="zone-code">Code</label><input type="text" id="zone-code" name="code" maxlength="20" required /></div>
                     <div class="field"><label for="zone-name">Name</label><input type="text" id="zone-name" name="name" maxlength="200" required placeholder="Mirpur" /></div>
                     <div class="field"><label for="zone-city">City or district</label><input type="text" id="zone-city" name="city" maxlength="60" required placeholder="Dhaka" /><span class="hint">Two zones in the same city are charged the inside-city rate.</span></div>
+                    <div class="field">
+                        <label for="zone-division">Division</label>
+                        <select id="zone-division" name="division" required>
+                            <option value="">Choose a division</option>
+                            @foreach (var division in Domain.Network.Divisions.All)
+                            {
+                                <option value="@division">@division</option>
+                            }
+                        </select>
+                        <span class="hint">The address picker lists the zone under its division.</span>
+                    </div>
                     <div class="field">
                         <label for="zone-hub">Served by</label>
                         <select id="zone-hub" name="hubId" required>

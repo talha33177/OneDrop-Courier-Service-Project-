@@ -122,8 +122,19 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Seed:De
             app.Configuration.GetValue<bool>("Seed:DemoActivity"));
 }
 
-// A live courier's first admin: a database deployed from nothing has nobody who can sign in (see AdminSetup)
-if (app.Configuration["Setup:AdminEmail"] is { Length: > 0 } adminEmail)
+// A live courier's first admin: a database deployed from nothing has nobody who can sign in (see AdminSetup). With no
+// admin named outside Development, the demo admin from Setup:DefaultAdmin* is made, so a fresh server can be signed in
+// to; naming an admin (even without its password) never falls back to it
+var adminEmail = app.Configuration["Setup:AdminEmail"];
+var adminPassword = app.Configuration["Setup:AdminPassword"];
+if (string.IsNullOrEmpty(adminEmail) && !app.Environment.IsDevelopment())
+{
+    adminEmail = app.Configuration["Setup:DefaultAdminEmail"];
+    adminPassword = app.Configuration["Setup:DefaultAdminPassword"];
+    app.Logger.LogWarning("Setup: no admin named in Setup:AdminEmail, so the demo admin {Email} is used", adminEmail);
+}
+
+if (!string.IsNullOrEmpty(adminEmail))
 {
     await app.Services
         .GetRequiredService<AdminSetup>()
@@ -133,7 +144,7 @@ if (app.Configuration["Setup:AdminEmail"] is { Length: > 0 } adminEmail)
                 : throw new InvalidOperationException("Setup:AdminEmail needs Tenancy:HomeCourier, the courier to admin."),
             adminEmail,
             app.Configuration["Setup:AdminName"] is { Length: > 0 } adminName ? adminName : "Courier admin",
-            app.Configuration["Setup:AdminPassword"]);
+            adminPassword);
 }
 
 if (runJobs)

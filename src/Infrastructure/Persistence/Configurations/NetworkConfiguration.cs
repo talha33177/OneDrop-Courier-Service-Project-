@@ -25,6 +25,7 @@ public class ZoneConfiguration : IEntityTypeConfiguration<Zone>
         builder.Property(z => z.Code).HasMaxLength(20);
         builder.Property(z => z.Name).HasMaxLength(200);
         builder.Property(z => z.City).HasMaxLength(60);
+        builder.Property(z => z.Division).HasMaxLength(30);
         builder.HasOne(z => z.Hub).WithMany().HasForeignKey(z => z.HubId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(z => new { z.TenantId, z.Code }).IsUnique().HasDatabaseName("UX_Zone_Tenant_Code");
     }

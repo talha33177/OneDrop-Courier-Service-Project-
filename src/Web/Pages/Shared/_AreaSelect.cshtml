@@ -1,15 +1,24 @@
 @using Application.Network.ListAreas
+@using Domain.Network
 @model (string Name, long? Selected, IReadOnlyList<AreaItem> Areas)
-@* The area list as a drop-down, grouped by city, the courier's own cities first *@
-<select name="@Model.Name" id="@Model.Name.Replace('.', '_')" required>
+@* The area list, grouped by division then zone. Without a script this is an ordinary drop-down; site.js turns it into
+   a step-by-step picker (Dhaka > Mirpur > Mirpur 10) that fills this same field. *@
+@{
+    var divisions = Divisions.All.Append("Other").ToList();
+}
+<select name="@Model.Name" id="@Model.Name.Replace('.', '_')" required data-area-picker>
     <option value="">Choose the area</option>
-    @foreach (var city in Model.Areas.GroupBy(a => a.City).OrderByDescending(g => g.Count()).ThenBy(g => g.Key))
+    @foreach (var division in divisions)
     {
-        <optgroup label="@city.Key">
-            @foreach (var area in city.OrderBy(a => a.Suburb).ThenBy(a => a.Name))
-            {
-                <option value="@area.Id" selected="@(area.Id == Model.Selected)">@area.Name@(area.Suburb ? " (suburb)" : "")</option>
-            }
-        </optgroup>
+        var inDivision = Model.Areas.Where(a => (a.Division ?? "Other") == division).ToList();
+        foreach (var zone in inDivision.GroupBy(a => a.Zone).OrderBy(g => g.Key))
+        {
+            <optgroup label="@division › @zone.Key">
+                @foreach (var area in zone.OrderBy(a => a.Name))
+                {
+                    <option value="@area.Id" selected="@(area.Id == Model.Selected)" data-division="@division" data-zone="@zone.Key">@area.Name</option>
+                }
+            </optgroup>
+        }
     }
 </select>
