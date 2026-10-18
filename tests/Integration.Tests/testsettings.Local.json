@@ -1,5 +1,0 @@
-{
-  "ConnectionStrings": {
-    "Database": "Server=ras-x2,1433;Database=OneDrop-Test;User Id=sa;Password=Acb312efd!;TrustServerCertificate=true;MultipleActiveResultSets=true"
-  }
-}

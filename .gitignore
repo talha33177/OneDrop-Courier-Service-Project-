@@ -483,3 +483,5 @@ $RECYCLE.BIN/
 
 # Project
 *.publish.local.xml
+appsettings.Local.json
+testsettings.Local.json

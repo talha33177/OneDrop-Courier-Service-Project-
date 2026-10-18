@@ -27,14 +27,13 @@ dotnet test --project tests/Integration.Tests
 ```
 
 - Tests run on Microsoft.Testing.Platform (`global.json`), so use `dotnet test --project <path>`.
-- The integration suite runs against `OneDrop-Test` on ras-x2, named in
+- The integration suite runs against `OneDrop-Test` on ras-x2, named in the git-ignored
   `tests/Integration.Tests/testsettings.Local.json` (`INTEGRATION_TEST_DB` overrides it). With no database
   configured it skips itself, and a green run with everything skipped means nothing ran. After a schema change,
   update it with `./tools/db/publish.ps1 -Database OneDrop-Test`. Ask before creating any other database on ras-x2.
 - Never point integration tests at the dev database `OneDrop`.
-- Connection strings, the mail password and the SSLCommerz sandbox keys live in the `*.Local.json` files, which are
-  committed (2026-10-18, owner's choice: the repository is private to the owner and the team). Never copy a secret
-  anywhere else, and never make the repository public without removing them from its history first.
+- Connection strings, the mail password and the SSLCommerz keys (they are secrets) live only in git-ignored
+  `*.Local.json` files. Never commit one. The live server's copy is sent to the owner's teammate by hand.
 - No product-name prefix in code: projects, folders and namespaces are `Domain`, `Application`, `Infrastructure`,
   `Web`, `Database`, `Database Update` (like DCN). The OneDrop brand appears only in user-facing text and data.
 
