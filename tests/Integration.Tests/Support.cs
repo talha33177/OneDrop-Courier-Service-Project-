@@ -10,8 +10,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Application.Abstractions;
 using Application.Common;
 using Application.Merchants.Onboarding;
+using Application.Notifications.SendEmails;
 using Domain.Delivery;
 using Domain.Merchants;
+using Domain.Notifications;
 using Domain.Parcels;
 using Infrastructure.MultiTenancy;
 using Infrastructure.Persistence;
@@ -43,6 +45,38 @@ public abstract partial class AppTests(WebAppFactory factory)
         await connection.OpenAsync(Cancel);
         await using var command = new SqlCommand(text, connection);
         await command.ExecuteNonQueryAsync(Cancel);
+    }
+
+    /// <summary>
+    /// A test about emails starts with none waiting. Every sign-up, approval and payout in every other test queues
+    /// emails nobody sends, and the email job takes the oldest first, so a test's own email would sit behind them.
+    /// </summary>
+    protected static async Task ClearEmailBacklogAsync()
+    {
+        await Sql(
+            $"UPDATE Notifications.OutboxMessage SET Status = {(byte)OutboxStatus.Sent} WHERE Status = {(byte)OutboxStatus.Pending} " +
+            "AND Type IN (N'MerchantEmailMessage', N'CourierEmailMessage', N'RecipientEmailMessage', N'AccountEmailMessage')");
+    }
+
+    /// <summary>
+    /// Runs the email job for courier <paramref name="slug"/> until nothing is due: it takes a batch at a time, and
+    /// other tests queue emails meanwhile.
+    /// </summary>
+    protected async Task SendEmailsAsync(string slug)
+    {
+        for (var run = 0; run < 200; run++)
+        {
+            await using var scope = await ScopeAsync(slug);
+            await scope.ServiceProvider.GetRequiredService<SendEmailsJob>().RunAsync(Cancel);
+            var now = DateTime.UtcNow;
+            var waiting = await scope.ServiceProvider.GetRequiredService<AppDbContext>().OutboxMessages.AsNoTracking()
+                .AnyAsync(m => m.Status == OutboxStatus.Pending && (m.NextAttemptOn == null || m.NextAttemptOn <= now) &&
+                    SendEmailsJob.Types.Contains(m.Type), Cancel);
+            if (!waiting)
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>A data script of this year, read from the repository, so a test proves the script that ships.</summary>

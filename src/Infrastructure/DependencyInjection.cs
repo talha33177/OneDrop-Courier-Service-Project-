@@ -80,6 +80,7 @@ public static class DependencyInjection
         services.AddHttpClient(CourierPaymentGateway.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
         services.AddScoped<IPaymentGateway, CourierPaymentGateway>();
         services.AddSingleton<EmailLog>();
+        services.AddSingleton<IMailTransports, SmtpMailTransports>();
         services.AddScoped<IEmailSender, CourierEmailSender>();
 
         services

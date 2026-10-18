@@ -8,16 +8,34 @@ using Infrastructure.Payments;
 namespace Infrastructure.Connections;
 
 /// <summary>
+/// How an email reaches a mail server. The real one talks SMTP; the integration tests plug in one that only records,
+/// so no test can ever send through a mail server a courier saved.
+/// </summary>
+public interface IMailTransports
+{
+    IEmailSender For(EmailOptions options);
+}
+
+/// <summary>The real transport: SMTP with STARTTLS to the courier's mail server.</summary>
+public sealed class SmtpMailTransports(EmailLog log, TimeProvider time, ILoggerFactory loggers) : IMailTransports
+{
+    public IEmailSender For(EmailOptions options)
+    {
+        return new SmtpEmailSender(options, log, time, loggers.CreateLogger<SmtpEmailSender>());
+    }
+}
+
+/// <summary>
 /// Sends through the courier's mail server (<see cref="ConnectionSettings"/>), chosen at each send: the real server when
 /// one is set, else the fake that keeps the email for <c>/Dev/Emails</c>.
 /// </summary>
-public class CourierEmailSender(ConnectionSettings connections, EmailLog log, TimeProvider time, ILoggerFactory loggers) : IEmailSender
+public class CourierEmailSender(ConnectionSettings connections, IMailTransports transports, EmailLog log, TimeProvider time, ILoggerFactory loggers) : IEmailSender
 {
     public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
         var options = connections.Mail();
         IEmailSender sender = options.Configured
-            ? new SmtpEmailSender(options, log, time, loggers.CreateLogger<SmtpEmailSender>())
+            ? transports.For(options)
             : new FakeEmailSender(log, time, loggers.CreateLogger<FakeEmailSender>());
 
         return sender.SendAsync(message, cancellationToken);

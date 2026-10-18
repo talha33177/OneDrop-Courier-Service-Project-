@@ -54,14 +54,15 @@ public class GuardTests(WebAppFactory factory) : AppTests(factory)
         var (pointId, gulshan) = await QueryAsync("onedrop", async db => (
             await db.PickupPoints.Where(p => p.MerchantId == shop.Id).Select(p => p.Id).SingleAsync(Cancel),
             await db.Areas.Where(a => a.Name == "Gulshan 2").Select(a => a.Id).SingleAsync(Cancel)));
-        (string, string)[] moved = [("id", $"{pointId}"), ("areaId", $"{gulshan}"), ("name", "Shop"), ("address", "Road 5, Gulshan"), ("phone", NewPhone())];
+        (string, string)[] moved = [("areaId", $"{gulshan}"), ("name", "Shop"), ("address", "Road 5, Gulshan"), ("phone", NewPhone())];
+        var point = $"/Merchant/PickupPoint/{pointId}";
 
         await BookAsync(shop.ApiKey, area: "Banani");
-        Assert.Contains("Parcels or a pickup are waiting at this point", await merchant.SubmitAsync("/Merchant/Settings", "/Merchant/Settings?handler=Point", moved));
+        Assert.Contains("Parcels or a pickup are waiting at this point", await merchant.SubmitAsync(point, point, moved));
 
         var code = await QueryAsync("onedrop", db => db.Parcels.Where(p => p.MerchantId == shop.Id).Select(p => p.TrackingCode).SingleAsync(Cancel));
         await merchant.SubmitAsync($"/Merchant/Parcel/{code}", $"/Merchant/Parcel/{code}?handler=Cancel", ("reason", "Out of stock"));
-        Assert.DoesNotContain("Parcels or a pickup are waiting at this point", await merchant.SubmitAsync("/Merchant/Settings", "/Merchant/Settings?handler=Point", moved));
+        Assert.DoesNotContain("Parcels or a pickup are waiting at this point", await merchant.SubmitAsync(point, point, moved));
         Assert.Equal(gulshan, await QueryAsync("onedrop", db => db.PickupPoints.Where(p => p.Id == pointId).Select(p => p.AreaId).SingleAsync(Cancel)));
     }
 }

@@ -340,6 +340,25 @@ New ones are added there and dated here.
 
 Newest first.
 
+### 2026-10-18 (last of the day: every test green, and what the full run showed)
+- **Owner's request:** "what fails? check properly and fix it", then "fix that too".
+- **Found:** two tests were stale, not the product: `MerchantPanelTests` and `GuardTests` posted to
+  `Settings?handler=Point`, which moved to `/Merchant/PickupPoint/{id}` with the map pin; `StaffRolesTests` looked for
+  `handler=Change&id=` where the page writes `id=…&handler=Change`. All three updated.
+- **Found by the full run (133 tests, 5 failures):** the owner had saved a **real** Gmail server for OneDrop in
+  `OneDrop-Test` through the new page, so the email tests were sending through it to made-up addresses (the run took
+  748 s instead of 128 s); and every sign-up, approval and payout in every test queues emails nobody sends, so the
+  email job's 50 oldest were never a test's own. Fixed: `IMailTransports` (the real SMTP one, and
+  `RecordingMailTransports` in the test host, which never touches a network and refuses `*.invalid` as a dead server
+  does); the three email test classes share the `Emails` collection, start with `ClearEmailBacklogAsync` and send
+  with `SendEmailsAsync(slug)`, which runs the job until nothing is due. The saved row was deleted from
+  `OneDrop-Test`.
+- **Product fix:** `UnknownHandlerFilter` (global page filter): a post to a page with no handler for it is a 404, not
+  the page drawn on an empty model (a 500). It leaves the re-run error pages alone (`/Error` keeps the refused
+  post's method, so a 403 would have become a 404; the isolation sweep caught it). Test:
+  `A_post_to_a_handler_a_page_does_not_have_is_not_found_instead_of_a_broken_page`.
+- **Tested:** build 0 warnings; domain 271, architecture 6, **integration 134 of 134, none skipped** (156 s).
+
 ### 2026-10-18 (last: a new shop confirms its email with a code)
 - **Owner's request:** "In marchent sign in add a OTP verification code by email"; asked when, the owner said only
   when a new merchant opens the account, not at every sign-in, and confirmed the code at sign-up.

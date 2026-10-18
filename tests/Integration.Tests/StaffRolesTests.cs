@@ -126,7 +126,7 @@ public partial class StaffRolesTests(WebAppFactory factory) : AppTests(factory)
         var opsId = await UserIdAsync(email);
         var noHub = await admin.SubmitAsync("/Admin/Staff", $"/Admin/Staff?handler=Change&id={opsId}", ("Name", "Ops"), ("Job", "Receiving"));
         Assert.Contains("Choose the hub", noHub);
-        Assert.Contains($"handler=Change&id={opsId}", noHub);
+        Assert.Matches($"action=\"/Admin/Staff\\?(id={opsId}&handler=Change|handler=Change&id={opsId})\"", noHub);
         Assert.Equal(HttpStatusCode.OK, (await ops.GetAsync("/Admin")).StatusCode);
     }
 

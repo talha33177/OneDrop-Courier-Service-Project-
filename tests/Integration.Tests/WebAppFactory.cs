@@ -7,7 +7,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Application.Abstractions;
+using Infrastructure.Connections;
+using Infrastructure.Email;
 
 [assembly: AssemblyFixture(typeof(Integration.Tests.WebAppFactory))]
 
@@ -141,10 +144,36 @@ public sealed class WebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
             services.AddSingleton<IWebhookSender>(Webhooks);
             services.AddSingleton<IMapLinks, ShortMapLinks>();
             services.AddTransient<IStartupFilter, ClientAddressFilter>();
+
+            // Whatever mail server a courier saved in this database (a developer trying the page may have saved
+            // a real one), no test ever sends through it
+            services.AddSingleton<IMailTransports, RecordingMailTransports>();
         });
         foreach (var (key, value) in settings)
         {
             builder.UseSetting(key, value);
+        }
+    }
+}
+
+/// <summary>
+/// Stands in for every mail server: the email is kept in the log like the fake sender keeps it, and a server named
+/// "*.invalid" (a name that never resolves) refuses, as a dead one does.
+/// </summary>
+public sealed class RecordingMailTransports(EmailLog log, TimeProvider time, ILoggerFactory loggers) : IMailTransports
+{
+    public IEmailSender For(EmailOptions options)
+    {
+        return options.Host!.EndsWith(".invalid", StringComparison.OrdinalIgnoreCase)
+            ? new RefusingSender(options.Host)
+            : new FakeEmailSender(log, time, loggers.CreateLogger<FakeEmailSender>());
+    }
+
+    private sealed class RefusingSender(string host) : IEmailSender
+    {
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException($"No such host is known: {host}");
         }
     }
 }

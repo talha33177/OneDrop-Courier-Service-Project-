@@ -11,6 +11,7 @@ namespace Integration.Tests;
 /// shop and tells the courier's super admins, an approval and a credit tell the shop, and "Forgot your password?"
 /// sends a link that sets a new password once.
 /// </summary>
+[Collection("Emails")]
 public partial class EmailsTests(WebAppFactory factory) : AppTests(factory)
 {
     private EmailLog Log => Factory.Services.GetRequiredService<EmailLog>();
@@ -19,6 +20,7 @@ public partial class EmailsTests(WebAppFactory factory) : AppTests(factory)
     public async Task A_sign_up_welcomes_the_shop_tells_the_super_admins_and_its_approval_and_a_credit_reach_the_shop()
     {
         WebAppFactory.RequireDatabase();
+        await ClearEmailBacklogAsync();
         var shop = await NewMerchantAsync(approved: false);
         await SendEmailsAsync("onedrop");
 
@@ -50,6 +52,7 @@ public partial class EmailsTests(WebAppFactory factory) : AppTests(factory)
     public async Task Forgot_password_sends_a_link_that_sets_a_new_password_once_and_says_the_same_for_an_unknown_email()
     {
         WebAppFactory.RequireDatabase();
+        await ClearEmailBacklogAsync();
         var shop = await NewMerchantAsync();
         var visitor = Visit("onedrop");
 
@@ -76,12 +79,6 @@ public partial class EmailsTests(WebAppFactory factory) : AppTests(factory)
         // The same link does not work twice
         var again = await visitor.SubmitAsync(page, page, ("user", fields["user"]), ("Token", fields["token"]), ("password", "Another#2026x"), ("confirm", "Another#2026x"));
         Assert.Contains("expired or was used already", again);
-    }
-
-    private async Task SendEmailsAsync(string slug)
-    {
-        await using var scope = await ScopeAsync(slug);
-        await scope.ServiceProvider.GetRequiredService<SendEmailsJob>().RunAsync(Cancel);
     }
 
     [GeneratedRegex(@"/Account/ResetPassword\?(\S+)")]

@@ -10,6 +10,7 @@ namespace Integration.Tests;
 /// courier and removes both again, so every other test keeps the server's settings (the fakes). The mail server it
 /// saves does not exist, so nothing is ever sent, and no payment is started while the store is set.
 /// </summary>
+[Collection("Emails")]
 public class ConnectionsTests(WebAppFactory factory) : AppTests(factory)
 {
     [Fact]

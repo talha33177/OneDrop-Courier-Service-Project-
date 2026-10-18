@@ -18,6 +18,7 @@ using Web.Authentication;
 using Web.Display;
 using Web.Live;
 using Web.MultiTenancy;
+using Web.Pages;
 using Web.Pages.Dev;
 using Web.Pages.Hub;
 using Serilog;
@@ -110,6 +111,9 @@ builder.Services.AddRazorPages(options =>
         "/Merchant",
         model => model.Filters.Add(new ServiceFilterAttribute(typeof(MerchantPermissionFilter))));
     options.Conventions.AuthorizeFolder("/Rider", Policies.Rider);
+
+    // A post that no handler on the page answers is not found, instead of the page drawn with nothing loaded
+    options.Conventions.ConfigureFilter(new UnknownHandlerFilter());
 });
 
 var app = builder.Build();

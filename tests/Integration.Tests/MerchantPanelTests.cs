@@ -172,6 +172,21 @@ public class MerchantPanelTests(WebAppFactory factory) : AppTests(factory)
     }
 
     [Fact]
+    public async Task A_post_to_a_handler_a_page_does_not_have_is_not_found_instead_of_a_broken_page()
+    {
+        WebAppFactory.RequireDatabase();
+        var shop = await NewMerchantAsync();
+        var merchant = await SignInAsync("onedrop", shop.Email);
+
+        var missing = await merchant.PostFormAsync("/Merchant/Settings", "/Merchant/Settings?handler=Nothing");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        // A page that has handlers still answers its own, and a plain GET still draws the page
+        Assert.Contains("payout account is saved", await merchant.SubmitAsync("/Merchant/Settings", "/Merchant/Settings?handler=Payout", ("method", "Nagad"), ("payoutAccount", "01911222333"), ("accountName", "Test Owner")));
+        Assert.Contains("Settings", await merchant.PageAsync("/Merchant/Settings"));
+    }
+
+    [Fact]
     public async Task A_merchant_sets_its_payout_account_and_adds_a_pickup_point()
     {
         WebAppFactory.RequireDatabase();
@@ -180,7 +195,8 @@ public class MerchantPanelTests(WebAppFactory factory) : AppTests(factory)
 
         Assert.Contains("Enter the bank account number", await merchant.SubmitAsync("/Merchant/Settings", "/Merchant/Settings?handler=Payout", ("method", "Bank"), ("payoutAccount", "ab"), ("accountName", "Owner")));
         Assert.Contains("payout account is saved", await merchant.SubmitAsync("/Merchant/Settings", "/Merchant/Settings?handler=Payout", ("method", "Nagad"), ("payoutAccount", "01911222333"), ("accountName", "Test Owner")));
-        Assert.Contains("Pickup point added", await merchant.SubmitAsync("/Merchant/Settings", "/Merchant/Settings?handler=Point", ("name", "Warehouse"), ("areaId", $"{await AreaIdAsync("Tongi")}"), ("address", "Plot 4, Tongi"), ("phone", "01911222333")));
+        // A pickup point has a page of its own (with the door's pin); saving it lands back on Settings
+        Assert.Contains("Pickup point added", await merchant.SubmitAsync("/Merchant/PickupPoint", "/Merchant/PickupPoint", ("name", "Warehouse"), ("areaId", $"{await AreaIdAsync("Tongi")}"), ("address", "Plot 4, Tongi"), ("phone", "01911222333")));
 
         var saved = await QueryAsync("onedrop", db => db.Merchants.SingleAsync(m => m.Id == shop.Id, Cancel));
         Assert.Equal((PayoutMethod.Nagad, "+8801911222333"), (saved.PayoutMethod!.Value, saved.PayoutAccount!));

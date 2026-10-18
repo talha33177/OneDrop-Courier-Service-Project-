@@ -13,12 +13,14 @@ using Infrastructure.Persistence;
 namespace Integration.Tests;
 
 /// <summary>The merchant is emailed when its payout has been sent, through the outbox like every other message.</summary>
+[Collection("Emails")]
 public class MerchantEmailTests(WebAppFactory factory) : AppTests(factory)
 {
     [Fact]
     public async Task A_payout_that_has_left_emails_the_merchant_once_with_what_it_is_made_of()
     {
         WebAppFactory.RequireDatabase();
+        await ClearEmailBacklogAsync();
         var shop = await NewMerchantAsync();
         var code = await BookAsync(shop.ApiKey, area: "Pallabi", cod: 1000);
         await using (var scope = await ScopeAsync("onedrop"))
@@ -46,7 +48,7 @@ public class MerchantEmailTests(WebAppFactory factory) : AppTests(factory)
             .ToListAsync(Cancel));
         Assert.Single(queued);
 
-        await SendEmailsAsync();
+        await SendEmailsAsync("onedrop");
         var sent = Factory.Services.GetRequiredService<EmailLog>().Recent
             .Where(email => email.Subject.Contains(payout.Number, StringComparison.Ordinal))
             .ToList();
@@ -61,16 +63,9 @@ public class MerchantEmailTests(WebAppFactory factory) : AppTests(factory)
         Assert.Equal(
             OutboxStatus.Sent,
             await QueryAsync("onedrop", db => db.OutboxMessages.Where(m => m.Id == queued[0].Id).Select(m => m.Status).SingleAsync(Cancel)));
-        await SendEmailsAsync();
+        await SendEmailsAsync("onedrop");
         Assert.Single(
             Factory.Services.GetRequiredService<EmailLog>().Recent,
             e => e.Subject.Contains(payout.Number, StringComparison.Ordinal));
-    }
-
-    private async Task SendEmailsAsync()
-    {
-        await using var scope = await ScopeAsync("onedrop");
-        await scope.ServiceProvider.GetRequiredService<SendEmailsJob>().RunAsync(Cancel);
-        await scope.ServiceProvider.GetRequiredService<AppDbContext>().SaveChangesAsync(Cancel);
     }
 }
