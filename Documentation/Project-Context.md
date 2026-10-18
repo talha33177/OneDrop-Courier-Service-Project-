@@ -544,7 +544,7 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
 | API keys `od_{12-char prefix}_{32-char secret}`, only a SHA-256 hash stored | The prefix finds the key before the tenant is known |
 | Outbox in the change's transaction; texts written at send time; webhooks in their own loop | A change never saves without its message; a slow merchant server never delays an SMS |
 | Integration tests use `OneDrop-Test`; each test makes its own merchants and riders | Test data never touches dev; parallel tests never count each other's parcels |
-| Secrets only in git-ignored `*.Local.json` | The repository never holds the password |
+| **2026-10-18: the `*.Local.json` files are committed** (owner, replacing "secrets only in git-ignored `*.Local.json`"). They hold the dev and test connection strings (`sa`), the Gmail app password and the SSLCommerz sandbox keys | The repository is private to the owner and the team, and the live site (updated by `git pull` through `Deploy-Iis.ps1`) then gets the mail and SSLCommerz settings with nothing to set by hand, so the merchant's "Pay online" button appears. The live IIS app pool's environment variables still override the file, so production keeps its own connection string. The price: a secret in git history cannot be taken back, so the repository must never go public as it is, and the Gmail app password should be rotated if it ever might have leaked |
 | 2026-10-05: a rider with parcels, an open run or an assigned pickup cannot be stopped or moved to another hub | A stopped rider's app shows no work and a moved one hands cash in at the wrong hub, so that work would be stuck |
 | 2026-10-05: a pickup point cannot move to another zone while parcels or a pickup wait there | Those parcels were priced, and the pickup sent to a hub, by the old zone |
 | 2026-10-05: a hold's "deliver on" day must be after today | A past day would put the parcel straight back in the queue as if the customer had asked for it |
@@ -589,8 +589,8 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
 | Machine | Windows 11, .NET SDK 10.0.4xx, PowerShell 5.1 + Git Bash, Node 25 (for screenshot scripts) |
 | SQL Server | `ras-x2,1433` (SQL Server 2025, login `sa`, shared with the team). From 2026-10-04 to 2026-10-06 it was reached as `10.50.0.1,1433` over the VPN while `ras-x2` did not resolve; the owner switched back to `ras-x2` on 2026-10-06 |
 | Databases | `OneDrop` (development), `OneDrop-Test` (integration tests). **Ask before creating any other** |
-| Connection strings | `src/Web/appsettings.Local.json` and `tests/Integration.Tests/testsettings.Local.json`, git-ignored |
-| SSLCommerz | The owner's sandbox store (2026-10-08; its merchant panel is `sandbox-gw.sslcommerz.com`, the API `sandbox.sslcommerz.com`). `Sslcommerz:StoreId` and `StorePassword` belong in `src/Web/appsettings.Local.json` only; without them Development uses the test gateway (`/Dev/Pay`) |
+| Connection strings | `src/Web/appsettings.Local.json` and `tests/Integration.Tests/testsettings.Local.json`, committed (2026-10-18) |
+| SSLCommerz | The owner's sandbox store (2026-10-08; its merchant panel is `sandbox-gw.sslcommerz.com`, the API `sandbox.sslcommerz.com`). `Sslcommerz:StoreId` and `StorePassword` are in `src/Web/appsettings.Local.json`, which is committed, so the live site has them too; without them Development uses the test gateway (`/Dev/Pay`) |
 | Tools | `sqlpackage` (dotnet global tool), `sqlcmd`, Docker Desktop, GitHub CLI at `C:\Program Files\GitHub CLI\gh.exe` |
 | Repository | https://github.com/talha33177net-eng/OneDrop (private), local folder `C:\Courier Project`; the rebuild is on branch `traditional-courier` |
 | Git identity | Talha Ahmed &lt;talha33177.net@gmail.com&gt; |
@@ -619,7 +619,8 @@ dotnet run --project src/Web
 3. **No product-name prefix** in projects, folders, namespaces or class names.
 4. **Commits are authored by the repository owner only.** No co-author trailers, no "generated with" lines, no
    tool-named files in the repository.
-5. **Never commit secrets.** Connection strings stay in `*.Local.json`. Scan staged files before every push.
+5. **Secrets live in the committed `*.Local.json` files only** (2026-10-18). Never put one in any other file, a log or
+   a commit message; the repository stays private.
 6. **Ask before creating databases** on the shared server, and before anything that is hard to undo.
 7. Leave changes uncommitted for review unless asked to commit or push.
 8. Keep this file and the plan up to date as part of the work.
