@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Mail;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 using Microsoft.Extensions.Logging;
 using Application.Abstractions;
 
@@ -25,6 +26,12 @@ public sealed class EmailOptions
     public string? From { get; set; }
 
     public string? FromName { get; set; }
+
+    /// <summary>A secure connection: STARTTLS, or SSL from the start on port 465.</summary>
+    public bool UseSsl { get; set; } = true;
+
+    /// <summary>Accepts a certificate nobody vouches for, for a mail server of the courier's own.</summary>
+    public bool AllowSelfSigned { get; set; }
 
     public bool Configured => !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(From);
 }
@@ -62,31 +69,86 @@ public class FakeEmailSender(EmailLog log, TimeProvider time, ILogger<FakeEmailS
 }
 
 /// <summary>
-/// Sends through an ordinary SMTP server with STARTTLS (Gmail, and anything else that speaks it). One client per
-/// message, because <see cref="SmtpClient"/> is not safe to share between sends.
+/// Sends through an ordinary SMTP server (Gmail, a company's own mail server, anything that speaks it) with MailKit. One
+/// connection per message. A secure connection is STARTTLS, or SSL from the start on port 465; with
+/// <see cref="EmailOptions.AllowSelfSigned"/> this one connection accepts a certificate nobody vouches for, and nothing
+/// else in the app does.
 /// </summary>
 public class SmtpEmailSender(EmailOptions options, EmailLog log, TimeProvider time, ILogger<SmtpEmailSender> logger)
     : IEmailSender
 {
     public async Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
-        using var mail = new MailMessage
-        {
-            From = new MailAddress(options.From!, options.FromName ?? options.From!),
-            Subject = message.Subject,
-            Body = message.Text,
-            IsBodyHtml = false
-        };
-        mail.To.Add(message.ToName is null ? new MailAddress(message.To) : new MailAddress(message.To, message.ToName));
-        mail.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(message.Html, null, "text/html"));
+        var mail = new MimeMessage();
+        mail.From.Add(new MailboxAddress(options.FromName ?? options.From!, options.From!));
+        mail.To.Add(message.ToName is null ? MailboxAddress.Parse(message.To) : new MailboxAddress(message.ToName, message.To));
+        mail.Subject = message.Subject;
+        mail.Body = new BodyBuilder { TextBody = message.Text, HtmlBody = message.Html }.ToMessageBody();
 
-        using var client = new SmtpClient(options.Host, options.Port)
+        using var client = await ConnectAsync(options, cancellationToken);
+        try
         {
-            EnableSsl = true,
-            Credentials = new NetworkCredential(options.User ?? options.From, options.Password)
-        };
-        await client.SendMailAsync(mail, cancellationToken);
+            await client.SendAsync(mail, cancellationToken);
+            await client.DisconnectAsync(true, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw Slow(options);
+        }
+
         log.Add(new SentEmail(time.GetUtcNow().UtcDateTime, message.To, message.Subject, message.Text, message.Html));
         logger.LogInformation("Email sent to {To}: {Subject}", message.To, message.Subject);
+    }
+
+    /// <summary>
+    /// Connects and signs in, sending nothing: whether this server will take the courier's mail. Throws with the
+    /// server's own words when it will not.
+    /// </summary>
+    public static async Task CheckAsync(EmailOptions options, CancellationToken cancellationToken = default)
+    {
+        using var client = await ConnectAsync(options, cancellationToken);
+        await client.DisconnectAsync(true, cancellationToken);
+    }
+
+    /// <summary>A server that did not answer within the client's time, in words the admin can act on.</summary>
+    private static TimeoutException Slow(EmailOptions options)
+    {
+        return new TimeoutException(
+            $"{options.Host}:{options.Port} did not answer in time. Check the host and the port, and that this server may reach it.");
+    }
+
+    private static async Task<SmtpClient> ConnectAsync(EmailOptions options, CancellationToken cancellationToken)
+    {
+        var client = new SmtpClient { Timeout = 20_000 };
+        try
+        {
+            if (options is { UseSsl: true, AllowSelfSigned: true })
+            {
+                client.ServerCertificateValidationCallback = (_, _, _, _) => true;
+            }
+
+            var secure = !options.UseSsl
+                ? SecureSocketOptions.None
+                : options.Port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+            await client.ConnectAsync(options.Host!, options.Port, secure, cancellationToken);
+            if (!string.IsNullOrEmpty(options.Password))
+            {
+                await client.AuthenticateAsync(options.User is { Length: > 0 } user ? user : options.From!, options.Password, cancellationToken);
+            }
+
+            return client;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            client.Dispose();
+
+            throw Slow(options);
+        }
+        catch
+        {
+            client.Dispose();
+
+            throw;
+        }
     }
 }

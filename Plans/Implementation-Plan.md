@@ -340,6 +340,28 @@ New ones are added there and dated here.
 
 Newest first.
 
+### 2026-10-18 (the email sender, like the owner's other app)
+- **Owner's request:** a screenshot of another app's "Email Sender" settings: "make my smtp mail like this".
+- **Done:** `/Admin/Connections`' mail card is now "Email sender": an on/off switch (off keeps the details and sends
+  nothing, without falling back to the server's settings), sender name and email, SMTP host and port, the username
+  following the sender email unless "Use a different login", the saved password shown as its first and last two
+  characters (`ab••••••yz`, only when 12 or more long) with Edit and Delete (delete: the server is tried without a
+  login), "Use secure SMTP (SSL/TLS)", "Allow self-signed TLS certificate (not recommended)", and **Test connection**,
+  which tries the server as typed (an empty password box tries the saved one), signs in, sends and saves nothing, and
+  shows the server's answer without reloading the page. Sending moved to **MailKit 4.18.1** (`System.Net.Mail` cannot
+  accept a self-signed certificate per connection, nor SSL from the start on port 465); a timeout now reads
+  "host:port did not answer in time". `Notifications.MailServer` gained `IsEnabled`, `UseSsl`, `AllowSelfSigned`
+  (defaults, so no `Scripts/Pre`); `IMailServerCheck`; `IMailTransports.CheckAsync`.
+- **Tested:** build 0 warnings; domain **272**, architecture 6, integration **135 of 135, none skipped** (new:
+  `The_email_sender_can_be_switched_off_tried_before_saving_secured_and_have_its_password_deleted`; the sweep's
+  Connections line now looks for "Email sender"). The real transport, outside the tests: Gmail connected on 587
+  (STARTTLS) and 465 (SSL); a local server with a self-signed certificate was **refused with the option off and
+  accepted with it on**; a closed port and an unknown host gave readable errors. In the browser (OneDrop-Test): the
+  owner's Gmail through Test connection answered "Connected to smtp.gmail.com:587 and signed in. Nothing was sent.";
+  a dummy server saved showed `ab••••••yz` with Edit and Delete, Edit swapped in a password box; the dummy was then
+  removed (0 rows left). `mail.octopi-digital.com:587` accepts the connection but never greets from this network, so
+  it could not be tried here.
+
 ### 2026-10-18 (last of the day: every test green, and what the full run showed)
 - **Owner's request:** "what fails? check properly and fix it", then "fix that too".
 - **Found:** two tests were stale, not the product: `MerchantPanelTests` and `GuardTests` posted to

@@ -169,6 +169,18 @@ public sealed class RecordingMailTransports(EmailLog log, TimeProvider time, ILo
             : new FakeEmailSender(log, time, loggers.CreateLogger<FakeEmailSender>());
     }
 
+    /// <summary>The settings tried, as the last check saw them, so a test can prove what the page posted.</summary>
+    public static EmailOptions? LastChecked { get; private set; }
+
+    public Task CheckAsync(EmailOptions options, CancellationToken cancellationToken = default)
+    {
+        LastChecked = options;
+
+        return options.Host!.EndsWith(".invalid", StringComparison.OrdinalIgnoreCase)
+            ? Task.FromException(new InvalidOperationException($"No such host is known: {options.Host}"))
+            : Task.CompletedTask;
+    }
+
     private sealed class RefusingSender(string host) : IEmailSender
     {
         public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)

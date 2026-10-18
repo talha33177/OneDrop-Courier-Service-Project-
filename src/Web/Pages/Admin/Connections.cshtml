@@ -5,28 +5,27 @@
     ViewData["Title"] = "Email and payments";
     var mail = Model.View.Mail;
     var store = Model.View.Store;
+    var courierName = Model.CourierName;
 }
 
 <div class="page-head">
     <div>
         <h1>Email and payments</h1>
-        <p>The mail server merchants' payout emails go out through, and the SSLCommerz store that takes online payments. Only super admins see this page. Passwords are kept encrypted and never shown again: leave a password box empty to keep the one saved.</p>
+        <p>The mail server merchants' payout emails go out through, and the SSLCommerz store that takes online payments. Only super admins see this page. Passwords are kept encrypted: leave a password box empty to keep the one saved.</p>
     </div>
 </div>
 
 <partial name="_Alerts" />
 
-<div class="grid grid-2">
-    <div class="card">
-        <div class="card-head">
-            <div>
-                <h2>@Icons.Get("message") Mail server</h2>
-                <p>
-                    @if (mail is not null)
-                    {
-                        <span class="badge badge-done">In use</span>
-                    }
-                    else if (Model.View.ServerHasMail)
+<div class="card" style="max-width:860px">
+    <div class="card-head">
+        <div>
+            <h2>@Icons.Get("message") Email sender</h2>
+            <p>
+                Set the address emails come from and the SMTP server that sends them: payout notices, approvals, sign-up codes, receipts and password links.
+                @if (mail is null)
+                {
+                    @if (Model.View.ServerHasMail)
                     {
                         <span class="badge badge-pending">Using the server's settings</span>
                     }
@@ -34,96 +33,234 @@
                     {
                         <span class="badge badge-cancel">Not set: no emails are sent</span>
                     }
-                </p>
-            </div>
+                }
+                else if (mail.IsEnabled)
+                {
+                    <span class="badge badge-done">On</span>
+                }
+                else
+                {
+                    <span class="badge badge-hold">Off: no emails are sent</span>
+                }
+            </p>
         </div>
-        <div class="card-body">
-            @if (mail is { PasswordReadable: false })
-            {
-                <div class="alert alert-warning">The saved password can no longer be read. Enter it again and save.</div>
-            }
-            <form method="post" asp-page-handler="Mail">
-                <div class="form-grid">
-                    <div class="field"><label for="host">Server</label><input type="text" id="host" name="host" value="@mail?.Host" maxlength="200" placeholder="smtp.gmail.com" required /></div>
-                    <div class="field"><label for="port">Port</label><input type="number" id="port" name="port" value="@(mail?.Port ?? 587)" min="1" max="65535" required /><span class="hint">587 for Gmail and most servers.</span></div>
-                </div>
-                <div class="form-grid">
-                    <div class="field"><label for="fromAddress">From address</label><input type="email" id="fromAddress" name="fromAddress" value="@mail?.FromAddress" maxlength="254" placeholder="you@gmail.com" required /><span class="hint">Gmail sends as the account's own address whatever this says.</span></div>
-                    <div class="field"><label for="fromName">From name</label><input type="text" id="fromName" name="fromName" value="@mail?.FromName" maxlength="200" placeholder="OneDrop Courier" /></div>
-                </div>
-                <div class="form-grid">
-                    <div class="field"><label for="userName">Login</label><input type="text" id="userName" name="userName" value="@mail?.UserName" maxlength="254" placeholder="The from address" autocomplete="off" /><span class="hint">Leave empty when it is the from address.</span></div>
-                    <div class="field"><label for="password">Password</label><input type="password" id="password" name="password" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="@(mail is null ? "" : "Saved: leave empty to keep it")" required="@(mail is null)" data-reveal /><span class="hint">For Gmail, an app password (Google account, Security, App passwords), not the account's own.</span></div>
-                </div>
-                <div class="form-actions"><button class="btn btn-primary" type="submit">Save mail server</button></div>
-            </form>
-        </div>
-        @if (mail is not null || Model.View.ServerHasMail)
-        {
-            <div class="card-body">
-                <form method="post" asp-page-handler="TestMail" class="form-grid">
-                    <div class="field"><label for="to">Send a test email to</label><input type="email" id="to" name="to" value="@Model.TestTo" required /></div>
-                    <div class="field" style="align-self:end"><button class="btn btn-outline" type="submit">@Icons.Get("send") Send test email</button></div>
-                </form>
-            </div>
-        }
-        @if (mail is not null)
-        {
-            <div class="card-body">
-                <form method="post" asp-page-handler="RemoveMail">
-                    <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasMail ? "Emails go out through the server's own settings again." : "No emails are sent until a mail server is saved again.")" data-confirm-title="Remove the mail server?" data-confirm-ok="Remove">@Icons.Get("x") Remove</button>
-                </form>
-            </div>
-        }
     </div>
+    <div class="card-body">
+        @if (mail is { PasswordReadable: false })
+        {
+            <div class="alert alert-warning">The saved password can no longer be read. Enter it again and save.</div>
+        }
+        <form method="post" asp-page-handler="Mail" data-mail-form>
+            <div class="switch-row">
+                <div>
+                    <strong>Enable email sender</strong>
+                    <small>When on, emails go out through this server. When off, the details are kept and none are sent.</small>
+                </div>
+                <label class="switch" aria-label="Enable email sender">
+                    <input type="checkbox" name="isEnabled" value="true" checked="@(mail?.IsEnabled ?? true)" />
+                    <input type="hidden" name="isEnabled" value="false" />
+                    <span class="slider"></span>
+                </label>
+            </div>
 
-    <div class="card">
-        <div class="card-head">
-            <div>
-                <h2>@Icons.Get("wallet") SSLCommerz store</h2>
-                <p>
-                    @if (store is not null)
+            <div class="form-grid">
+                <div class="field"><label for="fromName">Sender name</label><input type="text" id="fromName" name="fromName" value="@(mail?.FromName ?? courierName)" maxlength="200" placeholder="@courierName" /></div>
+                <div class="field"><label for="fromAddress">Sender email</label><input type="email" id="fromAddress" name="fromAddress" value="@mail?.FromAddress" maxlength="254" placeholder="you@yourcourier.com" required /><span class="hint">Gmail sends as the account's own address whatever this says.</span></div>
+            </div>
+
+            <div class="mail-grid-host">
+                <div class="field"><label for="host">SMTP host</label><input type="text" id="host" name="host" value="@mail?.Host" maxlength="200" placeholder="smtp.gmail.com" required /></div>
+                <div class="field"><label for="port">SMTP port</label><input type="number" id="port" name="port" value="@(mail?.Port ?? 587)" min="1" max="65535" required /><span class="hint">587 for most servers, 465 for SSL from the start.</span></div>
+            </div>
+
+            <div class="form-grid">
+                <div class="field">
+                    <label for="userName">SMTP username</label>
+                    <input type="text" id="userName" name="userName" value="@mail?.UserName" maxlength="254" autocomplete="off" data-same="@(string.IsNullOrEmpty(mail?.UserName) ? "yes" : "no")" />
+                    <span class="hint" data-user-hint>Same as sender email. <button type="button" class="btn-link" data-different-login>Use a different login</button></span>
+                </div>
+                <div class="field">
+                    <label for="password">SMTP password</label>
+                    @if (mail is { HasPassword: true, PasswordHint: not null })
                     {
-                        <span class="badge @(store.IsLive ? "badge-done" : "badge-hold")">@(store.IsLive ? "Live: real money" : "Sandbox: test money")</span>
-                    }
-                    else if (Model.View.ServerHasStore)
-                    {
-                        <span class="badge badge-pending">Using the server's settings</span>
+                        <div class="secret-box" data-password-saved>
+                            <span class="mono">@mail.PasswordHint</span>
+                            <span class="secret-actions">
+                                <button type="button" class="btn btn-outline btn-sm" data-edit-password>Edit</button>
+                                <button type="submit" class="btn btn-danger btn-sm" asp-page-handler="RemoveMailPassword" formnovalidate data-confirm="The server is then tried without a login until you enter a password again." data-confirm-title="Delete the saved password?" data-confirm-ok="Delete">Delete</button>
+                            </span>
+                        </div>
+                        <input type="password" id="password" name="password" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="New password" hidden data-password-input />
                     }
                     else
                     {
-                        <span class="badge badge-cancel">Not set: no online payments</span>
+                        <input type="password" id="password" name="password" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" required="@(mail is null)" data-reveal />
+                        <span class="hint">@(mail is null ? "For Gmail, an app password (Google account, Security, App passwords), not the account's own." : "No password is saved: the server is tried without a login.")</span>
                     }
-                </p>
+                </div>
             </div>
-        </div>
+
+            <div class="field">
+                <label class="check"><input type="checkbox" name="useSsl" value="true" checked="@(mail?.UseSsl ?? true)" /> Use secure SMTP (SSL/TLS)</label>
+                <input type="hidden" name="useSsl" value="false" />
+            </div>
+            <div class="alert alert-warning" data-self-signed>
+                @Icons.Get("alert")
+                <div>
+                    <label class="check"><input type="checkbox" name="allowSelfSigned" value="true" checked="@(mail?.AllowSelfSigned ?? false)" /> Allow self-signed TLS certificate (not recommended)</label>
+                    <input type="hidden" name="allowSelfSigned" value="false" />
+                    <span class="hint">Only for a mail server of your own whose certificate nobody vouches for. It lets anyone between us and that server read the mail.</span>
+                </div>
+            </div>
+
+            <div data-check-result class="alert mt" role="status" hidden></div>
+
+            <div class="mail-actions">
+                <button type="button" class="btn btn-outline" data-check-url="@Url.Page("/Admin/Connections", "CheckMail")">@Icons.Get("refresh") Test connection</button>
+                <button type="submit" class="btn btn-primary">Save email settings</button>
+            </div>
+        </form>
+    </div>
+    @if (mail is not null || Model.View.ServerHasMail)
+    {
         <div class="card-body">
-            @if (store is { PasswordReadable: false })
-            {
-                <div class="alert alert-warning">The saved store password can no longer be read. Enter it again and save.</div>
-            }
-            <form method="post" asp-page-handler="Store">
-                <div class="form-grid">
-                    <div class="field"><label for="storeId">Store ID</label><input type="text" id="storeId" name="storeId" value="@store?.StoreId" maxlength="100" pattern="[A-Za-z0-9]+" autocomplete="off" required /></div>
-                    <div class="field"><label for="storePassword">Store password</label><input type="password" id="storePassword" name="storePassword" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="@(store is null ? "" : "Saved: leave empty to keep it")" required="@(store is null)" data-reveal /></div>
-                </div>
-                <div class="field">
-                    <label>Gateway</label>
-                    <label class="check"><input type="radio" name="isLive" value="false" checked="@(store?.IsLive != true)" /> Sandbox: test payments, no real money</label>
-                    <label class="check"><input type="radio" name="isLive" value="true" checked="@(store?.IsLive == true)" /> Live: real money (a store SSLCommerz approved for live)</label>
-                    <span class="hint">A sandbox store's ID and password do not work on the live gateway, nor the other way round.</span>
-                </div>
-                <p class="hint">Merchants then see "Pay online" when they owe the courier, and recipients can pay their cash on delivery online from the tracking page.</p>
-                <div class="form-actions"><button class="btn btn-primary" type="submit" data-confirm="Payments use the store from the next page anyone opens." data-confirm-title="Save the store?" data-confirm-ok="Save" data-confirm-tone="calm">Save store</button></div>
+            <form method="post" asp-page-handler="TestMail" class="form-grid">
+                <div class="field"><label for="to">Send a test email to</label><input type="email" id="to" name="to" value="@Model.TestTo" required /><span class="hint">Sends a real email through the saved settings.</span></div>
+                <div class="field" style="align-self:end"><button class="btn btn-outline" type="submit">@Icons.Get("send") Send test email</button></div>
             </form>
         </div>
-        @if (store is not null)
-        {
-            <div class="card-body">
-                <form method="post" asp-page-handler="RemoveStore">
-                    <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasStore ? "Online payments use the server's own store again." : "Merchants and recipients can no longer pay online, and payments already started are not checked, until a store is saved again.")" data-confirm-title="Remove the store?" data-confirm-ok="Remove">@Icons.Get("x") Remove</button>
-                </form>
-            </div>
-        }
-    </div>
+    }
+    @if (mail is not null)
+    {
+        <div class="card-body">
+            <form method="post" asp-page-handler="RemoveMail">
+                <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasMail ? "Emails go out through the server's own settings again." : "No emails are sent until a mail server is saved again.")" data-confirm-title="Remove the mail server?" data-confirm-ok="Remove">@Icons.Get("x") Remove the mail server</button>
+            </form>
+        </div>
+    }
 </div>
+
+<div class="card mt" style="max-width:860px">
+    <div class="card-head">
+        <div>
+            <h2>@Icons.Get("wallet") SSLCommerz store</h2>
+            <p>
+                @if (store is not null)
+                {
+                    <span class="badge @(store.IsLive ? "badge-done" : "badge-hold")">@(store.IsLive ? "Live: real money" : "Sandbox: test money")</span>
+                }
+                else if (Model.View.ServerHasStore)
+                {
+                    <span class="badge badge-pending">Using the server's settings</span>
+                }
+                else
+                {
+                    <span class="badge badge-cancel">Not set: no online payments</span>
+                }
+            </p>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (store is { PasswordReadable: false })
+        {
+            <div class="alert alert-warning">The saved store password can no longer be read. Enter it again and save.</div>
+        }
+        <form method="post" asp-page-handler="Store">
+            <div class="form-grid">
+                <div class="field"><label for="storeId">Store ID</label><input type="text" id="storeId" name="storeId" value="@store?.StoreId" maxlength="100" pattern="[A-Za-z0-9]+" autocomplete="off" required /></div>
+                <div class="field"><label for="storePassword">Store password</label><input type="password" id="storePassword" name="storePassword" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="@(store is null ? "" : "Saved: leave empty to keep it")" required="@(store is null)" data-reveal /></div>
+            </div>
+            <div class="field">
+                <label>Gateway</label>
+                <label class="check"><input type="radio" name="isLive" value="false" checked="@(store?.IsLive != true)" /> Sandbox: test payments, no real money</label>
+                <label class="check"><input type="radio" name="isLive" value="true" checked="@(store?.IsLive == true)" /> Live: real money (a store SSLCommerz approved for live)</label>
+                <span class="hint">A sandbox store's ID and password do not work on the live gateway, nor the other way round.</span>
+            </div>
+            <p class="hint">Merchants then see "Pay online" when they owe the courier, and recipients can pay their cash on delivery online from the tracking page.</p>
+            <div class="form-actions"><button class="btn btn-primary" type="submit" data-confirm="Payments use the store from the next page anyone opens." data-confirm-title="Save the store?" data-confirm-ok="Save" data-confirm-tone="calm">Save store</button></div>
+        </form>
+    </div>
+    @if (store is not null)
+    {
+        <div class="card-body">
+            <form method="post" asp-page-handler="RemoveStore">
+                <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasStore ? "Online payments use the server's own store again." : "Merchants and recipients can no longer pay online, and payments already started are not checked, until a store is saved again.")" data-confirm-title="Remove the store?" data-confirm-ok="Remove">@Icons.Get("x") Remove</button>
+            </form>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var form = document.querySelector('[data-mail-form]');
+            if (!form) { return; }
+            var from = form.querySelector('[name=fromAddress]');
+            var user = form.querySelector('[name=userName]');
+            var userHint = form.querySelector('[data-user-hint]');
+            var secure = form.querySelector('input[type=checkbox][name=useSsl]');
+            var selfSigned = form.querySelector('input[type=checkbox][name=allowSelfSigned]');
+            var selfBox = form.querySelector('[data-self-signed]');
+
+            // The login is the sender email unless the admin says otherwise
+            function sameLogin() {
+                var same = user.dataset.same === 'yes';
+                user.readOnly = same;
+                user.classList.toggle('is-same', same);
+                user.placeholder = same ? (from.value || 'Same as sender email') : '';
+                if (same) { user.value = ''; }
+                userHint.hidden = !same;
+            }
+            from.addEventListener('input', function () { if (user.dataset.same === 'yes') { user.placeholder = from.value || 'Same as sender email'; } });
+            form.querySelector('[data-different-login]').addEventListener('click', function () {
+                user.dataset.same = 'no';
+                sameLogin();
+                user.value = from.value;
+                user.focus();
+            });
+            sameLogin();
+
+            // A certificate is only checked on a secure connection
+            function syncSecure() {
+                selfSigned.disabled = !secure.checked;
+                if (!secure.checked) { selfSigned.checked = false; }
+                selfBox.style.opacity = secure.checked ? '' : '.55';
+            }
+            secure.addEventListener('change', syncSecure);
+            syncSecure();
+
+            // Edit swaps the hidden password for a box to type a new one
+            var edit = form.querySelector('[data-edit-password]');
+            if (edit) {
+                edit.addEventListener('click', function () {
+                    var input = form.querySelector('[data-password-input]');
+                    form.querySelector('[data-password-saved]').hidden = true;
+                    input.hidden = false;
+                    input.focus();
+                });
+            }
+
+            // Test connection tries the server as typed, saving nothing, and shows what it answered
+            var check = form.querySelector('[data-check-url]');
+            var result = form.querySelector('[data-check-result]');
+            check.addEventListener('click', async function () {
+                if (!form.reportValidity()) { return; }
+                check.disabled = true;
+                result.hidden = false;
+                result.className = 'alert alert-info mt';
+                result.textContent = 'Connecting…';
+                try {
+                    var answer = await fetch(check.dataset.checkUrl, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
+                    var data = await answer.json();
+                    result.className = 'alert mt ' + (data.ok ? 'alert-success' : 'alert-error');
+                    result.textContent = data.message;
+                } catch (error) {
+                    result.className = 'alert alert-error mt';
+                    result.textContent = 'The page could not reach the courier. Check your connection and try again.';
+                } finally {
+                    check.disabled = false;
+                }
+            });
+        })();
+    </script>
+}

@@ -325,8 +325,8 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
             // ConnectionsTests saves the rival's mail server and store and checks the launch courier sees neither
             ("/Admin/Connections", async () =>
             {
-                Assert.Contains("Mail server", await admin.PageAsync("/Admin/Connections"));
-                Assert.Contains("Mail server", await rivalAdmin.PageAsync("/Admin/Connections"));
+                Assert.Contains("Email sender", await admin.PageAsync("/Admin/Connections"));
+                Assert.Contains("Email sender", await rivalAdmin.PageAsync("/Admin/Connections"));
             }),
             // StuckParcelsTests makes a parcel stuck and checks the rival courier cannot see it; here the page only answers
             ("/Admin/Stuck", async () => Assert.DoesNotContain(outCode, await rivalAdmin.PageAsync("/Admin/Stuck"))),

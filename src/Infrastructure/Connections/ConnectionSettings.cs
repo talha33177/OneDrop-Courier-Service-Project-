@@ -62,7 +62,7 @@ public class ConnectionSettings(
             entry.AbsoluteExpirationRelativeToNow = Keep;
             var server = db.MailServers.AsNoTracking().SingleOrDefault();
             var store = db.GatewayStores.AsNoTracking().SingleOrDefault();
-            var mailPassword = server is null ? null : secrets.Open(server.Password);
+            var mailPassword = server is null ? null : server.HasPassword ? secrets.Open(server.Password) : "";
             var storePassword = store is null ? null : secrets.Open(store.StorePassword);
             if ((server is not null && mailPassword is null) || (store is not null && storePassword is null))
             {
@@ -73,17 +73,23 @@ public class ConnectionSettings(
             var file = ServerStore();
 
             return new Saved(
+                // A saved server is the courier's choice, on or off: switched off it sends nothing, and the server's
+                // own settings are not used in its place
                 server is null || mailPassword is null
                     ? null
-                    : new EmailOptions
-                    {
-                        Host = server.Host,
-                        Port = server.Port,
-                        User = server.UserName,
-                        Password = mailPassword,
-                        From = server.FromAddress,
-                        FromName = server.FromName
-                    },
+                    : !server.IsEnabled
+                        ? new EmailOptions()
+                        : new EmailOptions
+                        {
+                            Host = server.Host,
+                            Port = server.Port,
+                            User = server.UserName,
+                            Password = mailPassword,
+                            From = server.FromAddress,
+                            FromName = server.FromName,
+                            UseSsl = server.UseSsl,
+                            AllowSelfSigned = server.AllowSelfSigned
+                        },
                 store is null || storePassword is null
                     ? null
                     : new SslcommerzOptions

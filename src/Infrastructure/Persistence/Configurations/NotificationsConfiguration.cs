@@ -27,6 +27,7 @@ public class MailServerConfiguration : IEntityTypeConfiguration<MailServer>
         builder.Property(s => s.Password).HasMaxLength(2000);
         builder.Property(s => s.FromAddress).HasMaxLength(254);
         builder.Property(s => s.FromName).HasMaxLength(200);
+        builder.Ignore(s => s.HasPassword);
         builder.HasIndex(s => s.TenantId).IsUnique().HasDatabaseName("UX_MailServer_Tenant");
     }
 }

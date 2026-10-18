@@ -34,3 +34,13 @@ public interface IConnectionSettings
     /// <summary>Drops the current courier's cached settings, so a change applies from the next email or payment.</summary>
     void Forget();
 }
+
+/// <summary>A mail server to try: where, how to sign in, and how secure the connection is.</summary>
+public sealed record MailServerCheck(string Host, int Port, string? UserName, string? Password, string FromAddress, bool UseSsl, bool AllowSelfSigned);
+
+/// <summary>Tries a mail server by connecting and signing in, without sending anything.</summary>
+public interface IMailServerCheck
+{
+    /// <summary>Throws with the server's own words when it will not take the mail.</summary>
+    Task CheckAsync(MailServerCheck server, CancellationToken cancellationToken = default);
+}

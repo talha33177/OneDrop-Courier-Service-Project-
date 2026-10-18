@@ -7,7 +7,22 @@ using Domain.Payments;
 
 namespace Application.Platform.Connections;
 
-public sealed record MailServerView(string Host, int Port, string? UserName, string FromAddress, string? FromName, bool PasswordReadable);
+/// <summary>
+/// The courier's saved mail server as the page shows it. <paramref name="PasswordHint"/> is the password with its
+/// middle hidden, so the admin can tell which one is saved; null when none is (a server that takes mail without a login).
+/// </summary>
+public sealed record MailServerView(
+    string Host,
+    int Port,
+    string? UserName,
+    string FromAddress,
+    string? FromName,
+    bool IsEnabled,
+    bool UseSsl,
+    bool AllowSelfSigned,
+    bool HasPassword,
+    string? PasswordHint,
+    bool PasswordReadable);
 
 public sealed record GatewayStoreView(string StoreId, bool IsLive, bool PasswordReadable);
 
@@ -16,10 +31,17 @@ public sealed record ConnectionsView(MailServerView? Mail, GatewayStoreView? Sto
 
 /// <summary>
 /// The mail server the courier's emails go out through and the SSLCommerz store it takes online payments with, kept
-/// by its super admin. Passwords are sealed before they are stored and never shown back: an empty password box keeps
-/// the one saved. Removing either goes back to the server's own settings.
+/// by its super admin. Passwords are sealed before they are stored and never shown back, except for their first and last
+/// two characters when they are long enough to hide the rest: an empty password box keeps the one saved. Removing
+/// either goes back to the server's own settings.
 /// </summary>
-public class ConnectionsHandler(IAppDbContext db, ISecretBox secrets, IConnectionSettings settings, IEmailSender email, ITrackingLinks links)
+public class ConnectionsHandler(
+    IAppDbContext db,
+    ISecretBox secrets,
+    IConnectionSettings settings,
+    IEmailSender email,
+    IMailServerCheck mailCheck,
+    ITrackingLinks links)
 {
     public const int MaxPasswordLength = 200;
 
@@ -27,14 +49,32 @@ public class ConnectionsHandler(IAppDbContext db, ISecretBox secrets, IConnectio
     {
         var mail = await db.MailServers.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
         var store = await db.GatewayStores.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        var clear = mail is { HasPassword: true } ? secrets.Open(mail.Password) : null;
 
         return new ConnectionsView(
             mail is null
                 ? null
-                : new MailServerView(mail.Host, mail.Port, mail.UserName, mail.FromAddress, mail.FromName, secrets.Open(mail.Password) is not null),
+                : new MailServerView(
+                    mail.Host,
+                    mail.Port,
+                    mail.UserName,
+                    mail.FromAddress,
+                    mail.FromName,
+                    mail.IsEnabled,
+                    mail.UseSsl,
+                    mail.AllowSelfSigned,
+                    mail.HasPassword,
+                    clear is null ? null : Hint(clear),
+                    !mail.HasPassword || clear is not null),
             store is null ? null : new GatewayStoreView(store.StoreId, store.IsLive, secrets.Open(store.StorePassword) is not null),
             settings.ServerHasMail,
             settings.ServerHasStore);
+    }
+
+    /// <summary>The first and last two characters of a long password with the middle hidden; a short one is hidden whole.</summary>
+    public static string Hint(string password)
+    {
+        return password.Length >= 12 ? $"{password[..2]}••••••{password[^2..]}" : "••••••••";
     }
 
     public async Task<Result> SaveMailAsync(MailServerDetails details, string? password, CancellationToken cancellationToken = default)
@@ -76,10 +116,56 @@ public class ConnectionsHandler(IAppDbContext db, ISecretBox secrets, IConnectio
         return Result.Success();
     }
 
+    /// <summary>Forgets the saved password: the server is then tried without a login.</summary>
+    public async Task<Result> RemoveMailPasswordAsync(CancellationToken cancellationToken = default)
+    {
+        var server = await db.MailServers.SingleOrDefaultAsync(cancellationToken);
+        if (server is null)
+        {
+            return Error.NotFound("mail.none", "No mail server is saved.");
+        }
+
+        server.ClearPassword();
+        await db.SaveChangesAsync(cancellationToken);
+        settings.Forget();
+
+        return Result.Success();
+    }
+
     public async Task RemoveMailAsync(CancellationToken cancellationToken = default)
     {
         await db.MailServers.ExecuteDeleteAsync(cancellationToken);
         settings.Forget();
+    }
+
+    /// <summary>
+    /// Connects to the server as typed and signs in, sending nothing and saving nothing. An empty password box tries
+    /// the password saved, if there is one.
+    /// </summary>
+    public async Task<Result<string>> CheckMailAsync(MailServerDetails details, string? password, CancellationToken cancellationToken = default)
+    {
+        var host = details.Host?.Trim();
+        if (string.IsNullOrEmpty(host) || details.Port is < 1 or > 65535 || string.IsNullOrWhiteSpace(details.FromAddress))
+        {
+            return Error.Validation("mail.check", "Enter the server, the port and the sender email first.");
+        }
+
+        var saved = string.IsNullOrEmpty(password)
+            ? await db.MailServers.AsNoTracking().Select(s => s.Password).SingleOrDefaultAsync(cancellationToken)
+            : null;
+        var word = !string.IsNullOrEmpty(password) ? password : saved is { Length: > 0 } ? secrets.Open(saved) : null;
+        try
+        {
+            await mailCheck.CheckAsync(
+                new MailServerCheck(host, details.Port, details.UserName?.Trim(), word, details.FromAddress.Trim(), details.UseSsl, details.AllowSelfSigned),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return Error.Conflict("mail.check", $"The server did not accept the connection: {exception.GetBaseException().Message}");
+        }
+
+        return $"Connected to {host}:{details.Port}{(string.IsNullOrEmpty(word) ? " (no login tried)" : " and signed in")}. Nothing was sent.";
     }
 
     public async Task<Result> SaveStoreAsync(string? storeId, bool isLive, string? password, CancellationToken cancellationToken = default)

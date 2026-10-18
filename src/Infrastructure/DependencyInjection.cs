@@ -82,6 +82,7 @@ public static class DependencyInjection
         services.AddSingleton<EmailLog>();
         services.AddSingleton<IMailTransports, SmtpMailTransports>();
         services.AddScoped<IEmailSender, CourierEmailSender>();
+        services.AddScoped<IMailServerCheck, MailServerCheckService>();
 
         services
             .AddHttpClient<IWebhookSender, HttpWebhookSender>((provider, client) => client.Timeout = TimeSpan.Parse(

@@ -14,14 +14,22 @@ namespace Infrastructure.Connections;
 public interface IMailTransports
 {
     IEmailSender For(EmailOptions options);
+
+    /// <summary>Connects and signs in without sending anything; throws with the server's own words when it will not take the mail.</summary>
+    Task CheckAsync(EmailOptions options, CancellationToken cancellationToken = default);
 }
 
-/// <summary>The real transport: SMTP with STARTTLS to the courier's mail server.</summary>
+/// <summary>The real transport: SMTP to the courier's mail server.</summary>
 public sealed class SmtpMailTransports(EmailLog log, TimeProvider time, ILoggerFactory loggers) : IMailTransports
 {
     public IEmailSender For(EmailOptions options)
     {
         return new SmtpEmailSender(options, log, time, loggers.CreateLogger<SmtpEmailSender>());
+    }
+
+    public Task CheckAsync(EmailOptions options, CancellationToken cancellationToken = default)
+    {
+        return SmtpEmailSender.CheckAsync(options, cancellationToken);
     }
 }
 
@@ -110,5 +118,25 @@ public class CourierPaymentGateway(
         return environment.IsDevelopment()
             ? new FakePaymentGateway(fakeLog, options, time, loggers.CreateLogger<FakePaymentGateway>())
             : new NoPaymentGateway(options);
+    }
+}
+
+/// <summary>Tries a mail server through the transport in use.</summary>
+public sealed class MailServerCheckService(IMailTransports transports) : IMailServerCheck
+{
+    public Task CheckAsync(MailServerCheck server, CancellationToken cancellationToken = default)
+    {
+        return transports.CheckAsync(
+            new EmailOptions
+            {
+                Host = server.Host,
+                Port = server.Port,
+                User = server.UserName,
+                Password = server.Password,
+                From = server.FromAddress,
+                UseSsl = server.UseSsl,
+                AllowSelfSigned = server.AllowSelfSigned
+            },
+            cancellationToken);
     }
 }

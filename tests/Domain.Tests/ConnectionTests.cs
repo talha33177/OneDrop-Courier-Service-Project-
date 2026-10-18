@@ -39,6 +39,27 @@ public class ConnectionTests
     }
 
     [Fact]
+    public void A_mail_server_can_be_switched_off_made_insecure_and_lose_its_password()
+    {
+        var server = MailServer.Create(Gmail, "sealed-1").Value;
+        Assert.Equal((true, true, false, true), (server.IsEnabled, server.UseSsl, server.AllowSelfSigned, server.HasPassword));
+
+        // Off keeps the details; a self-signed certificate is only a question on a secure connection
+        Assert.True(server.Change(Gmail with { IsEnabled = false, AllowSelfSigned = true }, null).IsSuccess);
+        Assert.Equal((false, true, true, "smtp.gmail.com"), (server.IsEnabled, server.UseSsl, server.AllowSelfSigned, server.Host));
+        Assert.True(server.Change(Gmail with { UseSsl = false, AllowSelfSigned = true }, null).IsSuccess);
+        Assert.Equal((false, false), (server.UseSsl, server.AllowSelfSigned));
+
+        // A server that takes mail without a login: the password goes, and saving again does not ask for one
+        server.ClearPassword();
+        Assert.False(server.HasPassword);
+        Assert.True(server.Change(Gmail, null).IsSuccess);
+        Assert.False(server.HasPassword);
+        Assert.True(server.Change(Gmail, "sealed-2").IsSuccess);
+        Assert.True(server.HasPassword);
+    }
+
+    [Fact]
     public void A_store_needs_its_id_and_a_password_and_keeps_the_password_when_none_is_typed()
     {
         var store = GatewayStore.Create(" onedr6ac6fd8338cc6 ", false, "sealed-1").Value;

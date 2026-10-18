@@ -3,12 +3,21 @@ using Domain.Common;
 namespace Domain.Notifications;
 
 /// <summary>What the super admin types about the courier's mail server, without the password.</summary>
-public sealed record MailServerDetails(string? Host, int Port, string? UserName, string? FromAddress, string? FromName);
+public sealed record MailServerDetails(
+    string? Host,
+    int Port,
+    string? UserName,
+    string? FromAddress,
+    string? FromName,
+    bool IsEnabled = true,
+    bool UseSsl = true,
+    bool AllowSelfSigned = false);
 
 /// <summary>
 /// The SMTP server the courier's emails go out through, kept by its super admin. At most one per courier
 /// (<c>UX_MailServer_Tenant</c>); with none, the server's own <c>Email:*</c> settings are used. <see cref="Password"/>
-/// is the password as the app encrypted it: this entity never sees it in clear.
+/// is the password as the app encrypted it (this entity never sees it in clear), or empty for a server that takes mail
+/// without a login. A server switched off keeps its details and sends nothing.
 /// </summary>
 public class MailServer : TenantEntity
 {
@@ -29,10 +38,20 @@ public class MailServer : TenantEntity
 
     public string? FromName { get; private set; }
 
+    public bool IsEnabled { get; private set; } = true;
+
+    /// <summary>A secure connection: STARTTLS, or SSL from the start on port 465.</summary>
+    public bool UseSsl { get; private set; } = true;
+
+    /// <summary>Accepts a certificate nobody vouches for, as a mail server of the courier's own often has.</summary>
+    public bool AllowSelfSigned { get; private set; }
+
+    public bool HasPassword => Password.Length > 0;
+
     public static Result<MailServer> Create(MailServerDetails details, string sealedPassword)
     {
-        var server = new MailServer();
-        var changed = server.Change(details, sealedPassword);
+        var server = new MailServer { Password = sealedPassword };
+        var changed = server.Change(details, null);
 
         return changed.IsSuccess ? server : changed.Error!;
     }
@@ -48,7 +67,7 @@ public class MailServer : TenantEntity
 
         if (details.Port is < 1 or > 65535)
         {
-            return Error.Validation("mail.port", "The port is a number from 1 to 65535; Gmail and most servers use 587.");
+            return Error.Validation("mail.port", "The port is a number from 1 to 65535; 587 for most servers, 465 for SSL from the start.");
         }
 
         var from = details.FromAddress.NullIfBlank();
@@ -69,19 +88,23 @@ public class MailServer : TenantEntity
             return Error.Validation("mail.fromName", "The sender's name is at most 200 characters.");
         }
 
-        if (sealedPassword is null && Password.Length == 0)
-        {
-            return Error.Validation("mail.password", "Enter the mail server's password (for Gmail, an app password).");
-        }
-
         Host = host;
         Port = details.Port;
         UserName = user;
         FromAddress = from!;
         FromName = name;
+        IsEnabled = details.IsEnabled;
+        UseSsl = details.UseSsl;
+        AllowSelfSigned = details.AllowSelfSigned && details.UseSsl;
         Password = sealedPassword ?? Password;
 
         return Result.Success();
+    }
+
+    /// <summary>Forgets the password: the server is then tried without a login.</summary>
+    public void ClearPassword()
+    {
+        Password = "";
     }
 
     private static bool IsEmail(string? value)

@@ -31,8 +31,10 @@ public class ConnectionsTests(WebAppFactory factory) : AppTests(factory)
                 ("userName", ""),
                 ("password", mailPassword),
                 ("fromAddress", "hello@rival.test"),
-                ("fromName", "Rival Courier"));
-            Assert.Contains("Mail server saved", saved);
+                ("fromName", "Rival Courier"),
+                ("isEnabled", "true"),
+                ("useSsl", "true"));
+            Assert.Contains("Email settings saved", saved);
             Assert.DoesNotContain(mailPassword, saved);
 
             saved = await admin.SubmitAsync(
@@ -125,5 +127,80 @@ public class ConnectionsTests(WebAppFactory factory) : AppTests(factory)
         }
 
         Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/Admin/Connections")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_email_sender_can_be_switched_off_tried_before_saving_secured_and_have_its_password_deleted()
+    {
+        WebAppFactory.RequireDatabase();
+        var admin = await SignInAsync("rival", "admin@rival.test");
+        const string password = "abcdefgh1234wxyz";
+        (string, string)[] server(params (string, string)[] more) =>
+        [
+            ("fromName", "Rival Courier"),
+            ("fromAddress", "hello@rival.test"),
+            ("host", "mail.rival.test"),
+            ("port", "587"),
+            ("userName", ""),
+            .. more
+        ];
+
+        try
+        {
+            // Saved on, secure, with a self-signed certificate allowed: the page shows the password's ends and no more
+            var saved = await admin.SubmitAsync(
+                "/Admin/Connections",
+                "/Admin/Connections?handler=Mail",
+                [.. server(("password", password), ("isEnabled", "true"), ("isEnabled", "false"), ("useSsl", "true"), ("useSsl", "false"), ("allowSelfSigned", "true"), ("allowSelfSigned", "false"))]);
+            Assert.Contains("Email settings saved", saved);
+            Assert.Contains("ab••••••yz", saved);
+            Assert.DoesNotContain(password, saved);
+            Assert.DoesNotContain("1234", saved);
+            var kept = await QueryAsync("rival", db => db.MailServers.AsNoTracking().SingleAsync(Cancel));
+            Assert.Equal((true, true, true), (kept.IsEnabled, kept.UseSsl, kept.AllowSelfSigned));
+            Assert.DoesNotContain(password, kept.Password);
+
+            // Tried as typed, saving nothing: an empty password box tries the saved one, and the answer is the server's own
+            var worked = await admin.PostFormAsync("/Admin/Connections", "/Admin/Connections?handler=CheckMail", [.. server(("password", ""), ("useSsl", "true"), ("allowSelfSigned", "true"))]);
+            Assert.Contains("\"ok\":true", await worked.Content.ReadAsStringAsync(Cancel));
+            Assert.Equal(("mail.rival.test", password, true, true), (RecordingMailTransports.LastChecked!.Host, RecordingMailTransports.LastChecked.Password, RecordingMailTransports.LastChecked.UseSsl, RecordingMailTransports.LastChecked.AllowSelfSigned));
+            var refused = await admin.PostFormAsync(
+                "/Admin/Connections",
+                "/Admin/Connections?handler=CheckMail",
+                ("host", "mail.nowhere.invalid"), ("port", "587"), ("fromAddress", "hello@rival.test"), ("password", "x"));
+            var answer = await refused.Content.ReadAsStringAsync(Cancel);
+            Assert.Contains("\"ok\":false", answer);
+            Assert.Contains("did not accept the connection", answer);
+
+            // A certificate is only a question on a secure connection
+            await admin.SubmitAsync("/Admin/Connections", "/Admin/Connections?handler=Mail", [.. server(("isEnabled", "true"), ("useSsl", "false"), ("allowSelfSigned", "true"))]);
+            kept = await QueryAsync("rival", db => db.MailServers.AsNoTracking().SingleAsync(Cancel));
+            Assert.Equal((false, false), (kept.UseSsl, kept.AllowSelfSigned));
+
+            // Off keeps the details and sends nothing, and the server's own settings do not take over
+            var off = await admin.SubmitAsync("/Admin/Connections", "/Admin/Connections?handler=Mail", [.. server(("isEnabled", "false"), ("useSsl", "true"))]);
+            Assert.Contains("Off: no emails are sent", off);
+            await using (var scope = await ScopeAsync("rival"))
+            {
+                Assert.False(scope.ServiceProvider.GetRequiredService<ConnectionSettings>().Mail().Configured);
+            }
+
+            // Delete takes only the password: the server is then tried without a login
+            var deleted = await admin.SubmitAsync("/Admin/Connections", "/Admin/Connections?handler=RemoveMailPassword");
+            Assert.Contains("The password is removed", deleted);
+            Assert.Contains("No password is saved", deleted);
+            await admin.SubmitAsync("/Admin/Connections", "/Admin/Connections?handler=Mail", [.. server(("isEnabled", "true"), ("useSsl", "true"))]);
+            await using (var scope = await ScopeAsync("rival"))
+            {
+                var mail = scope.ServiceProvider.GetRequiredService<ConnectionSettings>().Mail();
+                Assert.Equal(("mail.rival.test", "", true), (mail.Host, mail.Password, mail.Configured));
+            }
+        }
+        finally
+        {
+            await admin.PostFormAsync("/Admin/Connections", "/Admin/Connections?handler=RemoveMail");
+        }
+
+        Assert.Equal(0, await QueryAsync("rival", db => db.MailServers.CountAsync(Cancel)));
     }
 }

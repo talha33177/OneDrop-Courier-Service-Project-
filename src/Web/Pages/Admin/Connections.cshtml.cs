@@ -16,6 +16,8 @@ public class ConnectionsModel(ConnectionsHandler connections, ITenantContext ten
 {
     public ConnectionsView View { get; private set; } = null!;
 
+    public string CourierName => tenantContext.Require().Name;
+
     /// <summary>The address a test email goes to: the super admin's own.</summary>
     public string TestTo => User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name ?? "";
 
@@ -31,12 +33,51 @@ public class ConnectionsModel(ConnectionsHandler connections, ITenantContext ten
         string? password,
         string? fromAddress,
         string? fromName,
+        bool isEnabled,
+        bool useSsl,
+        bool allowSelfSigned,
         CancellationToken cancellationToken)
     {
-        var saved = await connections.SaveMailAsync(new MailServerDetails(host, port, userName, fromAddress, fromName), password, cancellationToken);
+        var saved = await connections.SaveMailAsync(
+            new MailServerDetails(host, port, userName, fromAddress, fromName, isEnabled, useSsl, allowSelfSigned),
+            password,
+            cancellationToken);
         TempData[saved.IsSuccess ? "Done" : "Problem"] = saved.IsSuccess
-            ? "Mail server saved. Send a test email to check it."
+            ? isEnabled ? "Email settings saved. Press Test connection or send a test email to check them." : "Email settings saved, and switched off: no emails are sent."
             : saved.Error!.Message;
+
+        return RedirectToPage();
+    }
+
+    /// <summary>Tries the server as typed, saving nothing; answers the page's script with what the server said.</summary>
+    public async Task<IActionResult> OnPostCheckMailAsync(
+        string? host,
+        int port,
+        string? userName,
+        string? password,
+        string? fromAddress,
+        bool useSsl,
+        bool allowSelfSigned,
+        CancellationToken cancellationToken)
+    {
+        var checkedServer = await connections.CheckMailAsync(
+            new MailServerDetails(host, port, userName, fromAddress, null, true, useSsl, allowSelfSigned),
+            password,
+            cancellationToken);
+
+        return new JsonResult(new
+        {
+            ok = checkedServer.IsSuccess,
+            message = checkedServer.IsSuccess ? checkedServer.Value : checkedServer.Error!.Message
+        });
+    }
+
+    public async Task<IActionResult> OnPostRemoveMailPasswordAsync(CancellationToken cancellationToken)
+    {
+        var removed = await connections.RemoveMailPasswordAsync(cancellationToken);
+        TempData[removed.IsSuccess ? "Done" : "Problem"] = removed.IsSuccess
+            ? "The password is removed. The server is tried without a login until you enter one."
+            : removed.Error!.Message;
 
         return RedirectToPage();
     }
