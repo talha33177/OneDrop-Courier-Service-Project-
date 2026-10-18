@@ -108,6 +108,17 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
                 var refused = await publicRival.PostFormAsync("/Account/Login", "/Account/Login", ("Input.Email", shop.Email), ("Input.Password", WebAppFactory.Password));
                 Assert.Equal(HttpStatusCode.OK, refused.StatusCode);
             }),
+            // EmailsTests checks the link is emailed only for a login of the courier asked; the page answers the same for anyone
+            ("/Account/ForgotPassword", async () => Assert.Contains("Check your email", await publicRival.SubmitAsync(
+                "/Account/ForgotPassword", "/Account/ForgotPassword", ("Email", shop.Email)))),
+            // A link is only good for a login of the courier it was made at: another courier's login is not found there
+            ("/Account/ResetPassword", async () =>
+            {
+                var shopUser = await QueryAsync("onedrop", db => db.Users.Where(u => u.Email == shop.Email).Select(u => u.Id).SingleAsync(Cancel));
+                var page = $"/Account/ResetPassword?user={shopUser}&token=x";
+                Assert.Contains("does not work any more", await publicRival.SubmitAsync(
+                    page, page, ("user", shopUser.ToString()), ("Token", "x"), ("password", "Taken#2026x"), ("confirm", "Taken#2026x")));
+            }),
             ("/Account/Register", async () => Assert.DoesNotContain("Gulshan", await publicRival.PageAsync("/Account/Register"))),
             ("/Account/Password", async () =>
             {
@@ -310,6 +321,12 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
             {
                 Assert.Contains("value=\"OneDrop\"", await admin.PageAsync("/Admin/Settings"));
                 Assert.DoesNotContain("value=\"OneDrop\"", await rivalAdmin.PageAsync("/Admin/Settings"));
+            }),
+            // ConnectionsTests saves the rival's mail server and store and checks the launch courier sees neither
+            ("/Admin/Connections", async () =>
+            {
+                Assert.Contains("Mail server", await admin.PageAsync("/Admin/Connections"));
+                Assert.Contains("Mail server", await rivalAdmin.PageAsync("/Admin/Connections"));
             }),
             // StuckParcelsTests makes a parcel stuck and checks the rival courier cannot see it; here the page only answers
             ("/Admin/Stuck", async () => Assert.DoesNotContain(outCode, await rivalAdmin.PageAsync("/Admin/Stuck"))),

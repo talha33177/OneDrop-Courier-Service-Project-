@@ -19,4 +19,7 @@ public interface ITrackingLinks
 
     /// <summary>Where the payment gateway posts its own notice of a payment, server to server.</summary>
     string PaymentNotice();
+
+    /// <summary>Any page of the courier's site, by its path ("Merchant/Payments"), for a button in an email.</summary>
+    string Page(string path);
 }

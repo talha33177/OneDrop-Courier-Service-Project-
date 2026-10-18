@@ -16,3 +16,17 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
             .HasDatabaseName("IX_OutboxMessage_Tenant_Status_NextAttemptOn");
     }
 }
+
+public class MailServerConfiguration : IEntityTypeConfiguration<MailServer>
+{
+    public void Configure(EntityTypeBuilder<MailServer> builder)
+    {
+        builder.MapTenantOwned(Schemas.Notifications);
+        builder.Property(s => s.Host).HasMaxLength(200);
+        builder.Property(s => s.UserName).HasMaxLength(254);
+        builder.Property(s => s.Password).HasMaxLength(2000);
+        builder.Property(s => s.FromAddress).HasMaxLength(254);
+        builder.Property(s => s.FromName).HasMaxLength(200);
+        builder.HasIndex(s => s.TenantId).IsUnique().HasDatabaseName("UX_MailServer_Tenant");
+    }
+}

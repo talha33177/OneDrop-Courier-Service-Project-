@@ -16,6 +16,7 @@
 --                  (the parcel takes it as PaidOnline); status 6 RefundDue, and RefundReference, RefundTriedOn (when
 --                  the gateway was last asked) and RefundedOn for money that goes back to the payer. One paid
 --                  payment per parcel (UX_OnlinePayment_Parcel_Paid)
+--       2026-10-18 PayerEmail: where a recipient wants the receipt and a refund's notice; null for a merchant's own
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Payments].[OnlinePayment] (
     [Id]                BIGINT          IDENTITY (1, 1) NOT NULL,
@@ -33,6 +34,7 @@ CREATE TABLE [Payments].[OnlinePayment] (
     [ValidationId]      NVARCHAR (100)  NULL,
     [BankTransactionId] NVARCHAR (80)   NULL,
     [Note]              NVARCHAR (300)  NULL,
+    [PayerEmail]        NVARCHAR (254)  NULL,
     [ConfirmedOn]       DATETIME2 (7)   NULL,
     [LedgerEntryId]     BIGINT          NULL,
     [RefundReference]   NVARCHAR (80)   NULL,

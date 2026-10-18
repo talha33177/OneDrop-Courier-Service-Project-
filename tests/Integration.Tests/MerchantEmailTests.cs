@@ -42,7 +42,7 @@ public class MerchantEmailTests(WebAppFactory factory) : AppTests(factory)
 
         var payout = await QueryAsync("onedrop", db => db.Payouts.SingleAsync(p => p.MerchantId == shop.Id, Cancel));
         var queued = await QueryAsync("onedrop", db => db.OutboxMessages
-            .Where(m => m.Type == nameof(MerchantEmailMessage) && m.Payload.Contains($"\"SubjectId\":{payout.Id}"))
+            .Where(m => m.Type == nameof(MerchantEmailMessage) && m.Payload.Contains($"\"Kind\":1,\"SubjectId\":{payout.Id}}}"))
             .ToListAsync(Cancel));
         Assert.Single(queued);
 

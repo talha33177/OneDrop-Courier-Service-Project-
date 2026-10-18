@@ -16,8 +16,8 @@ The one place to see where we are and what comes next for **OneDrop Courier**, t
 |---|---|
 | Current phase | **Phase 5** — staff jobs at the hubs and at head office (Phase 4 left: 4.8, the pass over every admin page) |
 | Next task | The owner's review of 5.1 (staff jobs and permissions). Then 5.4 bags between hubs and 5.5 hub cash and deposits (recommended order), or 4.8. The owner's senior puts the site live with [Deployment.md](../Documentation/Deployment.md) (server and address are theirs to choose). Still waiting on the owner: review and commit of everything since `db63259` (uncommitted on `main`); 2.6 and 2.7 wait on accounts and a decision |
-| Last session | 2026-10-13 — 4.16: the van visits each pickup point once a day and takes whatever is waiting when it gets there (no 3:00 pm cut-off). Before it the same day, 4.15 vehicle limits that hold and 4.14 admin delivery types; 2026-10-12, 5.1 role-based staff. **The dev database `OneDrop` still has `Platform.Tenant.PickupCutoff`** (the owner's app was running on it): run `./tools/db/publish.ps1` after restarting the app on the new build |
-| Blockers | None |
+| Last session | 2026-10-18 — the mail server and SSLCommerz store set by the super admin on `/Admin/Connections` (uncommitted). **`OneDrop` (dev) is gone from `ras-x2`, and `OneDrop-Test` was too** (the publish re-created the test database from nothing); ask the owner before re-creating the dev one |
+| Blockers | The dev database `OneDrop` does not exist on `ras-x2` |
 
 ---
 
@@ -332,12 +332,69 @@ New ones are added there and dated here.
 | 2026-10-16 | A live start with no admin named makes the demo admin (`admin@onedrop.test`), so a fresh server can always be signed in to; a named admin never falls back to it. The demo password is public until changed (owner) |
 | 2026-10-16 | Demo data is never made on a site that serves a courier at an address of its own, whatever its environment; the live site's own database is emptied once by `Scripts/2026/014` and its app pool set to Production by the deploy (owner) |
 | 2026-10-16 | Wrong passwords no longer lock a login; a stopped login is still refused and says it was stopped. Nothing now slows guessing at a sign-in password (owner) |
+| 2026-10-18 | The courier's mail server and SSLCommerz store are set by its super admins on `/Admin/Connections`, passwords encrypted with the key ring in the database; the panel wins over the server's file (owner) |
 
 ---
 
 ## Daily log
 
 Newest first.
+
+### 2026-10-18 (last: a new shop confirms its email with a code)
+- **Owner's request:** "In marchent sign in add a OTP verification code by email"; asked when, the owner said only
+  when a new merchant opens the account, not at every sign-in, and confirmed the code at sign-up.
+- **Done:** `SignUpCode` (domain rules) and `Merchants.SignUpCode` (in the policy; published to `OneDrop-Test`);
+  `SignUpCodes` (send at once with the email design, check); `MerchantOnboarding.CheckAsync` (refusals found before a
+  code is sent); `/Account/Register` in two steps (the form, then the code with "Send a new code" and "Change my
+  details"; the form carried sealed for 30 minutes); `IConnectionSettings.EmailsArrive` (no code where no email can
+  arrive).
+- **Tested:** build 0 warnings; domain **271** (3 new `SignUpCodeTests`), architecture 6; integration
+  `MerchantPanelTests` (the sign-up test now goes through the code: no merchant before it, the code from the email,
+  a wrong one leaves "4 tries left", a changed sealed form is refused, the right one with a space signs the shop in),
+  `EmailsTests`, `SchemaMatchesModelTests`, `RowLevelSecurityTests`, `IsolationTests`: 17 of 18, the one failure the
+  pickup-point test that fails on the last commit too.
+
+### 2026-10-18 (later: every email designed, and the emails that were missing)
+- **Owner's request:** "Make the email HTML email so that it looks beautiful. Make all the email look beautiful. and
+  think of all the place where email is needed and set them."
+- **Done:** `EmailLayout` (one design for every email, with a plain-text copy); merchants' 13 emails, the super
+  admins' sign-up notice, recipients' receipt and refund, the password link and the welcome for a new moderator,
+  staff member or rider (see Project-Context, "Every email, designed"). "Forgot your password?" on the sign-in page,
+  `/Account/ForgotPassword` and `/Account/ResetPassword`; `OnlinePayment.PayerEmail` (published to `OneDrop-Test`;
+  the dev database does not exist); the admin's test email and `/Dev/Emails` use the design, and `/Dev/Emails`
+  draws each email.
+- **Tested:** build 0 warnings; domain **268** (3 new `EmailEventTests`), architecture 6; integration 66 classes'
+  tests over `ras-x2`: 64 passed. New `EmailsTests` (sign-up welcome and the super admins' notice, approval, a credit,
+  nothing to the rival's admins; forgot password for a login and an unknown address alike, the link sets a password
+  once). `MerchantEmailTests` matched the payout email by subject id alone and met another kind's row: it now matches
+  the kind too, and passes. `MerchantPanelTests.A_merchant_sets_its_payout_account_and_adds_a_pickup_point` fails
+  (a 500 on `/Merchant/Settings?handler=Point`), **the same on the last commit without this change**.
+- **A mistake while checking it live:** the app was started with `$env:Email__Host = ''`, which in PowerShell 5.1
+  deletes the variable, so `appsettings.Local.json`'s Gmail was used and 7 emails went to made-up addresses
+  (`@example.com`, `@shop.test`) before it was stopped; expect bounces in that mailbox. Restarted with a blank space,
+  which keeps the fake.
+
+- **Owner's request:** the live site had no SSLCommerz or mail settings (they lived in the git-ignored
+  `appsettings.Local.json`); after committing and un-committing that file, the owner asked that "the admin will set the
+  email and app password and SSL info from the frontend". Took the four recommendations: passwords encrypted with the
+  key ring in the database, super admins only, a test email and a sandbox/live switch, the panel winning over the file.
+- **Done:** `Notifications.MailServer` and `Payments.GatewayStore` (domain rules, tables in the policy, mapping);
+  `Platform.DataProtectionKey` and `SqlKeyRepository` (the whole app's key ring, so sign-ins also survive restarts;
+  everyone is signed out once); `SecretBox`; `ConnectionSettings` (the courier's own, cached, else the server's);
+  `CourierEmailSender` and `CourierPaymentGateway` chosen per courier when used; `ConnectionsHandler` and
+  `/Admin/Connections` (Setup → "Email and payments", on no staff list, so super admins only); `Sslcommerz:SandboxUrl`
+  and `LiveUrl`; README, Deployment and Project-Context.
+- **Tested:** build 0 warnings; domain **265** (3 new `ConnectionTests`), architecture 6. `OneDrop-Test` published
+  (it had been dropped: the publish created it from nothing). Integration: `ConnectionsTests` (new: the rival's super
+  admin saves both, passwords never on the page and sealed in the table, the rival's sends and payments use them and
+  OneDrop's do not, an empty box keeps the password, live switches the address, a refused save and a dead mail server
+  say why, OneDrop's admin sees none of it, accounts staff are refused and not offered the page, both removed),
+  `SchemaMatchesModelTests`, `RowLevelSecurityTests`, `MerchantEmailTests`, `OnlinePaymentsTests`,
+  `RecipientPaymentsTests`, `LiveSetupTests`, `SignInTests`, `CourierSettingsTests`: **23 of 23**; `IsolationTests`
+  (new sweep line), `StaffTests`, `AccountMenuTests`, `BellTests` pass, and
+  `StaffRolesTests.Head_office_staff_open_only_the_panels_their_job_opens` fails, **the same on the last commit
+  without this change** (the edit row's `handler=Change&id=` is not found after a refused change). **Not done:** the
+  dev database was not published (it does not exist); no look in a browser (none was connected).
 
 ### 2026-10-16 (the live site's first admin)
 - **Owner's report:** the owner's teammate put the site live from GitHub (at `delyvo.octopi-digital.com`) and nobody could

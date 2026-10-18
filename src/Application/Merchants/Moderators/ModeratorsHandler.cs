@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Notifications;
 using Domain.Common;
 using Domain.Merchants;
 
@@ -107,6 +108,7 @@ public class ModeratorsHandler(
         }
 
         db.Moderators.Add(moderator.Value);
+        db.OutboxMessages.Add(OutboxContracts.Write(new AccountEmailMessage(login.Value, AccountEmailKind.LoginCreated)));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 

@@ -62,6 +62,11 @@ Both have the same shape:
 }
 ```
 
+**Email and online payments are set in the admin panel.** A super admin enters the courier's mail server and its
+SSLCommerz store (sandbox or live) on **Setup → Email and payments** (`/Admin/Connections`); the passwords are kept
+encrypted and never shown again, and a button sends a test email. That is all a live site needs. What follows is the
+fallback for a courier that has set neither, for example on a developer's machine.
+
 **Sending email (optional).** Merchants are emailed when a payout leaves. Add the mail server to the same git-ignored
 `src/Web/appsettings.Local.json`; with no `Email:Host` the app keeps the emails in memory and lists them at
 `/Dev/Emails`, which also has a button that sends a test email.

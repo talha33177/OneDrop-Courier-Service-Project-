@@ -94,6 +94,9 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
 
     public bool IsForParcel => ParcelId is not null;
 
+    /// <summary>Where a recipient wants the receipt (and a refund's notice) sent; null for a merchant's own payment.</summary>
+    public string? PayerEmail { get; private set; }
+
     /// <summary>The gateway's reference for the refund once asked for it; null before, or when it refused.</summary>
     public string? RefundReference { get; private set; }
 
@@ -186,7 +189,7 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
     /// Starts a recipient paying <paramref name="parcel"/>'s cash on delivery: while the parcel may still be paid online,
     /// and within what the gateway takes.
     /// </summary>
-    public static Result<OnlinePayment> StartForParcel(Parcel parcel, string currency, PaymentLimits limits)
+    public static Result<OnlinePayment> StartForParcel(Parcel parcel, string currency, PaymentLimits limits, string? payerEmail = null)
     {
         if (parcel.IsNew)
         {
@@ -210,6 +213,7 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
         {
             MerchantId = parcel.MerchantId,
             ParcelId = parcel.Id,
+            PayerEmail = Clip(payerEmail, 254),
             TransactionId = Guid.NewGuid().ToString("N")[..TransactionIdLength],
             Amount = parcel.CodAmount,
             Currency = currency,
@@ -295,6 +299,7 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
                 Status = OnlinePaymentStatus.Refunded;
                 RefundReference = Clip(reference, 80) ?? RefundReference;
                 RefundedOn = now;
+                Raise(new OnlinePaymentRefunded(this));
                 Note = Clip($"Refunded to the payer through the gateway{(RefundReference is null ? "" : $" ({RefundReference})")}.", MaxNoteLength);
                 break;
             case RefundState.Processing:
@@ -359,6 +364,7 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
         Status = OnlinePaymentStatus.Refunded;
         RefundedOn = now;
         Note = why;
+        Raise(new OnlinePaymentRefunded(this));
 
         return Result.Success();
     }
@@ -396,6 +402,7 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
         {
             // The parcel takes a recipient's payment and its own lines pay the merchant; nothing is credited here
             Status = OnlinePaymentStatus.Paid;
+            Raise(new OnlinePaymentPaid(this));
 
             return;
         }
@@ -408,6 +415,7 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
 
         LedgerEntry = line.Value;
         Status = OnlinePaymentStatus.Paid;
+        Raise(new OnlinePaymentPaid(this));
     }
 
     private static string? Clip(string? value, int length)
@@ -417,3 +425,9 @@ public class OnlinePayment : TenantEntity, IMerchantOwned
         return string.IsNullOrEmpty(trimmed) ? null : trimmed.Length > length ? trimmed[..length] : trimmed;
     }
 }
+
+/// <summary>A payment was credited, or taken by its parcel: the payer gets a receipt by email.</summary>
+public sealed record OnlinePaymentPaid(OnlinePayment Payment) : IDomainEvent;
+
+/// <summary>A payment went back to the payer: the payer is told by email.</summary>
+public sealed record OnlinePaymentRefunded(OnlinePayment Payment) : IDomainEvent;

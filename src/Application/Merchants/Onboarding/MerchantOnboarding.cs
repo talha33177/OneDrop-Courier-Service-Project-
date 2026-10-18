@@ -23,6 +23,33 @@ public sealed record NewMerchant(
 /// </summary>
 public class MerchantOnboarding(IAppDbContext db, IUserAccounts accounts)
 {
+    /// <summary>
+    /// What a sign-up would be refused for, found before a code is emailed for it: the business's details, a name
+    /// already used, the pickup area, an email that already has a login here. The password is checked when it is made.
+    /// </summary>
+    public async Task<Result> CheckAsync(NewMerchant spec, CancellationToken cancellationToken = default)
+    {
+        var merchant = Merchant.Add(spec.Profile);
+        if (merchant.IsFailure)
+        {
+            return merchant.Error!;
+        }
+
+        if (await db.Merchants.AnyAsync(m => m.Name == merchant.Value.Name, cancellationToken))
+        {
+            return Error.Conflict("merchant.name.taken", "A merchant with this business name already exists.");
+        }
+
+        if (spec.PickupAreaId is not { } areaId || !await db.Areas.AnyAsync(a => a.Id == areaId && !a.Archived, cancellationToken))
+        {
+            return Error.Validation("merchant.pickup.area", "Choose the area your parcels are picked up from.");
+        }
+
+        return spec.Email is { } email && await accounts.FindByEmailAsync(email, cancellationToken) is not null
+            ? Error.Conflict("login.email.taken", "This email already has an account here. Sign in instead.")
+            : Result.Success();
+    }
+
     public async Task<Result<long>> CreateAsync(NewMerchant spec, bool approved, CancellationToken cancellationToken = default)
     {
         var merchant = approved ? Merchant.Add(spec.Profile) : Merchant.SignUp(spec.Profile);

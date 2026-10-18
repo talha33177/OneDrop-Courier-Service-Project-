@@ -68,6 +68,17 @@ public class PayoutRequestConfiguration : IEntityTypeConfiguration<PayoutRequest
     }
 }
 
+public class GatewayStoreConfiguration : IEntityTypeConfiguration<GatewayStore>
+{
+    public void Configure(EntityTypeBuilder<GatewayStore> builder)
+    {
+        builder.MapTenantOwned(Schemas.Payments);
+        builder.Property(s => s.StoreId).HasMaxLength(100);
+        builder.Property(s => s.StorePassword).HasMaxLength(2000);
+        builder.HasIndex(s => s.TenantId).IsUnique().HasDatabaseName("UX_GatewayStore_Tenant");
+    }
+}
+
 public class OnlinePaymentConfiguration : IEntityTypeConfiguration<OnlinePayment>
 {
     public void Configure(EntityTypeBuilder<OnlinePayment> builder)
@@ -88,6 +99,7 @@ public class OnlinePaymentConfiguration : IEntityTypeConfiguration<OnlinePayment
         builder.Property(p => p.ValidationId).HasMaxLength(100);
         builder.Property(p => p.BankTransactionId).HasMaxLength(80);
         builder.Property(p => p.Note).HasMaxLength(OnlinePayment.MaxNoteLength);
+        builder.Property(p => p.PayerEmail).HasMaxLength(254);
         builder.Property(p => p.RowVersion).IsRowVersion();
         builder.HasOne<Merchant>().WithMany().HasForeignKey(p => p.MerchantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(p => p.LedgerEntry).WithMany().HasForeignKey(p => p.LedgerEntryId).OnDelete(DeleteBehavior.Restrict);

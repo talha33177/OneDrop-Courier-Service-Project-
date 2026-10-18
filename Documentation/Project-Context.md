@@ -380,6 +380,41 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   message, in a loop of its own (`SendEmailsJob`), so a slow mail server never holds up a text or a webhook; with no
   mail server configured the fake keeps them for `/Dev/Emails`, which also has a button that sends a test email. The
   integration tests always use the fake.
+- **A new shop confirms its email with a code** (2026-10-18, owner: only when the account is opened, never at
+  sign-in). On `/Account/Register` the form is checked first (`MerchantOnboarding.CheckAsync`: details, name, area,
+  email not taken), then a 6-digit code is emailed (`SignUpCodes`, sent at once rather than through the outbox,
+  because the shop waits for it on the page) and the account is made only once the code is typed. The code is kept
+  as a hash (`Merchants.SignUpCode`): ten minutes, five wrong tries, used once, a new one after a minute. The
+  filled-in form waits in the page sealed with Data Protection for half an hour, so nothing is stored for a shop that
+  never finishes and a changed form is not believed. Asked only when an email can arrive
+  (`IConnectionSettings.EmailsArrive`: a mail server is set, or Development, where `/Dev/Emails` shows the code); a
+  live site with no mail server signs shops up as before. The admin's "Add merchant" asks for no code.
+- **Every email, designed** (2026-10-18). One layout (`EmailLayout`: the courier's mark, a coloured label, title,
+  message, a large figure, a table of details, a note, one button, the hotline; tables and inline styles so every
+  mail app draws it alike, with a plain-text copy) for every email, each written when it is sent from the data as it
+  is then and dropped when its news is out of date. Merchants: welcome on sign-up, approved, suspended, active again,
+  payouts held (with the reason) and released, payout sent, request to be paid now refused, a parcel request
+  answered, returns handed back to confirm, an online payment received or refunded, a credit or charge the admin
+  wrote. The courier's super admins: a new sign-up to approve. Recipients who paid online (the email they give on
+  the payment page, `OnlinePayment.PayerEmail`): the receipt and a refund. Logins: "Forgot your password?"
+  (`/Account/ForgotPassword`, the same answer for any address, rate limited) sends a link to
+  `/Account/ResetPassword` that works once for a day; a new moderator, staff member or rider gets a welcome with a
+  link to choose a password. Events: `MerchantAccountChanged`, `PayoutRequestRefused`, `ParcelRequestAnswered`,
+  `ReturnListHandedOver`, `AdjustmentWritten` (only when the admin writes one, `LedgerEntry.TellMerchant`),
+  `OnlinePaymentPaid`, `OnlinePaymentRefunded`; contracts `MerchantEmailMessage` (13 kinds), `CourierEmailMessage`,
+  `RecipientEmailMessage`, `AccountEmailMessage`, all sent by `SendEmailsJob`. `/Dev/Emails` draws each email as a
+  mail app would.
+- **Email and payments set from the admin panel** (2026-10-18). `/Admin/Connections` (Setup → "Email and payments",
+  super admins only: it is on no staff list) keeps the courier's own mail server (`Notifications.MailServer`) and
+  SSLCommerz store (`Payments.GatewayStore`, sandbox or live), so a live site needs no settings file for them. The
+  passwords are sealed with ASP.NET Data Protection (`ISecretBox`) and never shown back; an empty password box keeps
+  the saved one, and a page whose password can no longer be read asks for it again. "Send test email" goes through the
+  server in use and shows the server's refusal. Each courier's own settings win; with none, the server's `Email:*` and
+  `Sslcommerz:*` are used (`ConnectionSettings`, cached ten minutes per courier and dropped on save). The email
+  sender and payment gateway are now chosen per courier when first used (`CourierEmailSender`,
+  `CourierPaymentGateway`), not once at start. The Data Protection key ring moved into the database
+  (`Platform.DataProtectionKey`, `SqlKeyRepository`, application name "Courier"), so sign-ins also survive restarts
+  and redeploys; the first start on it signs everyone out once.
 - **Courier settings** (2026-10-12). `/Admin/Settings`: the courier's name, hotline, SMS sender (letters and digits,
   at most 11), delivery attempts, businesses per account, the pickup time (when the van leaves the hub), and when riders are due
   back, and after how many days a parcel is stuck. Saving clears the cached courier (`ITenantCatalog.Forget`), so
@@ -410,6 +445,14 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   takes money in and cannot send it to merchants), the app's own SQL login instead of `sa`.
 
 ### Database
+- 2026-10-18 (sign-up code): `Merchants.SignUpCode` (email in lower case, the code's hash, issued, expires, attempts,
+  verified; `IX_SignUpCode_Tenant_Email`), in the security policy (32 tables). A new table, so no `Scripts/Pre`.
+- 2026-10-18 (emails): `Payments.OnlinePayment.PayerEmail` (NULL; a recipient's address for the receipt). Nullable,
+  so no `Scripts/Pre`.
+- 2026-10-18 (email and payments in the panel): `Notifications.MailServer` and `Payments.GatewayStore`, one row per
+  courier at most (`UX_MailServer_Tenant`, `UX_GatewayStore_Tenant`), both in the security policy, passwords sealed
+  by the app; `Platform.DataProtectionKey`, the app's key ring (no `TenantId`, not mapped in EF, never edited). New
+  tables only, so no `Scripts/Pre` and no data script.
 - 2026-10-16 (emptying the live site): no schema change. `Scripts/2026/014_EmptyTheLiveSite.sql` empties one database,
   the live site's (`IF DB_NAME() = N'Delyvo'`, so the development `OneDrop`, the test `OneDrop-Test` and a database
   deployed from nothing are left alone), of merchants, businesses, moderators, API keys, pickup points, parcels and
@@ -501,7 +544,7 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   sequence ReturnListNumber → `RL-100001`), `Payments` (LedgerEntry, Payout, PayoutRequest, OnlinePayment, sequences
   PayoutNumber → `INV-000001` and OnlinePaymentNumber → `PAY-100001`), `Notifications` (OutboxMessage).
 - Every tenant table has `TenantId` + FK + index, the housekeeping columns, and its predicates in the security policy
-  `Platform.TenantIsolation` (29 tables).
+  `Platform.TenantIsolation` (32 tables).
 - Seed (`001_SeedCourier.sql`, then `002`, `003`): OneDrop Courier (Asia/Dhaka, BDT, SMS sender `OneDrop`, hotline 09610-001122,
   10 businesses per merchant account, 3
   attempts); 16 hubs (Dhaka city 5; suburbs Savar, Gazipur, Narayanganj; Chattogram, Sylhet, Rajshahi, Khulna,
@@ -579,6 +622,7 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
 | **2026-10-16: demo data is never made on a site that serves a courier at an address of its own** (owner: the live site opened with made-up merchants, riders and parcels its admin could not clear, and "i dont want him to do too much work … he will only run that one file"). `Program.cs` seeds demo data only when `Seed:DemoData` is on, the app is Development **and** neither `Tenancy:HomeCourierHost` nor `Tenancy:Domains` names an address; otherwise it logs why it did not. `Deploy-Iis.ps1` also sets the live app pool to Production with the demo seed off, and `Scripts/2026/014` empties what was already made | The live site was started as Development with the seeder on, so every start made the demo data again: emptying the database alone would have filled it back up on the next deploy, and the panel cannot clear it (a rider holding a parcel cannot be stopped, and the demo logins' password was not one the owner had). The environment is a setting on the server, which the owner cannot reach and did not want their teammate editing, so the app decides for itself from something only a live site has: an address it serves a courier at. A developer's machine has neither setting, so demo data still works there; an app pool or a compose file that names one never gets demo data, however its environment is set. The deploy's Production switch is what closes the `/Dev` pages (texts, emails, payouts, the test payment page), which Development had left open to anyone |
 | **2026-10-16: a live start with no admin named makes the demo admin** (owner: the owner's teammate put the site live on IIS from the GitHub code and nobody could sign in, since the demo login exists only in Development and nothing named an admin: "when the project is live it automatically generates the super admin"). Outside Development, with `Setup:AdminEmail` empty, `Program.cs` makes the admin from `Setup:DefaultAdminEmail` / `Setup:DefaultAdminPassword` (`admin@onedrop.test` / `OneDrop#2026`, in `appsettings.json`) through the same `AdminSetup`, so it is created once and never changed. `deploy/docker-compose.yml` no longer requires `ADMIN_EMAIL`. Naming an admin (`ADMIN_EMAIL`) never falls back to it: with no password the start stops with the reason | A fresh server must always have someone who can sign in, and the owner wants the same login that works locally. The fallback is in the app, not in the compose file, so it holds on any host and cannot be reached by a half-filled `.env`: a named admin with no password would otherwise silently get a published password. It reverses the 2026-10-08 rule that no demo login belongs on a live site, for the portfolio's sake: the password is in the README, so anyone can sign in as a super admin until it is changed at `/Account/Password`, and the start logs a warning each time the fallback is used. A server that already names its own admin is untouched (it must empty `Setup__AdminEmail` and `Setup__AdminPassword`, in `.env` for Docker or on the IIS app pool, to get the demo admin as well). The first live start had left `admin@onedrop.test` existing with a password nobody had (and locked out by the guesses), which the fallback cannot touch, so `Scripts/2026/012_DemoAdminPassword.sql` gives that one login (a TenantAdmin of `onedrop`) the demo password once, on each database it runs on, and lets it back in; it creates no login, and a password changed afterwards stays changed because DbUp never runs a script twice |
 | **2026-10-16: wrong passwords no longer lock a login** (owner: "Remove the too many attempt blocking", after the live site's super admin was locked by guesses). Sign-in calls `PasswordSignInAsync` with `lockoutOnFailure: false` and Identity's limit of five is gone. A login someone stopped is still refused: a stop is a lock with no end date (`IUserAccounts.SetLoginEnabledAsync`), which sign-in checks whatever the failure setting is, and it now says "This login has been stopped" instead of "Too many attempts" | The lock let anyone shut a known login out just by guessing at it, which is what happened to the live admin (its email and password are public), and it cost the owner a long wait. The price is that nothing now slows guessing at a password: sign-in has no per-address limit (only the tracking, tracking-payment and sign-up pages have one, 30 a minute). If protection is wanted back, a per-address throttle on sign-in that locks no account, like those, is the way, not a lock per login |
+| **2026-10-18: the courier's mail server and SSLCommerz store are set in the admin panel** (owner: "the admin will set the email and app password and SSL info from the frontend", after the live site could not get the settings file onto its server; the owner took the four recommendations). A row each per courier, passwords sealed with Data Protection and the key ring in the database; super admins only; a test email and a sandbox/live switch; the courier's own settings win and the server's configuration is the fallback | The settings were on the server only, so a courier needed whoever runs the server to change its mail password or put its store live, and the live site had no way to get them without a file passed around by hand. They are the courier's business, so they belong to the courier, beside its other settings. Sealed rather than plain because they would otherwise be readable by any query, log or screen of the table; the key ring sits in the database so nothing on the server has to be kept (a lost key ring would mean re-entering the passwords), at the price that a full database backup holds both the sealed passwords and their key. Super admins only because the store decides where money goes. Falling back to the file keeps developers' `appsettings.Local.json` working. Resolving the sender and gateway per courier and per use, instead of once at start, is what lets a change apply at once and keeps couriers apart |
 
 ---
 
@@ -590,7 +634,7 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
 | SQL Server | `ras-x2,1433` (SQL Server 2025, login `sa`, shared with the team). From 2026-10-04 to 2026-10-06 it was reached as `10.50.0.1,1433` over the VPN while `ras-x2` did not resolve; the owner switched back to `ras-x2` on 2026-10-06 |
 | Databases | `OneDrop` (development), `OneDrop-Test` (integration tests). **Ask before creating any other** |
 | Connection strings | `src/Web/appsettings.Local.json` and `tests/Integration.Tests/testsettings.Local.json`, git-ignored |
-| SSLCommerz | The owner's sandbox store (2026-10-08; its merchant panel is `sandbox-gw.sslcommerz.com`, the API `sandbox.sslcommerz.com`). `Sslcommerz:StoreId` and `StorePassword` belong in `src/Web/appsettings.Local.json` only (the live server gets its own copy by hand); without them Development uses the test gateway (`/Dev/Pay`) |
+| SSLCommerz | The owner's sandbox store (2026-10-08; its merchant panel is `sandbox-gw.sslcommerz.com`, the API `sandbox.sslcommerz.com`). A super admin enters the store on `/Admin/Connections` (2026-10-18); in development `Sslcommerz:StoreId` and `StorePassword` in `src/Web/appsettings.Local.json` are the fallback; with neither, Development uses the test gateway (`/Dev/Pay`) |
 | Tools | `sqlpackage` (dotnet global tool), `sqlcmd`, Docker Desktop, GitHub CLI at `C:\Program Files\GitHub CLI\gh.exe` |
 | Repository | https://github.com/talha33177net-eng/OneDrop (private), local folder `C:\Courier Project`; the rebuild is on branch `traditional-courier` |
 | Git identity | Talha Ahmed &lt;talha33177.net@gmail.com&gt; |

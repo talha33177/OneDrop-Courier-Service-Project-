@@ -41,6 +41,7 @@
     <Build Include="Security/Platform.sql" />
     <Build Include="Security/Pricing.sql" />
     <Build Include="Platform/Tables/Tenant.sql" />
+    <Build Include="Platform/Tables/DataProtectionKey.sql" />
     <Build Include="Identity/Tables/Role.sql" />
     <Build Include="Identity/Tables/RoleClaim.sql" />
     <Build Include="Identity/Tables/StaffMember.sql" />
@@ -61,11 +62,13 @@
     <Build Include="Merchants/Tables/Moderator.sql" />
     <Build Include="Merchants/Tables/MerchantPayoutAccount.sql" />
     <Build Include="Merchants/Tables/PickupPoint.sql" />
+    <Build Include="Merchants/Tables/SignUpCode.sql" />
     <Build Include="Parcels/Sequences/TrackingNumber.sql" />
     <Build Include="Parcels/Tables/Parcel.sql" />
     <Build Include="Parcels/Tables/ParcelEvent.sql" />
     <Build Include="Parcels/Tables/ParcelRequest.sql" />
     <Build Include="Notifications/Tables/OutboxMessage.sql" />
+    <Build Include="Notifications/Tables/MailServer.sql" />
     <Build Include="Delivery/Tables/Rider.sql" />
     <Build Include="Delivery/Tables/PickupRequest.sql" />
     <Build Include="Delivery/Tables/DeliveryRun.sql" />
@@ -80,6 +83,7 @@
     <Build Include="Payments/Tables/OnlinePayment.sql" />
     <Build Include="Payments/Tables/Payout.sql" />
     <Build Include="Payments/Tables/PayoutRequest.sql" />
+    <Build Include="Payments/Tables/GatewayStore.sql" />
     <Build Include="Platform/Functions/TenantAccess.sql" />
     <Build Include="Platform/Security Policies/TenantIsolation.sql" />
   </ItemGroup>

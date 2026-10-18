@@ -68,6 +68,8 @@ public class AppDbContext(
 
     public DbSet<PickupPoint> PickupPoints => Set<PickupPoint>();
 
+    public DbSet<SignUpCode> SignUpCodes => Set<SignUpCode>();
+
     public DbSet<Parcel> Parcels => Set<Parcel>();
 
     public DbSet<ParcelEvent> ParcelEvents => Set<ParcelEvent>();
@@ -97,6 +99,10 @@ public class AppDbContext(
     public DbSet<PayoutRequest> PayoutRequests => Set<PayoutRequest>();
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    public DbSet<MailServer> MailServers => Set<MailServer>();
+
+    public DbSet<GatewayStore> GatewayStores => Set<GatewayStore>();
 
     /// <summary>Read by the tenant filter at query time. Null means "no tenant", which matches no row.</summary>
     public long? CurrentTenantId => tenantContext.TenantId;

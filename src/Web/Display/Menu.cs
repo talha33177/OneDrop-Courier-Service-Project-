@@ -94,7 +94,8 @@ public static class Menu
             new("/Admin/Rates", "Delivery rates", "tag", "/Admin/Rates"),
             new("/Admin/DeliveryTypes", "Delivery types", "zap", "/Admin/DeliveryTypes"),
             new("/Admin/Vehicles", "Vehicles", "truck", "/Admin/Vehicles"),
-            new("/Admin/Settings", "Courier settings", "settings", "/Admin/Settings")
+            new("/Admin/Settings", "Courier settings", "settings", "/Admin/Settings"),
+            new("/Admin/Connections", "Email and payments", "lock", "/Admin/Connections")
         ])
     ];
 

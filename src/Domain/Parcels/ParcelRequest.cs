@@ -182,8 +182,12 @@ public class ParcelRequest : TenantEntity, IMerchantOwned
         Answer = answer.NullIfBlank();
         AnsweredOn = now;
         AnsweredById = userId;
+        Raise(new ParcelRequestAnswered(this));
     }
 }
+
+/// <summary>The courier approved or refused a merchant's request about a parcel: the merchant is told by email.</summary>
+public sealed record ParcelRequestAnswered(ParcelRequest Request) : IDomainEvent;
 
 public static class ParcelRequestKinds
 {

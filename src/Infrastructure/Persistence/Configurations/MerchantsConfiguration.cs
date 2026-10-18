@@ -90,6 +90,16 @@ public class MerchantPayoutAccountConfiguration : IEntityTypeConfiguration<Merch
     }
 }
 
+public class SignUpCodeConfiguration : IEntityTypeConfiguration<SignUpCode>
+{
+    public void Configure(EntityTypeBuilder<SignUpCode> builder)
+    {
+        builder.MapTenantOwned(Schemas.Merchants);
+        builder.Property(c => c.Email).HasMaxLength(256);
+        builder.Property(c => c.CodeHash).HasMaxLength(64);
+    }
+}
+
 public class PickupPointConfiguration: IEntityTypeConfiguration<PickupPoint>
 {
     public void Configure(EntityTypeBuilder<PickupPoint> builder)

@@ -30,6 +30,11 @@ public class TrackingLinks(IConfiguration configuration, ITenantContext tenantCo
         return Portal() + "pay/notice";
     }
 
+    public string Page(string path)
+    {
+        return Portal() + path.TrimStart('/');
+    }
+
     private string Portal()
     {
         var tenant = tenantContext.Tenant ?? throw new InvalidOperationException("A link needs a tenant.");

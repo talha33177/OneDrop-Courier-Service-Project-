@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Notifications;
 using Domain.Common;
 using Domain.Staff;
 
@@ -122,8 +123,10 @@ public class StaffHandler(
         if (job is not null)
         {
             db.StaffMembers.Add(StaffMember.Add(login.Value, hubId, job.Value, spec.Extra).Value);
-            await db.SaveChangesAsync(cancellationToken);
         }
+
+        db.OutboxMessages.Add(OutboxContracts.Write(new AccountEmailMessage(login.Value, AccountEmailKind.LoginCreated)));
+        await db.SaveChangesAsync(cancellationToken);
 
         return password;
     }

@@ -370,6 +370,7 @@ public class AdminMerchantsHandler(
             return line.Error!;
         }
 
+        line.Value.TellMerchant();
         db.LedgerEntries.Add(line.Value);
         await db.SaveChangesAsync(cancellationToken);
 

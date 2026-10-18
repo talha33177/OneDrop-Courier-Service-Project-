@@ -33,6 +33,7 @@
             <div class="auth-card">
                 <h1>Welcome back</h1>
                 <p class="sub">Sign in to @Model.Where.</p>
+                <partial name="_Alerts" />
                 <form method="post">
                     <div asp-validation-summary="ModelOnly" class="alert alert-error"></div>
                     <div class="field">
@@ -44,6 +45,10 @@
                         <label asp-for="Input.Password">Password</label>
                         <input asp-for="Input.Password" type="password" autocomplete="current-password" data-reveal />
                         <span asp-validation-for="Input.Password" class="field-error"></span>
+                        @if (Model.OnCourierSite)
+                        {
+                            <a class="hint" asp-page="/Account/ForgotPassword">Forgot your password?</a>
+                        }
                     </div>
                     <div class="field">
                         <label class="check"><input asp-for="Input.RememberMe" /> Keep me signed in</label>

@@ -106,7 +106,13 @@ public class Merchant : TenantEntity, IArchivable
     /// <summary>A shop that signed up itself: it waits for the courier to approve it.</summary>
     public static Result<Merchant> SignUp(MerchantProfile profile)
     {
-        return New(profile, MerchantStatus.Pending);
+        var merchant = New(profile, MerchantStatus.Pending);
+        if (merchant.IsSuccess)
+        {
+            merchant.Value.Raise(new MerchantAccountChanged(merchant.Value, MerchantNotice.SignedUp));
+        }
+
+        return merchant;
     }
 
     /// <summary>A shop the courier's admin added: it can book at once.</summary>
@@ -217,6 +223,7 @@ public class Merchant : TenantEntity, IArchivable
         }
 
         Status = MerchantStatus.Active;
+        Raise(new MerchantAccountChanged(this, MerchantNotice.Approved));
 
         return Result.Success();
     }
@@ -229,6 +236,7 @@ public class Merchant : TenantEntity, IArchivable
         }
 
         Status = MerchantStatus.Suspended;
+        Raise(new MerchantAccountChanged(this, MerchantNotice.Suspended));
 
         return Result.Success();
     }
@@ -241,6 +249,7 @@ public class Merchant : TenantEntity, IArchivable
         }
 
         Status = MerchantStatus.Active;
+        Raise(new MerchantAccountChanged(this, MerchantNotice.Reactivated));
 
         return Result.Success();
     }
@@ -255,6 +264,7 @@ public class Merchant : TenantEntity, IArchivable
         }
 
         PayoutHold = why;
+        Raise(new MerchantAccountChanged(this, MerchantNotice.PayoutsHeld));
 
         return Result.Success();
     }
@@ -267,6 +277,7 @@ public class Merchant : TenantEntity, IArchivable
         }
 
         PayoutHold = null;
+        Raise(new MerchantAccountChanged(this, MerchantNotice.PayoutsReleased));
 
         return Result.Success();
     }
@@ -338,3 +349,17 @@ public class Merchant : TenantEntity, IArchivable
         return edited.IsSuccess ? merchant : edited.Error!;
     }
 }
+
+/// <summary>What happened to a merchant account that its owner (and, for a sign-up, the courier) is emailed about.</summary>
+public enum MerchantNotice
+{
+    SignedUp = 1,
+    Approved = 2,
+    Suspended = 3,
+    Reactivated = 4,
+    PayoutsHeld = 5,
+    PayoutsReleased = 6
+}
+
+/// <summary>A merchant account signed up, was approved, suspended or let back in, or had its payouts held or released.</summary>
+public sealed record MerchantAccountChanged(Merchant Merchant, MerchantNotice Notice) : IDomainEvent;

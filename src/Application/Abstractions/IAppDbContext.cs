@@ -45,6 +45,8 @@ public interface IAppDbContext
 
     DbSet<PickupPoint> PickupPoints { get; }
 
+    DbSet<SignUpCode> SignUpCodes { get; }
+
     DbSet<Parcel> Parcels { get; }
 
     DbSet<ParcelEvent> ParcelEvents { get; }
@@ -74,6 +76,10 @@ public interface IAppDbContext
     DbSet<PayoutRequest> PayoutRequests { get; }
 
     DbSet<OutboxMessage> OutboxMessages { get; }
+
+    DbSet<MailServer> MailServers { get; }
+
+    DbSet<GatewayStore> GatewayStores { get; }
 
     /// <summary>For the rare change that needs two saves in one transaction.</summary>
     DatabaseFacade Database { get; }

@@ -29,12 +29,12 @@ public sealed class EmailOptions
     public bool Configured => !string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(From);
 }
 
-public sealed record SentEmail(DateTime On, string To, string Subject, string Text);
+public sealed record SentEmail(DateTime On, string To, string Subject, string Text, string Html);
 
 /// <summary>The emails the fake sender "sent", so a demo can read them without a mailbox.</summary>
 public class EmailLog
 {
-    private const int Keep = 50;
+    private const int Keep = 500;
     private readonly ConcurrentQueue<SentEmail> messages = new();
 
     public IReadOnlyList<SentEmail> Recent => [.. messages.Reverse()];
@@ -54,7 +54,7 @@ public class FakeEmailSender(EmailLog log, TimeProvider time, ILogger<FakeEmailS
 {
     public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
-        log.Add(new SentEmail(time.GetUtcNow().UtcDateTime, message.To, message.Subject, message.Text));
+        log.Add(new SentEmail(time.GetUtcNow().UtcDateTime, message.To, message.Subject, message.Text, message.Html));
         logger.LogInformation("Email to {To}: {Subject}", message.To, message.Subject);
 
         return Task.CompletedTask;
@@ -86,7 +86,7 @@ public class SmtpEmailSender(EmailOptions options, EmailLog log, TimeProvider ti
             Credentials = new NetworkCredential(options.User ?? options.From, options.Password)
         };
         await client.SendMailAsync(mail, cancellationToken);
-        log.Add(new SentEmail(time.GetUtcNow().UtcDateTime, message.To, message.Subject, message.Text));
+        log.Add(new SentEmail(time.GetUtcNow().UtcDateTime, message.To, message.Subject, message.Text, message.Html));
         logger.LogInformation("Email sent to {To}: {Subject}", message.To, message.Subject);
     }
 }

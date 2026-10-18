@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Infrastructure.Email;
 using Domain.Merchants;
 using Domain.Parcels;
 
@@ -18,7 +21,8 @@ public class MerchantPanelTests(WebAppFactory factory) : AppTests(factory)
         var business = $"Sign-up shop {Guid.NewGuid():N}"[..24];
         var areaId = await QueryAsync("onedrop", db => db.Areas.Where(a => a.Name == "Dhanmondi").Select(a => a.Id).SingleAsync(Cancel));
 
-        var signedUp = await Visit("onedrop").PostFormAsync(
+        var visitor = Visit("onedrop");
+        var asked = await visitor.SubmitAsync(
             "/Account/Register",
             "/Account/Register",
             ("Input.Business", business),
@@ -29,6 +33,22 @@ public class MerchantPanelTests(WebAppFactory factory) : AppTests(factory)
             ("Input.Address", "Road 27, Dhanmondi"),
             ("Input.PickupAreaId", $"{areaId}"),
             ("Input.PickupAddress", "Road 27, Dhanmondi"));
+
+        // No account until the emailed code is typed; the form waits sealed in the page
+        Assert.Contains("We sent a 6-digit code", asked);
+        Assert.False(await QueryAsync("onedrop", db => db.Merchants.AnyAsync(m => m.Name == business, Cancel)));
+        var pending = Regex.Match(asked, "name=\"pending\" value=\"([^\"]+)\"").Groups[1].Value;
+        var sent = Assert.Single(Factory.Services.GetRequiredService<EmailLog>().Recent, e => e.To == email);
+        var code = sent.Subject[..6];
+        Assert.Matches("^[0-9]{6}$", code);
+        Assert.DoesNotContain(WebAppFactory.Password, asked);
+
+        var wrong = await visitor.SubmitAsync("/Account/Register", "/Account/Register?handler=Verify", ("pending", pending), ("code", code == "000000" ? "111111" : "000000"));
+        Assert.Contains("4 tries left", wrong);
+        // A sealed form that was changed is not believed
+        Assert.Contains("That took too long", await visitor.SubmitAsync("/Account/Register", "/Account/Register?handler=Verify", ("pending", pending + "x"), ("code", code)));
+
+        var signedUp = await visitor.PostFormAsync("/Account/Register", "/Account/Register?handler=Verify", ("pending", pending), ("code", $"{code[..3]} {code[3..]}"));
         Assert.Equal(HttpStatusCode.Redirect, signedUp.StatusCode);
         Assert.Equal("/Merchant", signedUp.Headers.Location!.OriginalString);
 

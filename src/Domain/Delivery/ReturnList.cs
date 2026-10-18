@@ -135,6 +135,7 @@ public class ReturnList : TenantEntity, IMerchantOwned
 
         Status = ReturnListStatus.HandedOver;
         HandedOverOn = now;
+        Raise(new ReturnListHandedOver(this));
 
         return Result.Success();
     }
@@ -239,3 +240,6 @@ public class ReturnListParcel : TenantEntity, IMerchantOwned
 
     public long MerchantId { get; private set; }
 }
+
+/// <summary>A rider handed a return list to the merchant: the merchant is asked by email to confirm it.</summary>
+public sealed record ReturnListHandedOver(ReturnList List) : IDomainEvent;

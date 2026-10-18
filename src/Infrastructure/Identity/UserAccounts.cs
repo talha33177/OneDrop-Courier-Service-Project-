@@ -11,6 +11,48 @@ namespace Infrastructure.Identity;
 /// </summary>
 public class UserAccounts(UserManager<AppUser> users, ITenantContext tenantContext, TimeProvider time) : IUserAccounts
 {
+    public async Task<LoginInfo?> FindAsync(long userId, CancellationToken cancellationToken = default)
+    {
+        return await users.Users
+            .Where(u => u.Id == userId && u.Email != null)
+            .Select(u => new LoginInfo(u.Id, u.Email!, u.DisplayName, u.Archived))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<LoginInfo?> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        // The user filter keeps the lookup to this courier; a stopped login is never offered a new password
+        var user = await users.FindByNameAsync(email.Trim());
+
+        return user is null || user.Archived || user.Email is null ? null : new LoginInfo(user.Id, user.Email, user.DisplayName, false);
+    }
+
+    public async Task<string> PasswordTokenAsync(long userId, CancellationToken cancellationToken = default)
+    {
+        var user = await users.Users.SingleAsync(u => u.Id == userId, cancellationToken);
+
+        return await users.GeneratePasswordResetTokenAsync(user);
+    }
+
+    public async Task<Result> ResetPasswordWithTokenAsync(long userId, string token, string password, CancellationToken cancellationToken = default)
+    {
+        var user = await users.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (user is null || user.Archived)
+        {
+            return Error.Validation("login.reset", "This link does not work any more. Ask for a new one.");
+        }
+
+        var reset = await users.ResetPasswordAsync(user, token, password);
+        if (reset.Succeeded)
+        {
+            return Result.Success();
+        }
+
+        return reset.Errors.Any(e => e.Code == nameof(IdentityErrorDescriber.InvalidToken))
+            ? Error.Validation("login.reset", "This link has expired or was used already. Ask for a new one.")
+            : Error.Validation("login.password", string.Join(" ", reset.Errors.Select(e => e.Description)));
+    }
+
     public async Task<Result<long>> CreateAsync(NewLogin login, CancellationToken cancellationToken = default)
     {
         var tenantId = tenantContext.TenantId ?? throw new InvalidOperationException("A login belongs to a tenant.");

@@ -8,7 +8,7 @@
     <div>
         <h1>Email outbox</h1>
         <p>
-            Development only. The last 50 emails to merchants.
+            Development only. The last 500 emails sent, each drawn as the mail app shows it.
             @if (Model.Live)
             {
                 <strong>A mail server is configured, so these were really sent.</strong>
@@ -37,25 +37,22 @@
 <div class="card">
     @if (Model.Messages.Count == 0)
     {
-        <div class="empty">@Icons.Get("message")<h3>No emails yet</h3><p>Merchants are emailed when a payout is sent to their account.</p></div>
+        <div class="empty">@Icons.Get("message")<h3>No emails yet</h3><p>Emails go out when a shop signs up, is approved, is paid, gets an answer, has returns to confirm or pays online, and when someone asks for a new password.</p></div>
     }
     else
     {
-        <div class="table-wrap">
-            <table class="table">
-                <thead><tr><th>Sent (UTC)</th><th>To</th><th>Subject</th><th>Message</th></tr></thead>
-                <tbody>
-                    @foreach (var message in Model.Messages)
-                    {
-                        <tr>
-                            <td class="nowrap">@message.On.ToString("HH:mm:ss")</td>
-                            <td class="nowrap">@message.To</td>
-                            <td class="cell-main">@message.Subject</td>
-                            <td style="white-space:pre-line">@message.Text</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+        <div class="card-body">
+            @foreach (var (message, index) in Model.Messages.Select((m, i) => (m, i)))
+            {
+                <details class="mb" open="@(index == 0)">
+                    <summary style="cursor:pointer;padding:6px 0">
+                        <strong>@message.Subject</strong>
+                        <span class="muted"> · to @message.To · @message.On.ToString("HH:mm:ss") UTC</span>
+                    </summary>
+                    @* Drawn as the mail app draws it, in a box with no scripts *@
+                    <iframe sandbox title="@message.Subject" srcdoc="@message.Html" style="width:100%;height:760px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:8px"></iframe>
+                </details>
+            }
         </div>
     }
 </div>

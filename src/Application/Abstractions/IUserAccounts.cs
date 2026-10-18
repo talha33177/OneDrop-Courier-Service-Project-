@@ -11,9 +11,27 @@ public sealed record NewLogin(string? Email, string? Password, string DisplayNam
 /// <summary>A login of the courier's own people (an admin or hub staff), as the admin sees it.</summary>
 public sealed record StaffLogin(long UserId, string Name, string Email, string Role, bool Stopped, DateTime Created);
 
+/// <summary>One login as an email needs it: where to write, whom to greet, and whether it may still sign in.</summary>
+public sealed record LoginInfo(long UserId, string Email, string Name, bool Stopped);
+
 /// <summary>Creates logins. Identity lives in Infrastructure; the use cases only ask for an account.</summary>
 public interface IUserAccounts
 {
+    /// <summary>The current courier's login with this id, or null.</summary>
+    Task<LoginInfo?> FindAsync(long userId, CancellationToken cancellationToken = default);
+
+    /// <summary>The current courier's login with this email that may sign in, or null.</summary>
+    Task<LoginInfo?> FindByEmailAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A one-time token that lets the login choose a new password, for a link in an email. It stops working once used,
+    /// once the password changes another way, or after a day.
+    /// </summary>
+    Task<string> PasswordTokenAsync(long userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets a new password with a token from <see cref="PasswordTokenAsync"/>, or says why not.</summary>
+    Task<Result> ResetPasswordWithTokenAsync(long userId, string token, string password, CancellationToken cancellationToken = default);
+
     /// <summary>The new login's id, or why it was refused (email taken at this courier, weak password).</summary>
     Task<Result<long>> CreateAsync(NewLogin login, CancellationToken cancellationToken = default);
 

@@ -93,7 +93,7 @@ public class RecipientPaymentsHandler(
         }
 
         var parcel = found.Value;
-        var started = OnlinePayment.StartForParcel(parcel, tenant.CurrencyCode.Trim(), gateway.Limits);
+        var started = OnlinePayment.StartForParcel(parcel, tenant.CurrencyCode.Trim(), gateway.Limits, given);
         if (started.IsFailure)
         {
             return started.Error!;

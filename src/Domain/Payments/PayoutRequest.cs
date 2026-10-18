@@ -120,6 +120,7 @@ public class PayoutRequest : TenantEntity, IMerchantOwned
         Status = PayoutRequestStatus.Refused;
         Answer = why;
         AnsweredOn = now;
+        Raise(new PayoutRequestRefused(this));
 
         return Result.Success();
     }
@@ -150,3 +151,6 @@ public class PayoutRequest : TenantEntity, IMerchantOwned
             });
     }
 }
+
+/// <summary>The courier refused a merchant's request to be paid now: the merchant is told why by email.</summary>
+public sealed record PayoutRequestRefused(PayoutRequest Request) : IDomainEvent;

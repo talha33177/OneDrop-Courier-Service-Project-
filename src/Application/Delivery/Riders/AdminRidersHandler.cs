@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Notifications;
 using Domain.Common;
 using Domain.Delivery;
 
@@ -207,6 +208,7 @@ public class AdminRidersHandler(IAppDbContext db, ITenantContext tenantContext, 
 
         rider.Value.LinkLogin(login.Value);
         db.Riders.Add(rider.Value);
+        db.OutboxMessages.Add(OutboxContracts.Write(new AccountEmailMessage(login.Value, AccountEmailKind.LoginCreated)));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 

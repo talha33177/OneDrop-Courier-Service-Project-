@@ -16,8 +16,8 @@ What works for real, and what does not yet:
 | | On the live site |
 |---|---|
 | Every panel, the merchant API, webhooks, public tracking | Real |
-| Email to merchants (payout notices) | Real once a mail server is set in `.env`; otherwise nothing is sent |
-| Merchants paying what they owe online | SSLCommerz, once a store is set in `.env`; a sandbox store takes test payments only |
+| Email to merchants (payout notices) | Real once the super admin sets a mail server on **Setup → Email and payments** (or one is set in `.env`); otherwise nothing is sent |
+| Merchants and recipients paying online | SSLCommerz, once the super admin sets a store on the same page (or one is set in `.env`); a sandbox store takes test payments only |
 | SMS to recipients | Not sent: there is no SMS provider yet |
 | Payouts to merchants (bKash, Nagad, bank) | Worked out and invoiced, but no money moves: there is no payout provider yet |
 

@@ -15,6 +15,34 @@
             <div class="alert alert-error">@Icons.Get("alert")<div>@Model.Problem</div></div>
         }
 
+        @if (Model.Pending is not null)
+        {
+            <div class="card" style="max-width:520px">
+                <div class="card-body">
+                    <h4 class="mb form-step"><span>4</span> Confirm your email</h4>
+                    @if (Model.Notice is not null)
+                    {
+                        <div class="alert alert-success" role="status">@Icons.Get("check-circle")<div>@Model.Notice</div></div>
+                    }
+                    <p>We sent a 6-digit code to <strong>@Model.Input.Email</strong>. Enter it here to create your account. It works for 10 minutes; look in the spam folder if it is not in your inbox.</p>
+                    <form method="post" asp-page-handler="Verify">
+                        <input type="hidden" name="pending" value="@Model.Pending" />
+                        <div class="field">
+                            <label for="code">Verification code</label>
+                            <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123 456" required autofocus style="font-size:22px;letter-spacing:6px;max-width:220px" />
+                        </div>
+                        <button class="btn btn-primary btn-lg" type="submit">Verify and create account @Icons.Get("arrow-right")</button>
+                    </form>
+                    <form method="post" asp-page-handler="Resend" class="mt">
+                        <input type="hidden" name="pending" value="@Model.Pending" />
+                        <span class="muted">No code?</span> <button class="btn btn-ghost btn-sm" type="submit">@Icons.Get("refresh") Send a new code</button>
+                        <a class="btn btn-ghost btn-sm" asp-page="/Account/Register">Change my details</a>
+                    </form>
+                </div>
+            </div>
+        }
+        else
+        {
         <form method="post">
             <h4 class="mb form-step"><span>1</span> Your business</h4>
             <div class="form-grid">
@@ -70,9 +98,10 @@
             </div>
 
             <div class="form-actions">
-                <button class="btn btn-primary btn-lg" type="submit">Create account @Icons.Get("arrow-right")</button>
+                <button class="btn btn-primary btn-lg" type="submit">@(Model.CodeRequired ? "Continue" : "Create account") @Icons.Get("arrow-right")</button>
                 <span class="muted">Already a merchant? <a asp-page="/Account/Login">Sign in</a></span>
             </div>
         </form>
+        }
     </div>
 </div>

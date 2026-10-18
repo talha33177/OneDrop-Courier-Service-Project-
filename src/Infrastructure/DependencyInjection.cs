@@ -1,4 +1,6 @@
 using System.Globalization;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -6,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Application.Abstractions;
+using Infrastructure.Connections;
 using Infrastructure.Email;
 using Infrastructure.Identity;
 using Infrastructure.Jobs;
@@ -13,6 +16,7 @@ using Infrastructure.Maps;
 using Infrastructure.MultiTenancy;
 using Infrastructure.Payments;
 using Infrastructure.Persistence;
+using Infrastructure.Security;
 using Infrastructure.Seeding;
 using Infrastructure.Sms;
 using Infrastructure.Webhooks;
@@ -59,41 +63,24 @@ public static class DependencyInjection
         services.AddSingleton<IPayoutGateway, FakePayoutGateway>();
         services.AddScoped<IJobSchedule, HangfireJobSchedule>();
 
-        // Online payments: the real SSLCommerz store when one is configured (its password lives in a git-ignored
-        // Local.json), the fake in Development, and none elsewhere, so a fake can never take "payments" for real
+        // The key ring signs the sign-in cookies and seals the secrets a courier keeps, so it lives in the database:
+        // a restart, a redeploy or a second server reads the same keys. The name keeps them the app's wherever it runs
+        services.AddDataProtection().SetApplicationName("Courier");
+        services.AddOptions<KeyManagementOptions>()
+            .Configure<IConfiguration>((options, configuration) => options.XmlRepository = new SqlKeyRepository(
+                configuration.GetConnectionString("Database")
+                    ?? throw new InvalidOperationException("ConnectionStrings:Database is not configured.")));
+        services.AddSingleton<ISecretBox, SecretBox>();
+
+        // Each courier's mail server and SSLCommerz store: its own from /Admin/Connections, else the server's
+        // configuration (Email:*, Sslcommerz:*, in a git-ignored Local.json); with neither, the fakes in Development
+        services.AddScoped<ConnectionSettings>();
+        services.AddScoped<IConnectionSettings>(provider => provider.GetRequiredService<ConnectionSettings>());
         services.AddSingleton<FakePaymentLog>();
-        services.AddSingleton(provider =>
-        {
-            var options = new SslcommerzOptions();
-            provider.GetRequiredService<IConfiguration>().GetSection("Sslcommerz").Bind(options);
-
-            return options;
-        });
-        services.AddHttpClient<SslcommerzGateway>((provider, client) =>
-        {
-            client.BaseAddress = new Uri(provider.GetRequiredService<SslcommerzOptions>().BaseUrl
-                ?? throw new InvalidOperationException("Sslcommerz:BaseUrl is not set."));
-            client.Timeout = TimeSpan.FromSeconds(30);
-        });
-        services.AddScoped<IPaymentGateway>(provider =>
-            provider.GetRequiredService<SslcommerzOptions>().Configured
-                ? provider.GetRequiredService<SslcommerzGateway>()
-                : provider.GetRequiredService<IHostEnvironment>().IsDevelopment()
-                    ? ActivatorUtilities.CreateInstance<FakePaymentGateway>(provider)
-                    : ActivatorUtilities.CreateInstance<NoPaymentGateway>(provider));
-
-        // The real mail server when one is configured (the password lives in a git-ignored Local.json), else the fake
+        services.AddHttpClient(CourierPaymentGateway.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddScoped<IPaymentGateway, CourierPaymentGateway>();
         services.AddSingleton<EmailLog>();
-        services.AddSingleton(provider =>
-        {
-            var options = new EmailOptions();
-            provider.GetRequiredService<IConfiguration>().GetSection("Email").Bind(options);
-
-            return options;
-        });
-        services.AddSingleton<IEmailSender>(provider => provider.GetRequiredService<EmailOptions>().Configured
-            ? ActivatorUtilities.CreateInstance<SmtpEmailSender>(provider)
-            : ActivatorUtilities.CreateInstance<FakeEmailSender>(provider));
+        services.AddScoped<IEmailSender, CourierEmailSender>();
 
         services
             .AddHttpClient<IWebhookSender, HttpWebhookSender>((provider, client) => client.Timeout = TimeSpan.Parse(

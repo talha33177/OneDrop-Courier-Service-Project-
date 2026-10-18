@@ -134,6 +134,20 @@ public class LedgerEntry : TenantEntity, IMerchantOwned
         };
     }
 
+    /// <summary>
+    /// The courier wrote this adjustment by hand: the merchant is emailed what it is and why. An online payment's
+    /// credit is not, since its own receipt says it.
+    /// </summary>
+    public void TellMerchant()
+    {
+        if (Kind != LedgerEntryKind.Adjustment)
+        {
+            throw new InvalidOperationException("Only an adjustment is told to the merchant on its own.");
+        }
+
+        Raise(new AdjustmentWritten(this));
+    }
+
     /// <summary>The payout <paramref name="payout"/> takes the line. A line is paid out once.</summary>
     internal void PayIn(Payout payout)
     {
@@ -152,3 +166,6 @@ public class LedgerEntry : TenantEntity, IMerchantOwned
         PayoutId = null;
     }
 }
+
+/// <summary>The courier credited or charged a merchant by hand: the merchant is emailed what and why.</summary>
+public sealed record AdjustmentWritten(LedgerEntry Entry) : IDomainEvent;

@@ -44,6 +44,8 @@ using Application.Payments.MerchantPayments;
 using Application.Payments.OnlinePayments;
 using Application.Payments.PayoutRequests;
 using Application.Payments.RunPayouts;
+using Application.Platform.Accounts;
+using Application.Platform.Connections;
 using Application.Platform.Settings;
 using Application.Platform.Staff;
 using Application.Reports;
@@ -112,6 +114,7 @@ public static class DependencyInjection
         services.AddScoped<RatesHandler>();
         services.AddScoped<DeliveryOptionsHandler>();
         services.AddScoped<CourierSettingsHandler>();
+        services.AddScoped<ConnectionsHandler>();
         services.AddScoped<StaffHandler>();
         services.AddScoped<StaffAccess>();
         services.AddScoped<StuckParcelsHandler>();
@@ -126,6 +129,11 @@ public static class DependencyInjection
         services.AddScoped<MerchantWebhooks>();
         services.AddScoped<SendEmailsJob>();
         services.AddScoped<MerchantEmails>();
+        services.AddScoped<CourierEmails>();
+        services.AddScoped<RecipientEmails>();
+        services.AddScoped<AccountEmails>();
+        services.AddScoped<PasswordResetHandler>();
+        services.AddScoped<SignUpCodes>();
         services.AddScoped<FailedMessagesHandler>();
         services.AddScoped<MerchantBellHandler>();
         services.AddScoped<AdminBellHandler>();

@@ -1,0 +1,129 @@
+@page
+@using Application.Platform.Connections
+@model Web.Pages.Admin.ConnectionsModel
+@{
+    ViewData["Title"] = "Email and payments";
+    var mail = Model.View.Mail;
+    var store = Model.View.Store;
+}
+
+<div class="page-head">
+    <div>
+        <h1>Email and payments</h1>
+        <p>The mail server merchants' payout emails go out through, and the SSLCommerz store that takes online payments. Only super admins see this page. Passwords are kept encrypted and never shown again: leave a password box empty to keep the one saved.</p>
+    </div>
+</div>
+
+<partial name="_Alerts" />
+
+<div class="grid grid-2">
+    <div class="card">
+        <div class="card-head">
+            <div>
+                <h2>@Icons.Get("message") Mail server</h2>
+                <p>
+                    @if (mail is not null)
+                    {
+                        <span class="badge badge-done">In use</span>
+                    }
+                    else if (Model.View.ServerHasMail)
+                    {
+                        <span class="badge badge-pending">Using the server's settings</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-cancel">Not set: no emails are sent</span>
+                    }
+                </p>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (mail is { PasswordReadable: false })
+            {
+                <div class="alert alert-warning">The saved password can no longer be read. Enter it again and save.</div>
+            }
+            <form method="post" asp-page-handler="Mail">
+                <div class="form-grid">
+                    <div class="field"><label for="host">Server</label><input type="text" id="host" name="host" value="@mail?.Host" maxlength="200" placeholder="smtp.gmail.com" required /></div>
+                    <div class="field"><label for="port">Port</label><input type="number" id="port" name="port" value="@(mail?.Port ?? 587)" min="1" max="65535" required /><span class="hint">587 for Gmail and most servers.</span></div>
+                </div>
+                <div class="form-grid">
+                    <div class="field"><label for="fromAddress">From address</label><input type="email" id="fromAddress" name="fromAddress" value="@mail?.FromAddress" maxlength="254" placeholder="you@gmail.com" required /><span class="hint">Gmail sends as the account's own address whatever this says.</span></div>
+                    <div class="field"><label for="fromName">From name</label><input type="text" id="fromName" name="fromName" value="@mail?.FromName" maxlength="200" placeholder="OneDrop Courier" /></div>
+                </div>
+                <div class="form-grid">
+                    <div class="field"><label for="userName">Login</label><input type="text" id="userName" name="userName" value="@mail?.UserName" maxlength="254" placeholder="The from address" autocomplete="off" /><span class="hint">Leave empty when it is the from address.</span></div>
+                    <div class="field"><label for="password">Password</label><input type="password" id="password" name="password" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="@(mail is null ? "" : "Saved: leave empty to keep it")" required="@(mail is null)" data-reveal /><span class="hint">For Gmail, an app password (Google account, Security, App passwords), not the account's own.</span></div>
+                </div>
+                <div class="form-actions"><button class="btn btn-primary" type="submit">Save mail server</button></div>
+            </form>
+        </div>
+        @if (mail is not null || Model.View.ServerHasMail)
+        {
+            <div class="card-body">
+                <form method="post" asp-page-handler="TestMail" class="form-grid">
+                    <div class="field"><label for="to">Send a test email to</label><input type="email" id="to" name="to" value="@Model.TestTo" required /></div>
+                    <div class="field" style="align-self:end"><button class="btn btn-outline" type="submit">@Icons.Get("send") Send test email</button></div>
+                </form>
+            </div>
+        }
+        @if (mail is not null)
+        {
+            <div class="card-body">
+                <form method="post" asp-page-handler="RemoveMail">
+                    <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasMail ? "Emails go out through the server's own settings again." : "No emails are sent until a mail server is saved again.")" data-confirm-title="Remove the mail server?" data-confirm-ok="Remove">@Icons.Get("x") Remove</button>
+                </form>
+            </div>
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div>
+                <h2>@Icons.Get("wallet") SSLCommerz store</h2>
+                <p>
+                    @if (store is not null)
+                    {
+                        <span class="badge @(store.IsLive ? "badge-done" : "badge-hold")">@(store.IsLive ? "Live: real money" : "Sandbox: test money")</span>
+                    }
+                    else if (Model.View.ServerHasStore)
+                    {
+                        <span class="badge badge-pending">Using the server's settings</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-cancel">Not set: no online payments</span>
+                    }
+                </p>
+            </div>
+        </div>
+        <div class="card-body">
+            @if (store is { PasswordReadable: false })
+            {
+                <div class="alert alert-warning">The saved store password can no longer be read. Enter it again and save.</div>
+            }
+            <form method="post" asp-page-handler="Store">
+                <div class="form-grid">
+                    <div class="field"><label for="storeId">Store ID</label><input type="text" id="storeId" name="storeId" value="@store?.StoreId" maxlength="100" pattern="[A-Za-z0-9]+" autocomplete="off" required /></div>
+                    <div class="field"><label for="storePassword">Store password</label><input type="password" id="storePassword" name="storePassword" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="@(store is null ? "" : "Saved: leave empty to keep it")" required="@(store is null)" data-reveal /></div>
+                </div>
+                <div class="field">
+                    <label>Gateway</label>
+                    <label class="check"><input type="radio" name="isLive" value="false" checked="@(store?.IsLive != true)" /> Sandbox: test payments, no real money</label>
+                    <label class="check"><input type="radio" name="isLive" value="true" checked="@(store?.IsLive == true)" /> Live: real money (a store SSLCommerz approved for live)</label>
+                    <span class="hint">A sandbox store's ID and password do not work on the live gateway, nor the other way round.</span>
+                </div>
+                <p class="hint">Merchants then see "Pay online" when they owe the courier, and recipients can pay their cash on delivery online from the tracking page.</p>
+                <div class="form-actions"><button class="btn btn-primary" type="submit" data-confirm="Payments use the store from the next page anyone opens." data-confirm-title="Save the store?" data-confirm-ok="Save" data-confirm-tone="calm">Save store</button></div>
+            </form>
+        </div>
+        @if (store is not null)
+        {
+            <div class="card-body">
+                <form method="post" asp-page-handler="RemoveStore">
+                    <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasStore ? "Online payments use the server's own store again." : "Merchants and recipients can no longer pay online, and payments already started are not checked, until a store is saved again.")" data-confirm-title="Remove the store?" data-confirm-ok="Remove">@Icons.Get("x") Remove</button>
+                </form>
+            </div>
+        }
+    </div>
+</div>
