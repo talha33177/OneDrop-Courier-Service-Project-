@@ -340,6 +340,17 @@ New ones are added there and dated here.
 
 Newest first.
 
+### 2026-10-20 (last: a back button on every panel page)
+- **Owner's request:** "Add a go back button on every page so that is easy to navigate."
+- **Done:** an arrow before the page title in the shared top bar (`_AppLayout`: merchant, admin, hub, rider,
+  platform). `site.js` keeps a trail of pages per tab (`sessionStorage`): the same page again (a saved form, a filter,
+  a reload) replaces its entry, so back never shows the page you are on; arriving at the page before pops one. With
+  nothing before, it goes to the panel's home, and on the home itself it hides. The public site (front page,
+  tracking, sign-in) has its own header and was left as it is. Phone top bar tightened so the title still fits.
+- **Tested:** build 0 warnings; in the browser as the admin: dashboard (no arrow) → Merchants → a merchant, then
+  back twice landed on Merchants and the dashboard; 390 px: "Merchants" in full, no sideways scroll. Integration
+  `PortalPagesTests`, `AccountMenuTests`, `ModeratorsTests`, `StaffRolesTests`, `BellTests` 23 of 23.
+
 ### 2026-10-20 (later: a sandbox and a live SSLCommerz store side by side)
 - **Owner's request:** keep both the sandbox and the live store's credentials on the page, and pick which one is used.
 - **Done:** `GatewayStore` holds both (`StoreCredentials`; an empty password keeps a store's saved one, a store

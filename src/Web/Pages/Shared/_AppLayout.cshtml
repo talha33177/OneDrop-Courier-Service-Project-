@@ -183,6 +183,8 @@
         <div class="main">
             <header class="topbar">
                 <label for="nav-open" class="menu-toggle" title="Menu">@Icons.Get("menu")@if (workShown) {<span class="nav-work" aria-hidden="true">!</span>}</label>
+                @* Back to the page before this one (site.js keeps the tab's trail); with none, the panel's home *@
+                <a class="icon-btn topbar-back no-print" href="@(menu.FirstOrDefault()?.Items.FirstOrDefault()?.Href ?? "/")" data-back title="Go back" aria-label="Go back">@Icons.Get("arrow-left")</a>
                 <div class="topbar-title">@ViewData["Title"]</div>
                 <div class="topbar-actions">
                     @if (isMerchant)

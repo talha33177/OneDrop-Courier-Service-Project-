@@ -80,6 +80,33 @@
         }
     }
 
+    // ---------- Go back: the page this tab showed before this one ----------
+    // A trail of pages per tab. The same page again (a saved form lands back on it, a filter, a reload) replaces its
+    // entry, so back never shows the same page; arriving at the page before (by this button or the browser's) pops one.
+    const back = document.querySelector("[data-back]");
+    if (back) {
+        let trail = [];
+        try { trail = JSON.parse(sessionStorage.getItem("trail") || "[]"); } catch { trail = []; }
+        const here = { path: location.pathname.toLowerCase(), url: location.pathname + location.search };
+        if (trail.length && trail[trail.length - 1].path === here.path) {
+            trail[trail.length - 1] = here;
+        } else if (trail.length > 1 && trail[trail.length - 2].path === here.path) {
+            trail.pop();
+            trail[trail.length - 1] = here;
+        } else {
+            trail.push(here);
+        }
+        trail = trail.slice(-30);
+        try { sessionStorage.setItem("trail", JSON.stringify(trail)); } catch { /* private mode: back goes home */ }
+
+        const before = trail[trail.length - 2];
+        if (before) {
+            back.href = before.url;
+        } else if (new URL(back.href).pathname.toLowerCase() === here.path) {
+            back.hidden = true; // the panel's home with nothing before it
+        }
+    }
+
     // ---------- The top bar gets a line once the page scrolls ----------
     const topbar = document.querySelector(".topbar");
     if (topbar) {
