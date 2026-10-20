@@ -406,7 +406,7 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   mail app would.
 - **Email and payments set from the admin panel** (2026-10-18). `/Admin/Connections` (Setup → "Email and payments",
   super admins only: it is on no staff list) keeps the courier's own mail server (`Notifications.MailServer`) and
-  SSLCommerz store (`Payments.GatewayStore`, sandbox or live), so a live site needs no settings file for them. The
+  SSLCommerz stores (`Payments.GatewayStore`: a sandbox and a live store kept side by side, only the one picked taking payments), so a live site needs no settings file for them. The
   passwords are sealed with ASP.NET Data Protection (`ISecretBox`) and never shown back; an empty password box keeps
   the saved one, and a page whose password can no longer be read asks for it again. "Send test email" goes through the
   server in use and shows the server's refusal. Each courier's own settings win; with none, the server's `Email:*` and
@@ -445,6 +445,10 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   takes money in and cannot send it to merchants), the app's own SQL login instead of `sa`.
 
 ### Database
+- 2026-10-20 (two stores): `Payments.GatewayStore` keeps `SandboxStoreId`, `SandboxPassword`, `LiveStoreId`, `LivePassword`
+  (each pair both set or both NULL; `chk_GatewayStore_InUse`: the store `IsLive` picks has its details) in place of
+  `StoreId` and `StorePassword`; `Scripts/Pre/006_TwoGatewayStores.sql` moved each courier's one store into its slot.
+  A payment started before a switch is checked with the store picked now.
 - 2026-10-18 (sign-up code): `Merchants.SignUpCode` (email in lower case, the code's hash, issued, expires, attempts,
   verified; `IX_SignUpCode_Tenant_Email`), in the security policy (32 tables). A new table, so no `Scripts/Pre`.
 - 2026-10-18 (emails): `Payments.OnlinePayment.PayerEmail` (NULL; a recipient's address for the receipt). Nullable,

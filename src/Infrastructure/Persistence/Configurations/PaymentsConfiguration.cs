@@ -73,8 +73,13 @@ public class GatewayStoreConfiguration : IEntityTypeConfiguration<GatewayStore>
     public void Configure(EntityTypeBuilder<GatewayStore> builder)
     {
         builder.MapTenantOwned(Schemas.Payments);
-        builder.Property(s => s.StoreId).HasMaxLength(100);
-        builder.Property(s => s.StorePassword).HasMaxLength(2000);
+        builder.Property(s => s.SandboxStoreId).HasMaxLength(100);
+        builder.Property(s => s.SandboxPassword).HasMaxLength(2000);
+        builder.Property(s => s.LiveStoreId).HasMaxLength(100);
+        builder.Property(s => s.LivePassword).HasMaxLength(2000);
+        builder.Ignore(s => s.HasSandbox);
+        builder.Ignore(s => s.HasLive);
+        builder.Ignore(s => s.InUse);
         builder.HasIndex(s => s.TenantId).IsUnique().HasDatabaseName("UX_GatewayStore_Tenant");
     }
 }

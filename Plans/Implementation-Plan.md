@@ -340,6 +340,20 @@ New ones are added there and dated here.
 
 Newest first.
 
+### 2026-10-20 (later: a sandbox and a live SSLCommerz store side by side)
+- **Owner's request:** keep both the sandbox and the live store's credentials on the page, and pick which one is used.
+- **Done:** `GatewayStore` holds both (`StoreCredentials`; an empty password keeps a store's saved one, a store
+  cleared is taken off unless it is in use, the one picked must have its ID and password); `Payments.GatewayStore`
+  columns and three checks, `Scripts/Pre/006_TwoGatewayStores.sql`; payments use `GatewayStore.InUse`; the store card
+  is two panels, each with a radio, its ID and password, the picked one outlined.
+- **Tested:** build 0 warnings; domain **273** (new: both stores kept, live refused until it has its details,
+  switching back with no password typed, a cleared store taken off but never the one in use), architecture 6;
+  `OneDrop-Test` published with a planted old-style live store, which landed in the live slot (old columns dropped,
+  checks made; the row then deleted); integration `ConnectionsTests`, `SchemaMatchesModelTests`,
+  `RowLevelSecurityTests`, `OnlinePaymentsTests`, `RecipientPaymentsTests`, `IsolationTests` 17 of 17. Seen at
+  1690 px. **Not done:** a payment started before a switch is checked with the store picked now (the page says so);
+  recording on each payment which store took it would close that.
+
 ### 2026-10-20 (Test connection worked, sending did not)
 - **Owner's report:** Test connection to `mail.octopi-digital.com` said connected, but a test email failed with "the
   remote certificate was rejected". **Found:** Test connection tries the form as typed; sending uses the saved row,

@@ -63,7 +63,7 @@ public class ConnectionSettings(
             var server = db.MailServers.AsNoTracking().SingleOrDefault();
             var store = db.GatewayStores.AsNoTracking().SingleOrDefault();
             var mailPassword = server is null ? null : server.HasPassword ? secrets.Open(server.Password) : "";
-            var storePassword = store is null ? null : secrets.Open(store.StorePassword);
+            var storePassword = store is null ? null : secrets.Open(store.InUse.Password);
             if ((server is not null && mailPassword is null) || (store is not null && storePassword is null))
             {
                 // The key ring it was sealed with is gone: the super admin has to enter it again
@@ -94,7 +94,7 @@ public class ConnectionSettings(
                     ? null
                     : new SslcommerzOptions
                     {
-                        StoreId = store.StoreId,
+                        StoreId = store.InUse.StoreId,
                         StorePassword = storePassword,
                         BaseUrl = store.IsLive ? configuration["Sslcommerz:LiveUrl"] : configuration["Sslcommerz:SandboxUrl"],
                         MinimumAmount = file.MinimumAmount,

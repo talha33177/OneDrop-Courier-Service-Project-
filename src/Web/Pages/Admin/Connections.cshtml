@@ -168,30 +168,42 @@
         </div>
     </div>
     <div class="card-body">
-        @if (store is { PasswordReadable: false })
-        {
-            <div class="alert alert-warning">The saved store password can no longer be read. Enter it again and save.</div>
-        }
-        <form method="post" asp-page-handler="Store">
-            <div class="form-grid">
-                <div class="field"><label for="storeId">Store ID</label><input type="text" id="storeId" name="storeId" value="@store?.StoreId" maxlength="100" pattern="[A-Za-z0-9]+" autocomplete="off" required /></div>
-                <div class="field"><label for="storePassword">Store password</label><input type="password" id="storePassword" name="storePassword" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="@(store is null ? "" : "Saved: leave empty to keep it")" required="@(store is null)" data-reveal /></div>
-            </div>
-            <div class="field">
-                <label>Gateway</label>
-                <label class="check"><input type="radio" name="isLive" value="false" checked="@(store?.IsLive != true)" /> Sandbox: test payments, no real money</label>
-                <label class="check"><input type="radio" name="isLive" value="true" checked="@(store?.IsLive == true)" /> Live: real money (a store SSLCommerz approved for live)</label>
-                <span class="hint">A sandbox store's ID and password do not work on the live gateway, nor the other way round.</span>
-            </div>
-            <p class="hint">Merchants then see "Pay online" when they owe the courier, and recipients can pay their cash on delivery online from the tracking page.</p>
-            <div class="mail-actions"><button class="btn btn-primary" type="submit" data-confirm="Payments use the store from the next page anyone opens." data-confirm-title="Save the store?" data-confirm-ok="Save" data-confirm-tone="calm">Save store</button></div>
+        <form method="post" asp-page-handler="Store" autocomplete="off">
+            <p class="hint store-intro">Keep both stores here. Only the one picked takes payments; the other keeps its details, so switching back needs no typing.</p>
+            @foreach (var (key, isLive, title, note, storeId, readable) in new[]
+            {
+                ("sandbox", false, "Sandbox", "Test payments, no real money", store?.SandboxStoreId, store?.SandboxReadable ?? true),
+                ("live", true, "Live", "Real money, from a store SSLCommerz approved for live", store?.LiveStoreId, store?.LiveReadable ?? true)
+            })
+            {
+                <div class="store-option">
+                    <label class="store-option-head">
+                        <input type="radio" name="isLive" value="@(isLive ? "true" : "false")" checked="@((store?.IsLive ?? false) == isLive)" />
+                        <span><strong>@title</strong><small>@note</small></span>
+                        @if (store is not null && store.IsLive == isLive)
+                        {
+                            <span class="badge @(isLive ? "badge-done" : "badge-hold")">In use</span>
+                        }
+                    </label>
+                    @if (!readable)
+                    {
+                        <div class="alert alert-warning">The saved @key store password can no longer be read. Enter it again and save.</div>
+                    }
+                    <div class="form-grid">
+                        <div class="field"><label for="@(key)StoreId">Store ID</label><input type="text" id="@(key)StoreId" name="@(key)StoreId" value="@storeId" maxlength="100" pattern="[A-Za-z0-9]+" /></div>
+                        <div class="field"><label for="@(key)Password">Store password</label><input type="password" id="@(key)Password" name="@(key)Password" maxlength="@ConnectionsHandler.MaxPasswordLength" autocomplete="new-password" placeholder="@(storeId is null ? "" : "Saved: leave empty to keep it")" data-reveal /></div>
+                    </div>
+                </div>
+            }
+            <p class="hint">A sandbox store's ID and password do not work on the live gateway, nor the other way round. Clear a store's ID to take it off. Merchants then see "Pay online" when they owe the courier, and recipients can pay their cash on delivery online from the tracking page.</p>
+            <div class="mail-actions"><button class="btn btn-primary" type="submit" data-confirm="Payments go through the store picked from the next page anyone opens. A payment someone started before a switch is checked with the store picked now, so switch when no payment is half done." data-confirm-title="Save the stores?" data-confirm-ok="Save" data-confirm-tone="calm">Save stores</button></div>
         </form>
     </div>
     @if (store is not null)
     {
         <div class="card-body">
             <form method="post" asp-page-handler="RemoveStore">
-                <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasStore ? "Online payments use the server's own store again." : "Merchants and recipients can no longer pay online, and payments already started are not checked, until a store is saved again.")" data-confirm-title="Remove the store?" data-confirm-ok="Remove">@Icons.Get("x") Remove</button>
+                <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(Model.View.ServerHasStore ? "Online payments use the server's own store again." : "Merchants and recipients can no longer pay online, and payments already started are not checked, until a store is saved again.")" data-confirm-title="Remove both stores?" data-confirm-ok="Remove">@Icons.Get("x") Remove both stores</button>
             </form>
         </div>
     }

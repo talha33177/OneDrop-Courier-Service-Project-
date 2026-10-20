@@ -106,11 +106,19 @@ public class ConnectionsModel(ConnectionsHandler connections, ITenantContext ten
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostStoreAsync(string? storeId, bool isLive, string? storePassword, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostStoreAsync(
+        string? sandboxStoreId,
+        string? sandboxPassword,
+        string? liveStoreId,
+        string? livePassword,
+        bool isLive,
+        CancellationToken cancellationToken)
     {
-        var saved = await connections.SaveStoreAsync(storeId, isLive, storePassword, cancellationToken);
+        var saved = await connections.SaveStoreAsync(
+            new StoreDetails(sandboxStoreId, sandboxPassword, liveStoreId, livePassword, isLive),
+            cancellationToken);
         TempData[saved.IsSuccess ? "Done" : "Problem"] = saved.IsSuccess
-            ? isLive ? "Store saved. Online payments now take real money." : "Store saved. Online payments use the SSLCommerz sandbox (test money)."
+            ? isLive ? "Stores saved. Online payments use the live store: real money." : "Stores saved. Online payments use the sandbox store: test money."
             : saved.Error!.Message;
 
         return RedirectToPage();

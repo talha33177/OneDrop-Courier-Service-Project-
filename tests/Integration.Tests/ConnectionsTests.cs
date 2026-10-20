@@ -40,16 +40,18 @@ public class ConnectionsTests(WebAppFactory factory) : AppTests(factory)
             saved = await admin.SubmitAsync(
                 "/Admin/Connections",
                 "/Admin/Connections?handler=Store",
-                ("storeId", "rivalstore01"),
-                ("isLive", "false"),
-                ("storePassword", storePassword));
-            Assert.Contains("Store saved", saved);
+                ("sandboxStoreId", "rivalstore01"),
+                ("sandboxPassword", storePassword),
+                ("liveStoreId", ""),
+                ("livePassword", ""),
+                ("isLive", "false"));
+            Assert.Contains("Stores saved", saved);
             Assert.Contains("Sandbox: test money", saved);
             Assert.DoesNotContain(storePassword, saved);
 
             // Kept sealed, never as typed
             var stored = await QueryAsync("rival", async db =>
-                ((await db.MailServers.AsNoTracking().SingleAsync(Cancel)).Password, (await db.GatewayStores.AsNoTracking().SingleAsync(Cancel)).StorePassword));
+                ((await db.MailServers.AsNoTracking().SingleAsync(Cancel)).Password, (await db.GatewayStores.AsNoTracking().SingleAsync(Cancel)).SandboxPassword!));
             Assert.DoesNotContain(mailPassword, stored.Item1);
             Assert.DoesNotContain(storePassword, stored.Item2);
 
@@ -71,18 +73,49 @@ public class ConnectionsTests(WebAppFactory factory) : AppTests(factory)
                 Assert.NotEqual("rivalstore01", settings.Store().StoreId);
             }
 
-            // An empty password box keeps the saved one; live switches the gateway
+            // Live cannot be picked before it has its details
+            Assert.Contains("Enter the live store's ID and password before using it", await admin.SubmitAsync(
+                "/Admin/Connections",
+                "/Admin/Connections?handler=Store",
+                ("sandboxStoreId", "rivalstore01"),
+                ("sandboxPassword", ""),
+                ("liveStoreId", ""),
+                ("livePassword", ""),
+                ("isLive", "true")));
+
+            // The live store is added beside the sandbox one and picked: payments take real money through it
+            var livePassword = $"live-{Guid.NewGuid():N}";
             saved = await admin.SubmitAsync(
                 "/Admin/Connections",
                 "/Admin/Connections?handler=Store",
-                ("storeId", "rivalstore02"),
-                ("isLive", "true"),
-                ("storePassword", ""));
+                ("sandboxStoreId", "rivalstore01"),
+                ("sandboxPassword", ""),
+                ("liveStoreId", "rivallive01"),
+                ("livePassword", livePassword),
+                ("isLive", "true"));
             Assert.Contains("real money", saved);
+            Assert.DoesNotContain(livePassword, saved);
             await using (var scope = await ScopeAsync("rival"))
             {
                 var store = scope.ServiceProvider.GetRequiredService<ConnectionSettings>().Store();
-                Assert.Equal(("rivalstore02", storePassword, "https://securepay.sslcommerz.com/"), (store.StoreId, store.StorePassword, store.BaseUrl));
+                Assert.Equal(("rivallive01", livePassword, "https://securepay.sslcommerz.com/"), (store.StoreId, store.StorePassword, store.BaseUrl));
+            }
+
+            // Switching back to the sandbox needs no password typed again, and the live store stays saved
+            saved = await admin.SubmitAsync(
+                "/Admin/Connections",
+                "/Admin/Connections?handler=Store",
+                ("sandboxStoreId", "rivalstore01"),
+                ("sandboxPassword", ""),
+                ("liveStoreId", "rivallive01"),
+                ("livePassword", ""),
+                ("isLive", "false"));
+            Assert.Contains("test money", saved);
+            Assert.Contains("rivallive01", saved);
+            await using (var scope = await ScopeAsync("rival"))
+            {
+                var store = scope.ServiceProvider.GetRequiredService<ConnectionSettings>().Store();
+                Assert.Equal(("rivalstore01", storePassword, "https://sandbox.sslcommerz.com/"), (store.StoreId, store.StorePassword, store.BaseUrl));
             }
 
             // A store needs its password the first time; a refusal says why
@@ -103,7 +136,7 @@ public class ConnectionsTests(WebAppFactory factory) : AppTests(factory)
             // Another courier's super admin sees none of it
             var onedrop = await SignInAsync("onedrop", "admin@onedrop.test");
             var theirs = await onedrop.PageAsync("/Admin/Connections");
-            Assert.DoesNotContain("rivalstore02", theirs);
+            Assert.DoesNotContain("rivallive01", theirs);
             Assert.DoesNotContain("smtp.invalid", theirs);
 
             // Super admins only: head office staff are refused the page and not offered it

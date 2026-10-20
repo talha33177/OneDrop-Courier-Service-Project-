@@ -62,15 +62,41 @@ public class ConnectionTests
     [Fact]
     public void A_store_needs_its_id_and_a_password_and_keeps_the_password_when_none_is_typed()
     {
-        var store = GatewayStore.Create(" onedr6ac6fd8338cc6 ", false, "sealed-1").Value;
-        Assert.Equal(("onedr6ac6fd8338cc6", false, "sealed-1"), (store.StoreId, store.IsLive, store.StorePassword));
+        var none = new StoreCredentials(null, null);
+        var store = GatewayStore.Create(new StoreCredentials(" onedr6ac6fd8338cc6 ", "sealed-1"), none, false).Value;
+        Assert.Equal(("onedr6ac6fd8338cc6", "sealed-1"), store.InUse);
+        Assert.False(store.HasLive);
 
-        Assert.True(store.Change("onedrlive01", true, null).IsSuccess);
-        Assert.Equal(("onedrlive01", true, "sealed-1"), (store.StoreId, store.IsLive, store.StorePassword));
+        Assert.Equal("store.sandbox.id", GatewayStore.Create(new StoreCredentials("", "sealed"), none, false).Error?.Code);
+        Assert.Equal("store.sandbox.id", GatewayStore.Create(new StoreCredentials("store id", "sealed"), none, false).Error?.Code);
+        Assert.Equal("store.sandbox.password", GatewayStore.Create(new StoreCredentials("onedr01", null), none, false).Error?.Code);
+        Assert.Equal("store.live.id", store.Change(new StoreCredentials("onedr6ac6fd8338cc6", null), new StoreCredentials("store@ssl", "sealed-2"), false).Error?.Code);
+        Assert.Equal(("onedr6ac6fd8338cc6", "sealed-1"), store.InUse);
+    }
 
-        Assert.Equal("store.id", GatewayStore.Create("", false, "sealed").Error?.Code);
-        Assert.Equal("store.id", GatewayStore.Create("store id", false, "sealed").Error?.Code);
-        Assert.Equal("store.id", store.Change("store@ssl", false, "sealed-2").Error?.Code);
-        Assert.Equal("sealed-1", store.StorePassword);
+    [Fact]
+    public void Both_stores_are_kept_and_only_the_one_picked_is_in_use()
+    {
+        var none = new StoreCredentials(null, null);
+        var sandbox = new StoreCredentials("onedrsandbox01", null);
+        var store = GatewayStore.Create(new StoreCredentials("onedrsandbox01", "sealed-sandbox"), none, false).Value;
+
+        // Live cannot be picked before it has its details
+        Assert.Equal("store.live", store.Change(sandbox, none, true).Error?.Code);
+        Assert.False(store.IsLive);
+
+        // Adding the live store keeps the sandbox one, and switching back and forth needs no password typed again
+        Assert.True(store.Change(sandbox, new StoreCredentials("onedrlive01", "sealed-live"), true).IsSuccess);
+        Assert.Equal(("onedrlive01", "sealed-live"), store.InUse);
+        Assert.Equal(("onedrsandbox01", "sealed-sandbox"), (store.SandboxStoreId, store.SandboxPassword));
+        Assert.True(store.Change(sandbox, new StoreCredentials("onedrlive01", null), false).IsSuccess);
+        Assert.Equal(("onedrsandbox01", "sealed-sandbox"), store.InUse);
+        Assert.Equal(("onedrlive01", "sealed-live"), (store.LiveStoreId, store.LivePassword));
+
+        // A store cleared is taken off, but never the one in use
+        Assert.Equal("store.sandbox", store.Change(none, new StoreCredentials("onedrlive01", null), false).Error?.Code);
+        Assert.True(store.Change(none, new StoreCredentials("onedrlive01", null), true).IsSuccess);
+        Assert.Equal((false, null, null), (store.HasSandbox, store.SandboxStoreId, store.SandboxPassword));
+        Assert.Equal(("onedrlive01", "sealed-live"), store.InUse);
     }
 }

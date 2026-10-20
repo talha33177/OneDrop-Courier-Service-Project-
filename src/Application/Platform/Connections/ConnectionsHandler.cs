@@ -24,7 +24,19 @@ public sealed record MailServerView(
     string? PasswordHint,
     bool PasswordReadable);
 
-public sealed record GatewayStoreView(string StoreId, bool IsLive, bool PasswordReadable);
+/// <summary>
+/// The courier's SSLCommerz stores as the page shows them: each store's ID (null when it has none) and whether its
+/// saved password can still be read, and which store takes the payments.
+/// </summary>
+public sealed record GatewayStoreView(
+    string? SandboxStoreId,
+    bool SandboxReadable,
+    string? LiveStoreId,
+    bool LiveReadable,
+    bool IsLive);
+
+/// <summary>Both stores as the super admin typed them, passwords in clear (empty: keep the saved one), and the one in use.</summary>
+public sealed record StoreDetails(string? SandboxStoreId, string? SandboxPassword, string? LiveStoreId, string? LivePassword, bool IsLive);
 
 /// <summary>The courier's own mail server and store (null where it set none) and whether the server has its own.</summary>
 public sealed record ConnectionsView(MailServerView? Mail, GatewayStoreView? Store, bool ServerHasMail, bool ServerHasStore);
@@ -66,7 +78,14 @@ public class ConnectionsHandler(
                     mail.HasPassword,
                     clear is null ? null : Hint(clear),
                     !mail.HasPassword || clear is not null),
-            store is null ? null : new GatewayStoreView(store.StoreId, store.IsLive, secrets.Open(store.StorePassword) is not null),
+            store is null
+                ? null
+                : new GatewayStoreView(
+                    store.SandboxStoreId,
+                    store.SandboxPassword is null || secrets.Open(store.SandboxPassword) is not null,
+                    store.LiveStoreId,
+                    store.LivePassword is null || secrets.Open(store.LivePassword) is not null,
+                    store.IsLive),
             settings.ServerHasMail,
             settings.ServerHasStore);
     }
@@ -175,23 +194,30 @@ public class ConnectionsHandler(
         return $"Connected to {host}:{details.Port}{(string.IsNullOrEmpty(word) ? " (no login tried)" : " and signed in")}. Nothing was sent.";
     }
 
-    public async Task<Result> SaveStoreAsync(string? storeId, bool isLive, string? password, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Saves both stores and which one takes payments. An empty password box keeps that store's saved password; a
+    /// store left with neither an ID nor a password is taken off, unless it is the one in use.
+    /// </summary>
+    public async Task<Result> SaveStoreAsync(StoreDetails details, CancellationToken cancellationToken = default)
     {
-        var sealedPassword = Seal(password, "store.password");
-        if (sealedPassword.IsFailure)
+        var sandboxPassword = Seal(details.SandboxPassword, "store.sandbox.password");
+        if (sandboxPassword.IsFailure)
         {
-            return sealedPassword.Error!;
+            return sandboxPassword.Error!;
         }
 
+        var livePassword = Seal(details.LivePassword, "store.live.password");
+        if (livePassword.IsFailure)
+        {
+            return livePassword.Error!;
+        }
+
+        var sandbox = new StoreCredentials(details.SandboxStoreId, sandboxPassword.Value);
+        var live = new StoreCredentials(details.LiveStoreId, livePassword.Value);
         var store = await db.GatewayStores.SingleOrDefaultAsync(cancellationToken);
         if (store is null)
         {
-            if (sealedPassword.Value is null)
-            {
-                return Error.Validation("store.password", "Enter the store password SSLCommerz gave you.");
-            }
-
-            var created = GatewayStore.Create(storeId, isLive, sealedPassword.Value);
+            var created = GatewayStore.Create(sandbox, live, details.IsLive);
             if (created.IsFailure)
             {
                 return created.Error!;
@@ -201,7 +227,7 @@ public class ConnectionsHandler(
         }
         else
         {
-            var changed = store.Change(storeId, isLive, sealedPassword.Value);
+            var changed = store.Change(sandbox, live, details.IsLive);
             if (changed.IsFailure)
             {
                 return changed;

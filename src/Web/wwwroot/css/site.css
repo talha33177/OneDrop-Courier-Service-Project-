@@ -1889,6 +1889,15 @@ input[readonly].is-same { background: var(--surface-2); color: var(--muted); }
 .mail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 /* Email sender and SSLCommerz side by side; the shorter card keeps its own height */
 .connections { align-items: start; }
+/* Each SSLCommerz store a panel; the one picked to take payments is outlined in the accent */
+.store-intro { margin: 0 0 14px; }
+.store-option { padding: 14px 16px 0; margin-bottom: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); transition: border-color .2s var(--ease), box-shadow .2s var(--ease); }
+.store-option:has(.store-option-head input:checked) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.store-option-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; cursor: pointer; }
+.store-option-head input { flex: none; width: 18px; height: 18px; accent-color: var(--ink); }
+.store-option-head > span:not(.badge) { flex: 1; }
+.store-option-head strong { display: block; color: var(--ink); }
+.store-option-head small { display: block; margin-top: 1px; color: var(--muted); font-size: 12.5px; font-weight: 400; }
 .connections .card-body + .card-body { border-top: 1px solid var(--line); }
 .mail-test { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-top: 6px; }
 @media (max-width: 640px) { .mail-test { grid-template-columns: minmax(0, 1fr); } }
