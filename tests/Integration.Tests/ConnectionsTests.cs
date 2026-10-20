@@ -66,8 +66,9 @@ public class ConnectionsTests(WebAppFactory factory) : AppTests(factory)
             await using (var scope = await ScopeAsync("onedrop"))
             {
                 var settings = scope.ServiceProvider.GetRequiredService<ConnectionSettings>();
-                Assert.False(settings.Mail().Configured);
-                Assert.False(settings.Store().Configured);
+                // OneDrop may have a server of its own in the test database (the owner's, saved through the page)
+                Assert.NotEqual("smtp.invalid", settings.Mail().Host);
+                Assert.NotEqual("rivalstore01", settings.Store().StoreId);
             }
 
             // An empty password box keeps the saved one; live switches the gateway

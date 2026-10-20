@@ -340,6 +340,47 @@ New ones are added there and dated here.
 
 Newest first.
 
+### 2026-10-20 (Test connection worked, sending did not)
+- **Owner's report:** Test connection to `mail.octopi-digital.com` said connected, but a test email failed with "the
+  remote certificate was rejected". **Found:** Test connection tries the form as typed; sending uses the saved row,
+  and in `OneDrop-Test` that row had `AllowSelfSigned = 0` (saved 08:27, before the box was ticked; the browser can
+  also bring a tick back after a reload, so the page looked saved). The code was right.
+- **Done:** the mail form no longer lets the browser restore its fields (`autocomplete="off"`); the page says
+  "Changed, not saved yet" while the form differs from what was saved, and a successful Test connection says so too;
+  a refused test email whose saved settings do not allow a self-signed certificate says to tick it and save. The
+  Gmail address and app password were taken out of `appsettings.Local.json` (and the side-build and `bin` copies):
+  with no server saved on `/Admin/Connections` emails now go to the fake (`/Dev/Emails`).
+- **Tested:** build 0 warnings; integration `ConnectionsTests` 2 of 2 (one check was changed: it had assumed OneDrop
+  has no mail server of its own in the test database, which the owner's saved octopi server now contradicts; it now
+  checks OneDrop never gets the rival's settings). **Not done:** a real send through octopi (it needs the box saved).
+
+- **Then (owner: "fix the UI"), the Email and payments page:** the Store password box was invisible until scrolled
+  to, because `site.js` used `data-reveal` both for sections that rise in on scroll and for the show-password toggle
+  (the rise now skips inputs); the error alert was full width above 860 px cards (one `.connections` wrapper now
+  holds both); "Send test email" sits level with its input, with dividers between the card's parts. Checked at 1440
+  px and 390 px, no sideways scroll. Build 0 warnings; `ConnectionsTests` and `PortalPagesTests` 15 of 15.
+- **Then (owner): the two cards side by side.** Email sender left, SSLCommerz store right, in the shared
+  `grid grid-2` like Courier settings (alerts full width above, one column below 1100 px); the shorter card keeps
+  its own height, and "Save store" sits on the right like the email card's buttons. Checked at 1900, 1440 and 390 px.
+
+### 2026-10-19 (the email did not work on the owner's own mail server)
+- **Owner's question:** "did you properly config Use secure SMTP (SSL/TLS) and Allow self-signed TLS certificate? I
+  think the email is not working."
+- **Found:** the two options were saved right, but the connection method was wrong for the owner's server.
+  `mail.octopi-digital.com:587` speaks TLS from the first byte (its `220 ... MailEnable` greeting only arrives inside
+  the encrypted session) with a certificate nobody vouches for. `SmtpEmailSender` used STARTTLS on 587 (a plain greeting
+  first), so it waited for a greeting that never came and timed out. Gmail is the other kind of server.
+- **Done:** a secure connection is now SSL from the first byte on port 465; elsewhere STARTTLS first (10 s), and a
+  server that never greets in plain text (no greeting, a timeout or an I/O error; never a refused certificate or
+  password) is tried with SSL from the first byte; the way that worked is remembered per host, port and setting. Test
+  connection says "tick Allow self-signed TLS certificate" when the certificate is what failed.
+- **Tested:** the real servers, no login, nothing sent: Gmail 587 (STARTTLS) and 465 (SSL) connected;
+  `mail.octopi-digital.com:587` refused with a clear certificate error with the option off and **connected with it on**;
+  an unknown host a readable error. Build 0 warnings; domain 272, architecture 6, integration 135 of 135 (one run had
+  `PayoutTests.A_cancelled_payout_frees_its_lines_for_a_payout_to_the_corrected_account` fail, which passed alone twice
+  and in the next full run: it pays every OneDrop merchant "as of tomorrow", so it can collide with other tests).
+  **Not tried:** signing in to `mail.octopi-digital.com` (the password is the owner's).
+
 ### 2026-10-18 (the email sender, like the owner's other app)
 - **Owner's request:** a screenshot of another app's "Email Sender" settings: "make my smtp mail like this".
 - **Done:** `/Admin/Connections`' mail card is now "Email sender": an on/off switch (off keeps the details and sends

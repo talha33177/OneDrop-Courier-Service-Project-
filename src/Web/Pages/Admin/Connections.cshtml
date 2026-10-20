@@ -17,7 +17,8 @@
 
 <partial name="_Alerts" />
 
-<div class="card" style="max-width:860px">
+<div class="grid grid-2 connections">
+<div class="card">
     <div class="card-head">
         <div>
             <h2>@Icons.Get("message") Email sender</h2>
@@ -50,7 +51,8 @@
         {
             <div class="alert alert-warning">The saved password can no longer be read. Enter it again and save.</div>
         }
-        <form method="post" asp-page-handler="Mail" data-mail-form>
+        @* autocomplete off: the browser must not bring back ticks from before a reload, which would show settings that are not saved *@
+        <form method="post" asp-page-handler="Mail" autocomplete="off" data-mail-form>
             <div class="switch-row">
                 <div>
                     <strong>Enable email sender</strong>
@@ -116,6 +118,7 @@
             <div data-check-result class="alert mt" role="status" hidden></div>
 
             <div class="mail-actions">
+                <span class="hint" data-unsaved hidden>Changed, not saved yet: emails still go out with the saved settings.</span>
                 <button type="button" class="btn btn-outline" data-check-url="@Url.Page("/Admin/Connections", "CheckMail")">@Icons.Get("refresh") Test connection</button>
                 <button type="submit" class="btn btn-primary">Save email settings</button>
             </div>
@@ -124,9 +127,13 @@
     @if (mail is not null || Model.View.ServerHasMail)
     {
         <div class="card-body">
-            <form method="post" asp-page-handler="TestMail" class="form-grid">
-                <div class="field"><label for="to">Send a test email to</label><input type="email" id="to" name="to" value="@Model.TestTo" required /><span class="hint">Sends a real email through the saved settings.</span></div>
-                <div class="field" style="align-self:end"><button class="btn btn-outline" type="submit">@Icons.Get("send") Send test email</button></div>
+            <form method="post" asp-page-handler="TestMail">
+                <label for="to">Send a test email to</label>
+                <div class="mail-test">
+                    <input type="email" id="to" name="to" value="@Model.TestTo" required />
+                    <button class="btn btn-outline" type="submit">@Icons.Get("send") Send test email</button>
+                </div>
+                <span class="hint">Sends a real email through the saved settings.</span>
             </form>
         </div>
     }
@@ -140,7 +147,7 @@
     }
 </div>
 
-<div class="card mt" style="max-width:860px">
+<div class="card">
     <div class="card-head">
         <div>
             <h2>@Icons.Get("wallet") SSLCommerz store</h2>
@@ -177,7 +184,7 @@
                 <span class="hint">A sandbox store's ID and password do not work on the live gateway, nor the other way round.</span>
             </div>
             <p class="hint">Merchants then see "Pay online" when they owe the courier, and recipients can pay their cash on delivery online from the tracking page.</p>
-            <div class="form-actions"><button class="btn btn-primary" type="submit" data-confirm="Payments use the store from the next page anyone opens." data-confirm-title="Save the store?" data-confirm-ok="Save" data-confirm-tone="calm">Save store</button></div>
+            <div class="mail-actions"><button class="btn btn-primary" type="submit" data-confirm="Payments use the store from the next page anyone opens." data-confirm-title="Save the store?" data-confirm-ok="Save" data-confirm-tone="calm">Save store</button></div>
         </form>
     </div>
     @if (store is not null)
@@ -188,6 +195,7 @@
             </form>
         </div>
     }
+</div>
 </div>
 
 @section Scripts {
@@ -240,6 +248,19 @@
                 });
             }
 
+            // What the form held when the page was drawn is what is saved; anything else is only typed
+            function snapshot() {
+                return Array.from(form.elements)
+                    .filter(function (e) { return e.name && e.type !== 'hidden' && e.name !== '__RequestVerificationToken'; })
+                    .map(function (e) { return e.name + '=' + (e.type === 'checkbox' ? e.checked : e.value); })
+                    .join('&');
+            }
+            var saved = snapshot();
+            var unsaved = form.querySelector('[data-unsaved]');
+            function changed() { return snapshot() !== saved; }
+            form.addEventListener('input', function () { unsaved.hidden = !changed(); });
+            form.addEventListener('change', function () { unsaved.hidden = !changed(); });
+
             // Test connection tries the server as typed, saving nothing, and shows what it answered
             var check = form.querySelector('[data-check-url]');
             var result = form.querySelector('[data-check-result]');
@@ -253,7 +274,9 @@
                     var answer = await fetch(check.dataset.checkUrl, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
                     var data = await answer.json();
                     result.className = 'alert mt ' + (data.ok ? 'alert-success' : 'alert-error');
-                    result.textContent = data.message;
+                    result.textContent = data.message + (data.ok && changed()
+                        ? ' These details are not saved yet: press Save email settings, or emails keep using the saved ones.'
+                        : '');
                 } catch (error) {
                     result.className = 'alert alert-error mt';
                     result.textContent = 'The page could not reach the courier. Check your connection and try again.';

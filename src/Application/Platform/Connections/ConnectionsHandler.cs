@@ -162,7 +162,14 @@ public class ConnectionsHandler(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return Error.Conflict("mail.check", $"The server did not accept the connection: {exception.GetBaseException().Message}");
+            var said = exception.GetBaseException().Message;
+
+            return Error.Conflict(
+                "mail.check",
+                $"The server did not accept the connection: {said}" +
+                (said.Contains("certificate", StringComparison.OrdinalIgnoreCase) && !details.AllowSelfSigned
+                    ? " If this is a mail server of your own, tick \"Allow self-signed TLS certificate\" and test again."
+                    : ""));
         }
 
         return $"Connected to {host}:{details.Port}{(string.IsNullOrEmpty(word) ? " (no login tried)" : " and signed in")}. Nothing was sent.";
@@ -242,7 +249,16 @@ public class ConnectionsHandler(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return Error.Conflict("mail.test", $"The mail server refused it: {exception.GetBaseException().Message}");
+            // Test connection tries the form as typed, this the saved settings: a box ticked but not saved fails here alone
+            var said = exception.GetBaseException().Message;
+            var trustsSelfSigned = await db.MailServers.AnyAsync(m => m.AllowSelfSigned, CancellationToken.None);
+
+            return Error.Conflict(
+                "mail.test",
+                $"The mail server refused it: {said}" +
+                (said.Contains("certificate", StringComparison.OrdinalIgnoreCase) && !trustsSelfSigned
+                    ? " The saved settings do not allow a self-signed certificate: tick \"Allow self-signed TLS certificate\" and press Save email settings."
+                    : ""));
         }
     }
 

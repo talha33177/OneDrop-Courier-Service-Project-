@@ -1887,6 +1887,11 @@ dialog.sheet > form { display: flex; flex-direction: column; max-height: calc(10
 .secret-box .secret-actions { display: flex; gap: 6px; }
 input[readonly].is-same { background: var(--surface-2); color: var(--muted); }
 .mail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+/* Email sender and SSLCommerz side by side; the shorter card keeps its own height */
+.connections { align-items: start; }
+.connections .card-body + .card-body { border-top: 1px solid var(--line); }
+.mail-test { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-top: 6px; }
+@media (max-width: 640px) { .mail-test { grid-template-columns: minmax(0, 1fr); } }
 .mail-grid-host { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); column-gap: 16px; }
 @media (max-width: 640px) { .mail-grid-host { grid-template-columns: minmax(0, 1fr); } .switch-row { align-items: flex-start; } }
 .btn-link { padding: 0; border: 0; background: none; color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }

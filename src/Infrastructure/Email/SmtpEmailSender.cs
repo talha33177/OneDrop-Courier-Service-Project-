@@ -117,20 +117,64 @@ public class SmtpEmailSender(EmailOptions options, EmailLog log, TimeProvider ti
             $"{options.Host}:{options.Port} did not answer in time. Check the host and the port, and that this server may reach it.");
     }
 
+    /// <summary>How each secure server was last reached, so a server that wants SSL from the first byte is not tried the other way every time.</summary>
+    private static readonly ConcurrentDictionary<string, SecureSocketOptions> Learned = new();
+
+    /// <summary>
+    /// Opens the connection and signs in. A secure connection is SSL from the first byte on port 465, and elsewhere
+    /// STARTTLS (Gmail and most servers: plain greeting, then upgrade) first; a server that never greets in plain text
+    /// (some company servers answer in TLS on 587 straight away) is then tried with SSL from the first byte, and the way
+    /// that worked is remembered. Only a missing greeting moves on: a refused certificate or password is a real answer.
+    /// </summary>
     private static async Task<SmtpClient> ConnectAsync(EmailOptions options, CancellationToken cancellationToken)
     {
-        var client = new SmtpClient { Timeout = 20_000 };
+        var key = $"{options.Host}:{options.Port}:{options.UseSsl}";
+        SecureSocketOptions[] ways = !options.UseSsl
+            ? [SecureSocketOptions.None]
+            : options.Port == 465
+                ? [SecureSocketOptions.SslOnConnect]
+                : Learned.TryGetValue(key, out var known)
+                    ? [known]
+                    : [SecureSocketOptions.StartTls, SecureSocketOptions.SslOnConnect];
+        var client = new SmtpClient();
+        for (var way = 0; way < ways.Length; way++)
+        {
+            client = new SmtpClient { Timeout = way < ways.Length - 1 ? 10_000 : 20_000 };
+            try
+            {
+                if (options is { UseSsl: true, AllowSelfSigned: true })
+                {
+                    client.ServerCertificateValidationCallback = (_, _, _, _) => true;
+                }
+
+                await client.ConnectAsync(options.Host!, options.Port, ways[way], cancellationToken);
+                if (ways.Length > 1)
+                {
+                    Learned[key] = ways[way];
+                }
+
+                break;
+            }
+            catch (Exception exception) when (way < ways.Length - 1 && NoGreeting(exception, cancellationToken))
+            {
+                client.Dispose();
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                client.Dispose();
+
+                throw Slow(options);
+            }
+            catch
+            {
+                client.Dispose();
+
+                throw;
+            }
+        }
+
         try
         {
-            if (options is { UseSsl: true, AllowSelfSigned: true })
-            {
-                client.ServerCertificateValidationCallback = (_, _, _, _) => true;
-            }
-
-            var secure = !options.UseSsl
-                ? SecureSocketOptions.None
-                : options.Port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
-            await client.ConnectAsync(options.Host!, options.Port, secure, cancellationToken);
             if (!string.IsNullOrEmpty(options.Password))
             {
                 await client.AuthenticateAsync(options.User is { Length: > 0 } user ? user : options.From!, options.Password, cancellationToken);
@@ -150,5 +194,12 @@ public class SmtpEmailSender(EmailOptions options, EmailLog log, TimeProvider ti
 
             throw;
         }
+    }
+
+    /// <summary>The server did not greet in plain text: nothing came back in time, or what came back was not SMTP.</summary>
+    private static bool NoGreeting(Exception exception, CancellationToken cancellationToken)
+    {
+        return !cancellationToken.IsCancellationRequested
+            && exception is OperationCanceledException or TimeoutException or SmtpProtocolException or IOException;
     }
 }

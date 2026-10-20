@@ -70,7 +70,8 @@
                     reveal.unobserve(entry.target);
                 }
             }), { rootMargin: "0px 0px -8% 0px" });
-            document.querySelectorAll("[data-reveal]").forEach(element => {
+            // A password box's data-reveal is the show-password toggle, not a section that rises in
+            document.querySelectorAll("[data-reveal]:not(input)").forEach(element => {
                 if (element.getBoundingClientRect().top > innerHeight) {
                     element.classList.add("reveal-wait");
                     reveal.observe(element);

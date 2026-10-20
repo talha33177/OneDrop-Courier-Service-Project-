@@ -374,8 +374,8 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   priced by them are still moving; an area stays put while parcels are on their way there or a merchant collects from
   it; a zone or area comes back only onto an open parent. Codes are letters and digits, unique per courier, and area
   names are unique per courier.
-- **Email to merchants.** A real mail server (`Email:*` in the git-ignored `appsettings.Local.json`; Gmail over SMTP
-  with an app password today) sends a merchant its payout email the moment the money leaves: what was collected, the
+- **Email to merchants.** A real mail server (the one saved on `/Admin/Connections`, else `Email:*` in a git-ignored settings file;
+  none in this repository) sends a merchant its payout email the moment the money leaves: what was collected, the
   charges, what was sent, to which account, and a link to the invoice. It goes through the outbox like every other
   message, in a loop of its own (`SendEmailsJob`), so a slow mail server never holds up a text or a webhook; with no
   mail server configured the fake keeps them for `/Dev/Emails`, which also has a button that sends a test email. The
