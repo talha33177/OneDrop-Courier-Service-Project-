@@ -77,6 +77,11 @@
     <Build Include="Delivery/Sequences/ReturnListNumber.sql" />
     <Build Include="Delivery/Tables/ReturnList.sql" />
     <Build Include="Delivery/Tables/ReturnListParcel.sql" />
+    <Build Include="Delivery/Sequences/BagNumber.sql" />
+    <Build Include="Delivery/Tables/Bag.sql" />
+    <Build Include="Delivery/Tables/BagParcel.sql" />
+    <Build Include="Payments/Sequences/CashDepositNumber.sql" />
+    <Build Include="Payments/Tables/CashDeposit.sql" />
     <Build Include="Payments/Sequences/OnlinePaymentNumber.sql" />
     <Build Include="Payments/Sequences/PayoutNumber.sql" />
     <Build Include="Payments/Tables/LedgerEntry.sql" />

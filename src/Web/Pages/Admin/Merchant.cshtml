@@ -143,7 +143,7 @@
     <div class="card-head">
         <div><h2>@Icons.Get("cash") Money</h2><p>Owed now: <strong class="@(m.Unpaid < 0 ? "negative" : "")">@Money.Taka(m.Unpaid)</strong>@(m.Unpaid < 0 ? " (the merchant owes the courier)" : "")</p></div>
         <div class="page-actions">
-            @if (m.PayoutHold is null)
+            @if (m.PayoutHold is null && m.Unpaid > 0)
             {
                 <form method="post" asp-page-handler="PayNow" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-outline btn-sm" type="submit" data-confirm="Everything not yet paid out, today's parcels too, goes to the payout account in one payout now." data-confirm-title="Pay @m.Profile.Name now?" data-confirm-ok="Pay now" data-confirm-tone="calm">@Icons.Get("send") Pay now</button></form>
             }

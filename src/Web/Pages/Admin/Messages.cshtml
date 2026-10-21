@@ -7,7 +7,7 @@
 <div class="page-head">
     <div>
         <h1>Failed messages</h1>
-        <p>Texts to recipients and updates to merchants' websites that have not gone out. A failure is tried again after 1, 2, 4 and 8 minutes, then given up.</p>
+        <p>Texts to recipients, updates to merchants' websites and emails that have not gone out, the latest 100. A failure is tried again after 1, 2, 4 and 8 minutes, then given up.</p>
     </div>
 </div>
 
@@ -19,7 +19,7 @@
 <div class="card">
     @if (Model.Messages.Count == 0)
     {
-        <div class="empty">@Icons.Get("check-circle")<h3>Nothing has failed</h3><p>Every text and website update has gone out.</p></div>
+        <div class="empty">@Icons.Get("check-circle")<h3>Nothing has failed</h3><p>Every text, website update and email has gone out.</p></div>
     }
     else
     {
@@ -31,7 +31,7 @@
                     {
                         <tr>
                             <td class="nowrap">@message.Created.ToString("d MMM HH:mm")</td>
-                            <td>@(message.Text ? "Text" : "Website update")</td>
+                            <td>@(message.Channel switch { Application.Notifications.FailedMessages.MessageChannel.Text => "Text", Application.Notifications.FailedMessages.MessageChannel.Email => "Email", _ => "Website update" })</td>
                             <td>@message.About</td>
                             <td>@message.To</td>
                             <td class="num">@message.Attempts</td>

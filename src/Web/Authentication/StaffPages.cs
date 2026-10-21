@@ -40,6 +40,18 @@ public static class StaffPages
             ["/Hub/Runs"] = StaffPermissions.CashDesk,
             ["/Hub/Returns"] = StaffPermissions.Returns,
 
+            // Line-haul fills and seals bags; receiving checks the bags that come in and closes them
+            ["/Hub/Bags"] = StaffPermissions.Dispatch | StaffPermissions.Receive | StaffPermissions.Operations,
+            ["/Hub/Bags/Seal"] = StaffPermissions.Dispatch,
+            ["/Hub/Bags/TakeOut"] = StaffPermissions.Dispatch,
+            ["/Hub/Bags/Close"] = StaffPermissions.Receive,
+            ["/Hub/Bag"] = StaffPermissions.Dispatch | StaffPermissions.Receive | StaffPermissions.Operations,
+
+            // The cash desk pays the hub's cash in; only the hub manager accepts a rider's shortfall
+            ["/Hub/Cash"] = StaffPermissions.CashDesk | StaffPermissions.CashShortfalls,
+            ["/Hub/Cash/Deposit"] = StaffPermissions.CashDesk,
+            ["/Hub/Cash/Accept"] = StaffPermissions.CashShortfalls,
+
             ["/Admin/Index"] = StaffPermissions.Operations,
             ["/Admin/Guide"] = StaffPermissions.None,
             ["/Admin/Stuck"] = StaffPermissions.Operations,
@@ -65,6 +77,7 @@ public static class StaffPages
             ["/Admin/Payouts"] = StaffPermissions.Finance,
             ["/Admin/Payout"] = StaffPermissions.Finance,
             ["/Admin/Reports"] = StaffPermissions.Finance,
+            ["/Admin/Cash"] = StaffPermissions.Finance,
 
             ["/Admin/Coverage"] = StaffPermissions.Setup,
             ["/Admin/Rates"] = StaffPermissions.Setup,

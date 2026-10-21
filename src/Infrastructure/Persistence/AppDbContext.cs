@@ -41,7 +41,7 @@ public class AppDbContext(
 
     /// <summary>What the courier's dashboards count: a save touching one of these tells them to read again.</summary>
     private static readonly Type[] Operations =
-        [typeof(Parcel), typeof(PickupRequest), typeof(DeliveryRun), typeof(DeliveryAttempt), typeof(Rider)];
+        [typeof(Parcel), typeof(PickupRequest), typeof(DeliveryRun), typeof(DeliveryAttempt), typeof(Rider), typeof(Bag), typeof(CashDeposit)];
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
 
@@ -89,6 +89,12 @@ public class AppDbContext(
     public DbSet<ReturnList> ReturnLists => Set<ReturnList>();
 
     public DbSet<ReturnListParcel> ReturnListParcels => Set<ReturnListParcel>();
+
+    public DbSet<Bag> Bags => Set<Bag>();
+
+    public DbSet<BagParcel> BagParcels => Set<BagParcel>();
+
+    public DbSet<CashDeposit> CashDeposits => Set<CashDeposit>();
 
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
 

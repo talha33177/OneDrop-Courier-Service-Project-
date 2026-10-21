@@ -71,7 +71,7 @@ public static class Menu
         ]),
         new("Every day",
         [
-            new("/Hub", "Hub operations", "warehouse", "/Hub/Index", "/Hub/Choose", "/Hub/Scan", "/Hub/Assign", "/Hub/Runs", "/Hub/RunSheet", "/Hub/Pickups", "/Hub/Returns", "/Hub/Labels"),
+            new("/Hub", "Hub operations", "warehouse", "/Hub/Index", "/Hub/Choose", "/Hub/Scan", "/Hub/Assign", "/Hub/Runs", "/Hub/RunSheet", "/Hub/Pickups", "/Hub/Returns", "/Hub/Labels", "/Hub/Bags", "/Hub/Bag", "/Hub/Cash"),
             new("/Hub/Parcels", "Parcels", "package", "/Hub/Parcels", "/Hub/Parcel"),
             new("/Admin/Stuck", "Stuck parcels", "clock", "/Admin/Stuck"),
             new("/Admin/Requests", "Requests", "message", "/Admin/Requests"),
@@ -80,6 +80,7 @@ public static class Menu
         new("Money",
         [
             new("/Admin/Payouts", "Merchant payouts", "wallet", "/Admin/Payouts", "/Admin/Payout"),
+            new("/Admin/Cash", "Hub cash", "bank", "/Admin/Cash"),
             new("/Admin/Reports", "Reports", "chart", "/Admin/Reports")
         ]),
         new("People",
@@ -107,7 +108,9 @@ public static class Menu
             new("/Hub/Scan", "Scan parcels", "scan", "/Hub/Scan"),
             new("/Hub/Pickups", "Today's pickups", "truck", "/Hub/Pickups"),
             new("/Hub/Assign", "Assign to riders", "send", "/Hub/Assign"),
+            new("/Hub/Bags", "Bags between hubs", "bag", "/Hub/Bags", "/Hub/Bag"),
             new("/Hub/Runs", "Rider closing", "cash", "/Hub/Runs"),
+            new("/Hub/Cash", "Cash and deposits", "bank", "/Hub/Cash"),
             new("/Hub/Returns", "Returns to merchants", "return", "/Hub/Returns")
         ]),
         new("Find", [new("/Hub/Parcels", "Parcels", "search", "/Hub/Parcels", "/Hub/Parcel")])

@@ -244,7 +244,14 @@ public class DashboardHandler(
             where run.Status == RunStatus.Open
             select (decimal?)attempt.CollectedAmount)
             .SumAsync(cancellationToken) ?? 0;
-        var owed = await db.LedgerEntries.Where(e => e.PayoutId == null).SumAsync(e => (decimal?)e.Amount, cancellationToken) ?? 0;
+        // What the courier owes: each merchant's unpaid balance that is above nothing. A merchant that owes the courier
+        // is a debt the other way, not less owed to everyone else
+        var owed = await db.LedgerEntries
+            .Where(e => e.PayoutId == null)
+            .GroupBy(e => e.MerchantId)
+            .Select(g => g.Sum(e => e.Amount))
+            .Where(balance => balance > 0)
+            .SumAsync(balance => (decimal?)balance, cancellationToken) ?? 0;
 
         var hubs = await db.Hubs
             .Where(h => !h.Archived)

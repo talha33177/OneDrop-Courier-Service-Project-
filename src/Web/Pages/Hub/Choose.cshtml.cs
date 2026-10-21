@@ -11,7 +11,7 @@ namespace Web.Pages.Hub;
 /// </summary>
 public class ChooseModel(HubOverviewHandler overview) : PageModel
 {
-    private static readonly string[] Targets = ["Index", "Pickups", "Assign", "Scan", "Runs", "Returns"];
+    private static readonly string[] Targets = ["Index", "Pickups", "Assign", "Scan", "Runs", "Returns", "Bags", "Cash"];
 
     public IReadOnlyList<HubWork> Busy { get; private set; } = [];
 

@@ -4,11 +4,13 @@
     ViewData["Title"] = "How it works";
     (string Icon, string Title, string Text, string Link, string Action)[] setup =
     [
+        ("settings", "Courier settings", "Your name and hotline as merchants and recipients see them, when the pickup van leaves, how many delivery attempts a parcel gets.", "/Admin/Settings", "Open settings"),
         ("globe", "Coverage", "Open the hubs, give each the zones it serves, and list the areas merchants can send to. A zone's city decides the rate.", "/Admin/Coverage", "Open coverage"),
         ("tag", "Delivery rates", "What merchants pay inside the city, in the suburbs and outside, by weight, and the cash on delivery charge.", "/Admin/Rates", "Set rates"),
         ("zap", "Delivery types", "The speeds merchants choose from (regular, express) and the kinds of contents they declare (fragile, frozen), each with what it adds where it is offered.", "/Admin/DeliveryTypes", "Set delivery types"),
         ("truck", "Vehicles", "How much a bicycle, a motorbike or a van carries, so no rider is handed more than they can take.", "/Admin/Vehicles", "Check vehicles"),
         ("bike", "Riders", "Each rider works from one hub with a vehicle, and signs in to the rider app on their phone. Every hub needs a rider on a pickup van: nothing else collects from merchants.", "/Admin/Riders", "Add riders"),
+        ("users", "Staff", "A login for each person at a hub or at head office, with their job. The job ticks what they may do; tick more for someone who covers another desk.", "/Admin/Staff", "Add staff"),
         ("store", "Merchants", "Shops sign up on the website and wait for your approval, or you add them yourself, active at once.", "/Admin/Merchants", "Open merchants")
     ];
     (string Title, string Who, string Text, string Link, string Action)[] day =
@@ -16,10 +18,11 @@
         ("Booked", "The merchant", "Books a parcel on its panel, by spreadsheet or through the API. Its charge is fixed by today's rates.", "/Hub/Parcels?tab=Pending", "Parcels not collected yet"),
         ("Picked up", "The hub, then a rider", "Every parcel booked goes on that day's pickup list by itself, and the van takes whatever is waiting when it reaches the merchant; it visits each pickup point once a day, so what is booked after it has been goes the next day. The pickup hub gives the round to its pickup van (the only vehicle that goes to a merchant), which collects as much as it holds and brings it in.", "/Hub/Choose?next=Pickups", "Today's pickups"),
         ("Scanned in", "Hub staff", "Every parcel that reaches a hub is scanned in (Receive). The scan says what to do with it next.", "/Hub/Choose?next=Scan", "Scan parcels"),
-        ("Sent to the delivery hub", "Hub staff", "A parcel another hub delivers is scanned out (Send) and scanned in again there. Skipped when the same hub delivers it.", "/Hub/Choose?next=Scan", "Scan parcels"),
+        ("Bagged for the delivery hub", "Line-haul", "A parcel another hub delivers is scanned into the bag for that hub, and the bag is sealed onto the truck. There the bag and each parcel are scanned in; one that is not in the bag is flagged missing. Skipped when the same hub delivers it.", "/Hub/Choose?next=Bags", "Bags between hubs"),
         ("Given to a rider", "Hub staff", "Parcels waiting at the delivery hub are handed to riders for the day. Print the run sheet for the rider to carry.", "/Hub/Choose?next=Assign", "Assign to riders"),
         ("At the door", "The rider", "Records each door in the rider app: delivered, partly delivered, on hold for another day, or refused. The recipient gets a text.", "/Hub/Parcels?tab=OutForDelivery", "Parcels out for delivery"),
-        ("Rider's run closed", "Hub staff", "When the rider is back, count the cash they hand in against what they collected. Held and refused parcels go back on the shelf.", "/Hub/Choose?next=Runs", "Rider closing"),
+        ("Rider's run closed", "Cash desk", "When the rider is back, count the cash they hand in against what they collected. Held and refused parcels go back on the shelf; a shortfall waits for the hub manager.", "/Hub/Choose?next=Runs", "Rider closing"),
+        ("Cash in the bank", "Cash desk, then finance", "The hub pays its cash into the bank and records the slip; finance confirms it once the money shows in the bank.", "/Admin/Cash", "Hub cash"),
         ("Merchant paid", "Automatic, every hour", "Each merchant is paid the cash collected up to yesterday, less charges, to its payout account, with an invoice.", "/Admin/Payouts", "Merchant payouts")
     ];
     (string Icon, string Title, string Text, string Link, string Action)[] attention =
@@ -28,6 +31,7 @@
         ("message", "A merchant asked to cancel a parcel or change its cash", "Approve it, and the parcel changes at once, or refuse it with a reason the merchant reads.", "/Admin/Requests", "Requests"),
         ("flag", "A hub flagged a parcel", "In review: something to check. Exceptional: something went wrong. A flagged parcel is not given to a rider until the flag is cleared.", "/Hub/Parcels?tab=Exceptional", "Flagged parcels"),
         ("wallet", "A payout did not go through", "The gateway refused a transfer, a merchant has no payout account, or an online payment was held for a check.", "/Admin/Payouts", "Merchant payouts"),
+        ("bank", "A hub paid cash in, or a rider handed in short", "Confirm each deposit once it shows in the bank, or refuse it with what the bank shows. A shortfall waits for its hub manager.", "/Admin/Cash", "Hub cash"),
         ("x-circle", "A text, webhook or email failed", "It was tried four times. Send it again once the cause is fixed.", "/Admin/Messages", "Failed messages"),
         ("cash", "A merchant's balance needs a hand", "Hold its payouts, pay it now, or write an adjustment with a reason, from the merchant's own page.", "/Admin/Merchants", "Merchants")
     ];

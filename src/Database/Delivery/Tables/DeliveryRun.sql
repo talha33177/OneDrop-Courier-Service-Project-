@@ -3,9 +3,11 @@
 -- Purpose: A rider's run sheet for one day (RunDate, the tenant's date): the parcels the hub gave them to deliver are
 --          Delivery.DeliveryAttempt rows on it. Status (TINYINT enum Domain.Delivery.RunStatus): 1 Open, 2 Closed, when
 --          the hub counted the rider's cash (CashExpected against CashReceived) and took back the parcels not
---          delivered. One run per rider a day.
+--          delivered. One run per rider a day. A run closed short waits for the hub manager, who accepts the shortfall
+--          (ShortAcceptedById at ShortAcceptedOn) and says what was done about it (ShortNote).
 -- Author: Courier team
 -- Date: 2026-10-04
+--          2026-10-21: ShortAcceptedOn, ShortAcceptedById, ShortNote.
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE TABLE [Delivery].[DeliveryRun] (
     [Id]           BIGINT          IDENTITY (1, 1) NOT NULL,
@@ -17,6 +19,9 @@ CREATE TABLE [Delivery].[DeliveryRun] (
     [CashExpected] DECIMAL (12, 2) NULL,
     [CashReceived] DECIMAL (12, 2) NULL,
     [ClosedOn]     DATETIME2 (7)   NULL,
+    [ShortAcceptedOn]   DATETIME2 (7)   NULL,
+    [ShortAcceptedById] BIGINT          NULL,
+    [ShortNote]         NVARCHAR (200)  NULL,
     [RowVersion]   ROWVERSION      NOT NULL,
     [UpdatedId]    BIGINT          NULL,
     [UpdatedOn]    DATETIME2 (7)   DEFAULT (getutcdate()) NOT NULL,
@@ -26,6 +31,8 @@ CREATE TABLE [Delivery].[DeliveryRun] (
     CONSTRAINT [FK_DeliveryRun_Rider] FOREIGN KEY ([RiderId]) REFERENCES [Delivery].[Rider] ([Id]),
     CONSTRAINT [FK_DeliveryRun_Hub] FOREIGN KEY ([HubId]) REFERENCES [Network].[Hub] ([Id]),
     CONSTRAINT [FK_DeliveryRun_User] FOREIGN KEY ([UpdatedId]) REFERENCES [Identity].[User] ([Id]),
+    CONSTRAINT [FK_DeliveryRun_User_ShortAcceptedById] FOREIGN KEY ([ShortAcceptedById]) REFERENCES [Identity].[User] ([Id]),
+    CONSTRAINT [chk_DeliveryRun_Short] CHECK (([ShortAcceptedOn] IS NULL AND [ShortNote] IS NULL) OR ([ShortAcceptedOn] IS NOT NULL AND [ShortNote] IS NOT NULL AND [CashReceived] < [CashExpected])),
     CONSTRAINT [chk_DeliveryRun_Status] CHECK ([Status] BETWEEN 1 AND 2),
     CONSTRAINT [chk_DeliveryRun_Cash] CHECK (([Status] = 1 AND [CashReceived] IS NULL) OR ([Status] = 2 AND [CashExpected] >= (0) AND [CashReceived] >= (0)))
 );

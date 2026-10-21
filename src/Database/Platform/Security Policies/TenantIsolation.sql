@@ -7,6 +7,7 @@
 -- Author: Courier team
 -- Date: 2026-10-04
 --       2026-10-13 Pricing.DeliveryOption and Pricing.DeliveryOptionCharge
+--       2026-10-21 Delivery.Bag, Delivery.BagParcel and Payments.CashDeposit
 -- =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 CREATE SECURITY POLICY [Platform].[TenantIsolation]
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[DeliveryAttempt],
@@ -90,6 +91,15 @@ CREATE SECURITY POLICY [Platform].[TenantIsolation]
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[Payout],
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[Payout] AFTER INSERT,
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[Payout] AFTER UPDATE,
+    ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[Bag],
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[Bag] AFTER INSERT,
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[Bag] AFTER UPDATE,
+    ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[BagParcel],
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[BagParcel] AFTER INSERT,
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Delivery].[BagParcel] AFTER UPDATE,
+    ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[CashDeposit],
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[CashDeposit] AFTER INSERT,
+    ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[CashDeposit] AFTER UPDATE,
     ADD FILTER PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[PayoutRequest],
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[PayoutRequest] AFTER INSERT,
     ADD BLOCK PREDICATE [Platform].[TenantAccess]([TenantId]) ON [Payments].[PayoutRequest] AFTER UPDATE,

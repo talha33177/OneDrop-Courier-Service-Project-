@@ -11,7 +11,10 @@
         <p>The shops that send parcels with you.</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-primary" asp-page="/Admin/NewMerchant">@Icons.Get("plus") Add merchant</a>
+        @if (Web.Authentication.StaffPages.Rights(Model.HttpContext) is { } rights && Web.Authentication.StaffPages.MayOpen(rights, "/Admin/NewMerchant"))
+        {
+            <a class="btn btn-primary" asp-page="/Admin/NewMerchant">@Icons.Get("plus") Add merchant</a>
+        }
     </div>
 </div>
 
@@ -59,4 +62,5 @@
             </table>
         </div>
     }
+    <partial name="_Pager" model="(Model.List.Number, Model.List.Pages, Model.List.Total)" />
 </div>

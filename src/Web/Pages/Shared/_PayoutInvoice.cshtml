@@ -14,7 +14,7 @@ else if (p.Status == Domain.Payments.PayoutStatus.Cancelled)
 }
 <div class="grid grid-main">
     <div class="card">
-        <div class="card-head"><h2>Parcels in this payout</h2><span class="muted">@p.Parcels parcels</span></div>
+        <div class="card-head"><h2>Parcels in this payout</h2><span class="muted">@p.Parcels parcel@(p.Parcels == 1 ? "" : "s")</span></div>
         @await Html.PartialAsync("_StatementLines", (Model.Details.Lines, Model.ParcelLink))
     </div>
     <div class="card">
@@ -23,7 +23,7 @@ else if (p.Status == Domain.Payments.PayoutStatus.Cancelled)
             <dl class="kv">
                 <dt>Merchant</dt><dd>@p.Merchant</dd>
                 <dt>Covers</dt><dd>Parcels finished up to @p.UpToDate.ToString("d MMMM yyyy")</dd>
-                <dt>Paid to</dt><dd>@p.Method.DisplayName() @p.Account</dd>
+                <dt>Paid to</dt><dd>@p.Method.DisplayName() @(p.Method == Domain.Merchants.PayoutMethod.Bank ? p.Account : Money.Phone(p.Account))</dd>
                 <dt>Made</dt><dd>@p.Created.ToString("d MMM yyyy, h:mm tt")</dd>
                 @if (p.PaidOn is { } paid)
                 {

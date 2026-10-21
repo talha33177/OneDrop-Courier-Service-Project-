@@ -62,6 +62,15 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
         var hub = await SignInAsync("onedrop", "hub@onedrop.test");
         Assert.Contains("1 parcel handed over", await hub.SubmitAsync("/Hub/Assign?hub=MIR", "/Hub/Assign?hub=MIR", ("riderId", $"{rider.Id}"), ("codes", outCode)));
         var runId = await QueryAsync("onedrop", db => db.DeliveryRuns.Where(r => r.RiderId == rider.Id).Select(r => r.Id).SingleAsync(Cancel));
+        var bagged = await BookAsync(shop.ApiKey, area: "Gulshan 2");
+        await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", bagged));
+        Assert.Contains("Bag for Gulshan hub", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Dispatch&hub=MIR", ("Code", bagged)));
+        var bag = await QueryAsync("onedrop", db => (
+            from line in db.BagParcels
+            join b in db.Bags on line.BagId equals b.Id
+            join p in db.Parcels on line.ParcelId equals p.Id
+            where p.TrackingCode == bagged
+            select b.Number).SingleAsync(Cancel));
         await QueryAsync("onedrop", async db =>
         {
             var parcel = await db.Parcels.SingleAsync(p => p.TrackingCode == outCode, Cancel);
@@ -223,6 +232,24 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
             {
                 await HubOnlyAsync("/Hub/Returns?hub=MIR");
                 Assert.Contains(returnList, await hub.PageAsync("/Hub/Returns?hub=MIR"));
+            }),
+            ("/Hub/Bags", async () =>
+            {
+                await HubOnlyAsync("/Hub/Bags?hub=MIR");
+                Assert.Equal(HttpStatusCode.NotFound, (await rivalHub.PostFormAsync("/Hub/Bags?hub=RVL", "/Hub/Bags?handler=Seal&hub=RVL", ("number", bag))).StatusCode);
+            }),
+            ("/Hub/Bag", async () =>
+            {
+                Assert.Contains(bagged, await hub.PageAsync($"/Hub/Bag/{bag}?hub=MIR"));
+                Assert.Equal(HttpStatusCode.NotFound, (await rivalHub.GetAsync($"/Hub/Bag/{bag}?hub=MIR")).StatusCode);
+                Assert.Equal(HttpStatusCode.NotFound, (await rivalHub.GetAsync($"/Hub/Bag/{bag}?hub=RVL")).StatusCode);
+                Assert.Equal(HttpStatusCode.NotFound, (await rivalAdmin.GetAsync($"/Hub/Bag/{bag}?hub=MIR")).StatusCode);
+            }),
+            ("/Hub/Cash", async () => await HubOnlyAsync("/Hub/Cash?hub=MIR")),
+            ("/Admin/Cash", async () =>
+            {
+                Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/Admin/Cash")).StatusCode);
+                Assert.DoesNotContain("Mirpur hub", await rivalAdmin.PageAsync("/Admin/Cash"));
             }),
             ("/Hub/Parcels", async () =>
             {

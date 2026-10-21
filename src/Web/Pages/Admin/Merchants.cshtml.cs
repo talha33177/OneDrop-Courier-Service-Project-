@@ -14,10 +14,16 @@ public class MerchantsModel(AdminMerchantsHandler merchants) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Search { get; set; }
 
-    public IReadOnlyList<MerchantRow> Rows { get; private set; } = [];
+    // "p": "page" is the route value Razor Pages names the page by, so it never binds
+    [BindProperty(SupportsGet = true, Name = "p")]
+    public int PageNumber { get; set; } = 1;
+
+    public Application.Common.Page<MerchantRow> List { get; private set; } = null!;
+
+    public IReadOnlyList<MerchantRow> Rows => List.Items;
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Rows = await merchants.ListAsync(Status, Search, cancellationToken);
+        List = await merchants.ListAsync(Status, Search, PageNumber, cancellationToken);
     }
 }

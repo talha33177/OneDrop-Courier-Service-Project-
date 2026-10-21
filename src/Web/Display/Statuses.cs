@@ -146,6 +146,27 @@ public static class Statuses
         };
     }
 
+    public static IHtmlContent Badge(BagStatus status)
+    {
+        return status switch
+        {
+            BagStatus.Open => Pill("pending", "Filling"),
+            BagStatus.Sealed => Pill("transit", "On the truck"),
+            BagStatus.Arrived => Pill("hold", "Being checked"),
+            _ => Pill("done", "Closed")
+        };
+    }
+
+    public static IHtmlContent Badge(CashDepositStatus status)
+    {
+        return status switch
+        {
+            CashDepositStatus.Recorded => Pill("pending", "Waiting for finance"),
+            CashDepositStatus.Confirmed => Pill("done", "Confirmed"),
+            _ => Pill("return", "Refused")
+        };
+    }
+
     public static IHtmlContent Badge(RunStatus status)
     {
         return status == RunStatus.Open ? Pill("out", "Open") : Pill("done", "Closed");

@@ -38,6 +38,9 @@ public interface IUserAccounts
     /// <summary>The emails of the logins with these ids, for showing who can sign in.</summary>
     Task<IReadOnlyDictionary<long, string>> EmailsAsync(IReadOnlyCollection<long> userIds, CancellationToken cancellationToken = default);
 
+    /// <summary>The names of the logins with these ids, for saying who did something.</summary>
+    Task<IReadOnlyDictionary<long, string>> NamesAsync(IReadOnlyCollection<long> userIds, CancellationToken cancellationToken = default);
+
     /// <summary>The email of a merchant's first login, or null.</summary>
     Task<string?> MerchantEmailAsync(long merchantId, CancellationToken cancellationToken = default);
 

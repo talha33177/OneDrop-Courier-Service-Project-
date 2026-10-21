@@ -40,11 +40,14 @@ public enum StaffPermissions
     /// <summary>Add, change and stop staff logins: a hub's own staff at a hub, everyone below super admin at head office.</summary>
     Staff = 512,
 
+    /// <summary>Accept that a rider handed in less cash than they collected, and say what was done about it.</summary>
+    CashShortfalls = 1024,
+
     /// <summary>Every desk at a hub.</summary>
     HubWork = Receive | Dispatch | DeliveryDesk | Returns | CashDesk,
 
     /// <summary>What only head office may hold.</summary>
     HeadOffice = Operations | Merchants | Finance | Setup,
 
-    All = HubWork | HeadOffice | Staff
+    All = HubWork | HeadOffice | Staff | CashShortfalls
 }

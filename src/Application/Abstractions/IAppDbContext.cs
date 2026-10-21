@@ -67,6 +67,12 @@ public interface IAppDbContext
 
     DbSet<ReturnListParcel> ReturnListParcels { get; }
 
+    DbSet<Bag> Bags { get; }
+
+    DbSet<BagParcel> BagParcels { get; }
+
+    DbSet<CashDeposit> CashDeposits { get; }
+
     DbSet<LedgerEntry> LedgerEntries { get; }
 
     DbSet<Payout> Payouts { get; }

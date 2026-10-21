@@ -1,0 +1,164 @@
+@page
+@using Domain.Payments
+@model Web.Pages.Admin.CashModel
+@{
+    ViewData["Title"] = "Hub cash";
+    var data = Model.Data;
+    var opensHubCash = Web.Authentication.StaffPages.Rights(Model.HttpContext) is { } rights && Web.Authentication.StaffPages.MayOpen(rights, "/Hub/Cash");
+}
+
+<div class="page-head">
+    <div>
+        <h1>Hub cash</h1>
+        <p>Riders hand their cash in at their hub when the run is closed; each hub's cash desk pays it into the bank. Confirm each deposit once it shows in the bank statement, or refuse it with what the bank shows.</p>
+    </div>
+</div>
+
+<partial name="_Alerts" />
+
+<div class="grid grid-3 mb">
+    <div class="stat">
+        <div class="stat-icon green">@Icons.Get("cash")</div>
+        <div><div class="stat-label">Cash at the hubs</div><div class="stat-value">@Money.Taka(data.InHand)</div><div class="stat-sub">Handed in, not yet paid into the bank</div></div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon @(data.ToConfirm.Count > 0 ? "amber" : "")">@Icons.Get("bank")</div>
+        <div><div class="stat-label">Deposits to confirm</div><div class="stat-value">@data.ToConfirm.Count</div><div class="stat-sub">@Money.Taka(data.ToConfirm.Sum(d => d.Amount)) to find in the bank</div></div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon @(data.Shortfalls.Count > 0 ? "red" : "")">@Icons.Get("alert")</div>
+        <div><div class="stat-label">Shortfalls not accepted</div><div class="stat-value">@data.Shortfalls.Count</div><div class="stat-sub">@Money.Taka(data.Shortfalls.Sum(s => s.Short)) riders handed in short</div></div>
+    </div>
+</div>
+
+<div class="card mb">
+    <div class="card-head"><div><h2>@Icons.Get("bank") Deposits to confirm</h2><p>Oldest at the bottom. Check each slip against the bank statement.</p></div></div>
+    @if (data.ToConfirm.Count == 0)
+    {
+        <div class="empty">@Icons.Get("check-circle")<h3>Nothing to confirm</h3><p>A deposit shows up here when a hub's cash desk records it.</p></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table compact">
+                <thead><tr><th>Deposit</th><th>Hub</th><th>Bank and slip</th><th class="num">Amount</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var d in data.ToConfirm)
+                    {
+                        <tr>
+                            <td><span class="mono strong">@d.Number</span><div class="cell-sub">Paid in @d.DepositedOn.ToString("ddd d MMM")@(d.RecordedBy is null ? "" : $" by {d.RecordedBy}")</div></td>
+                            <td>@d.Hub</td>
+                            <td>@d.Bank<div class="cell-sub mono">@d.SlipNumber</div></td>
+                            <td class="num strong">@Money.Taka(d.Amount)</td>
+                            <td>
+                                <div class="gap" style="justify-content:flex-end">
+                                    <form method="post" asp-page-handler="Confirm">
+                                        <input type="hidden" name="number" value="@d.Number" />
+                                        <button class="btn btn-primary btn-sm" type="submit">@Icons.Get("check") In the bank</button>
+                                    </form>
+                                    <form method="post" asp-page-handler="Refuse" class="gap">
+                                        <input type="hidden" name="number" value="@d.Number" />
+                                        <input type="text" name="reason" required maxlength="@CashDeposit.MaxAnswerLength" placeholder="What the bank shows" aria-label="What the bank shows" style="width:180px;height:32px" />
+                                        <button class="btn btn-outline btn-sm" type="submit" data-confirm="The cash counts as @d.Hub's again until the cash desk records it right." data-confirm-title="Refuse @d.Number?" data-confirm-ok="Refuse">Refuse</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <div class="card-head"><div><h2>@Icons.Get("warehouse") By hub</h2><p>Hubs holding cash, waiting for finance or with a shortfall</p></div></div>
+        @if (data.Hubs.Count == 0)
+        {
+            <div class="card-body muted">No hub holds any cash.</div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table compact">
+                    <thead><tr><th>Hub</th><th class="num">At the hub</th><th class="num">To confirm</th><th class="num">Short</th></tr></thead>
+                    <tbody>
+                        @foreach (var h in data.Hubs)
+                        {
+                            <tr>
+                                <td>@if (opensHubCash) { <a class="code-link" href="@Url.Page("/Hub/Cash", new { hub = h.Code })">@h.Code</a> } else { <span class="code-link">@h.Code</span> } @h.Name</td>
+                                <td class="num strong">@Money.Taka(h.InHand)</td>
+                                <td class="num">@Money.Taka(h.AwaitingFinance)</td>
+                                @if (h.Shortfalls > 0)
+                                {
+                                    <td class="num negative">@Money.Taka(h.ShortAmount)</td>
+                                }
+                                else
+                                {
+                                    <td class="num faint">—</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-head"><div><h2>@Icons.Get("alert") Shortfalls waiting for a hub manager</h2><p>Riders who handed in less than they collected</p></div></div>
+        @if (data.Shortfalls.Count == 0)
+        {
+            <div class="card-body muted">No shortfall is waiting.</div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table compact">
+                    <tbody>
+                        @foreach (var s in data.Shortfalls.Take(10))
+                        {
+                            <tr>
+                                <td>@s.Rider<div class="cell-sub">@if (opensHubCash) { <a class="code-link" href="@Url.Page("/Hub/Cash", new { hub = s.HubCode })">@s.HubCode</a> } else { @s.HubCode } · @s.RunDate.ToString("ddd d MMM")</div></td>
+                                <td class="num negative strong">@Money.Taka(s.Short)<div class="cell-sub">of @Money.Taka(s.Expected)</div></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (data.Shortfalls.Count > 10)
+            {
+                <div class="card-foot muted">And @(data.Shortfalls.Count - 10) more, newest first. Each hub's Cash page lists its own.</div>
+            }
+        }
+    </div>
+</div>
+
+<div class="card mt">
+    <div class="card-head"><div><h2>@Icons.Get("clipboard") Answered in the last month</h2></div></div>
+    @if (data.Recent.Count == 0)
+    {
+        <div class="card-body muted">No deposits answered yet.</div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table compact">
+                <thead><tr><th>Deposit</th><th>Hub</th><th>Bank and slip</th><th class="num">Amount</th><th>Answer</th></tr></thead>
+                <tbody>
+                    @foreach (var d in data.Recent)
+                    {
+                        <tr>
+                            <td><span class="mono strong">@d.Number</span><div class="cell-sub">Paid in @d.DepositedOn.ToString("d MMM")</div></td>
+                            <td>@d.Hub</td>
+                            <td>@d.Bank<div class="cell-sub mono">@d.SlipNumber</div></td>
+                            <td class="num">@Money.Taka(d.Amount)</td>
+                            <td>@Statuses.Badge(d.Status)<div class="cell-sub">@d.AnsweredBy, @d.AnsweredOn?.ToString("d MMM")@(d.Answer is null ? "" : $": {d.Answer}")</div></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

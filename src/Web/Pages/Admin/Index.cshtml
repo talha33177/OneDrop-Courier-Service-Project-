@@ -167,7 +167,7 @@
                         <div class="stat-label">Delivery success</div>
                         <div class="stat-value">@(s.SuccessRate is { } rate ? $"{rate}%" : "—")</div>
                     </div>
-                    <div class="ring" style="--value:@(s.SuccessRate ?? 0);width:84px;height:84px"><span style="width:64px;height:64px;font-size:15px">@(s.SuccessRate ?? 0)%</span></div>
+                    <div class="ring" style="--value:@(s.SuccessRate ?? 0);width:84px;height:84px"><span style="width:64px;height:64px;font-size:15px">@(s.SuccessRate is { } shown ? $"{shown}%" : "—")</span></div>
                 </div>
             </div>
         </div>

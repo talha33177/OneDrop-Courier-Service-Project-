@@ -44,6 +44,20 @@ public class DeliveryRun : TenantEntity
     /// <summary>What the rider handed in less than they collected; negative when they handed in more.</summary>
     public decimal? CashShort => CashExpected - CashReceived;
 
+    /// <summary>When the hub manager accepted the rider's shortfall; null while a shortfall waits for them.</summary>
+    public DateTime? ShortAcceptedOn { get; private set; }
+
+    /// <summary>The hub manager's login that accepted the shortfall.</summary>
+    public long? ShortAcceptedById { get; private set; }
+
+    /// <summary>What the hub manager said was done about the shortfall.</summary>
+    public string? ShortNote { get; private set; }
+
+    /// <summary>The run closed with less cash than the rider collected and the hub manager has not settled it yet.</summary>
+    public bool ShortWaiting => Status == RunStatus.Closed && CashShort > 0 && ShortAcceptedOn is null;
+
+    public const int MaxShortNoteLength = 200;
+
     public byte[] RowVersion { get; private set; } = [];
 
     public static DeliveryRun Open(Rider rider, DateOnly runDate)
@@ -99,6 +113,32 @@ public class DeliveryRun : TenantEntity
         CashReceived = received;
         ClosedOn = now;
         Status = RunStatus.Closed;
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// The hub manager, by the login <paramref name="userId"/>, accepts that the rider handed in less than they collected,
+    /// and says what was done about it (<paramref name="note"/>: taken from the rider's pay, found later). Once.
+    /// </summary>
+    public Result AcceptShort(string? note, long? userId, DateTime now)
+    {
+        if (!ShortWaiting)
+        {
+            return Error.Conflict(
+                "run.short.none",
+                ShortAcceptedOn is null ? "This run has no cash shortfall to accept." : "This shortfall has already been accepted.");
+        }
+
+        var said = note.NullIfBlank();
+        if (said is null || said.Length > MaxShortNoteLength)
+        {
+            return Error.Validation("run.short.note", $"Say what was done about the shortfall, at most {MaxShortNoteLength} characters.");
+        }
+
+        ShortAcceptedOn = now;
+        ShortAcceptedById = userId;
+        ShortNote = said;
 
         return Result.Success();
     }

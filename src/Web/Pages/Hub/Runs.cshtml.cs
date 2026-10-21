@@ -38,7 +38,9 @@ public class RunsModel(HubOverviewHandler hubs, RunsHandler runs) : HubPage(hubs
         }
 
         TempData[closed.IsSuccess ? "Done" : "Problem"] = closed.IsSuccess
-            ? "Run closed. The parcels not delivered are back at the hub."
+            ? closed.Value > 0
+                ? $"Run closed ৳{closed.Value:N0} short. The parcels not delivered are back at the hub; the shortfall waits for the hub manager on the Cash page."
+                : "Run closed. The parcels not delivered are back at the hub and the cash is the hub's to pay in."
             : closed.Error!.Message;
 
         return RedirectToPage(new { hub = Hub.Code });

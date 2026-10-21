@@ -41,9 +41,12 @@ public class DeliveryRunConfiguration : IEntityTypeConfiguration<DeliveryRun>
         builder.Property(r => r.CashExpected).HasPrecision(12, 2);
         builder.Property(r => r.CashReceived).HasPrecision(12, 2);
         builder.Ignore(r => r.CashShort);
+        builder.Ignore(r => r.ShortWaiting);
+        builder.Property(r => r.ShortNote).HasMaxLength(DeliveryRun.MaxShortNoteLength);
         builder.Property(r => r.RowVersion).IsRowVersion();
         builder.HasOne<Rider>().WithMany().HasForeignKey(r => r.RiderId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Hub>().WithMany().HasForeignKey(r => r.HubId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(r => r.ShortAcceptedById).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(r => new { r.RiderId, r.RunDate }).IsUnique().HasDatabaseName("UX_DeliveryRun_Rider_RunDate");
     }
 }
@@ -99,6 +102,44 @@ public class ReturnListParcelConfiguration : IEntityTypeConfiguration<ReturnList
         builder.HasOne<Parcel>().WithMany().HasForeignKey(p => p.ParcelId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Merchant>().WithMany().HasForeignKey(p => p.MerchantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(p => new { p.ReturnListId, p.ParcelId }).IsUnique().HasDatabaseName("UX_ReturnListParcel_ReturnList_Parcel");
+    }
+}
+
+public class BagConfiguration : IEntityTypeConfiguration<Bag>
+{
+    public void Configure(EntityTypeBuilder<Bag> builder)
+    {
+        builder.MapTenantOwned(Schemas.Delivery);
+
+        // BG-100001, from the Delivery.BagNumber sequence in the column default; EF reads it back after insert
+        builder.Property(b => b.Number)
+            .HasMaxLength(20)
+            .ValueGeneratedOnAdd()
+            .HasDefaultValueSql("(concat(N'BG-',NEXT VALUE FOR [Delivery].[BagNumber]))");
+        builder.Property(b => b.Vehicle).HasMaxLength(Bag.MaxVehicleLength);
+        builder.Property(b => b.RowVersion).IsRowVersion();
+        builder.HasOne<Hub>().WithMany().HasForeignKey(b => b.FromHubId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Hub>().WithMany().HasForeignKey(b => b.ToHubId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(b => b.SealedById).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(b => b.ClosedById).OnDelete(DeleteBehavior.Restrict);
+        // A parcel taken out of an open bag is its line deleted; the table's key itself never cascades
+        builder.HasMany(b => b.Parcels).WithOne(p => p.Bag).HasForeignKey(p => p.BagId).OnDelete(DeleteBehavior.ClientCascade);
+        builder.Navigation(b => b.Parcels).HasField("parcels");
+        builder.HasIndex(b => b.Number).IsUnique().HasDatabaseName("UX_Bag_Number");
+        builder.HasIndex(b => new { b.TenantId, b.FromHubId, b.ToHubId })
+            .IsUnique()
+            .HasFilter("[Status] = 1")
+            .HasDatabaseName("UX_Bag_From_To_Open");
+    }
+}
+
+public class BagParcelConfiguration : IEntityTypeConfiguration<BagParcel>
+{
+    public void Configure(EntityTypeBuilder<BagParcel> builder)
+    {
+        builder.MapTenantOwned(Schemas.Delivery);
+        builder.HasOne<Parcel>().WithMany().HasForeignKey(p => p.ParcelId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(p => new { p.BagId, p.ParcelId }).IsUnique().HasDatabaseName("UX_BagParcel_Bag_Parcel");
     }
 }
 

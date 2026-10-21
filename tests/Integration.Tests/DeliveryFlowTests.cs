@@ -35,12 +35,19 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
             await rider.SubmitAsync("/Rider/Pickups", $"/Rider/Pickups?id={pickupId}", ("codes", code), ("shown", code)));
         Assert.Equal(ParcelStatus.PickedUp, (await ParcelAsync(code)).Status);
 
-        // Mirpur receives it and sends it to Gulshan, which receives it and hands it to its rider
+        // Mirpur receives it and bags it for Gulshan; the sealed bag travels, and Gulshan scans the parcel in, which
+        // closes the bag when it is the last one, and hands it to its rider
         Assert.Contains("Send it to Gulshan hub", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", code.ToLowerInvariant())));
         Assert.Contains("Already scanned in here", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", code)));
-        Assert.Contains("Send to Gulshan hub", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Dispatch&hub=MIR", ("Code", code)));
+        Assert.Contains("Bag for Gulshan hub", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Dispatch&hub=MIR", ("Code", code)));
+        Assert.Equal(ParcelStatus.AtHub, (await ParcelAsync(code)).Status);
+        var bag = await SealBagOfAsync(hub, "MIR", code);
         Assert.Equal(ParcelStatus.InTransit, (await ParcelAsync(code)).Status);
+        Assert.Contains("Already on its way to Gulshan hub", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Dispatch&hub=MIR", ("Code", code)));
         Assert.Contains("assign it to a rider", await hub.SubmitAsync("/Hub/Scan?hub=GUL", "/Hub/Scan?mode=Receive&hub=GUL", ("Code", code)));
+        var parcelId = (await ParcelAsync(code)).Id;
+        var arrived = await QueryAsync("onedrop", db => db.Bags.Include(b => b.Parcels).SingleAsync(b => b.Number == bag, Cancel));
+        Assert.NotNull(arrived.Parcels.Single(line => line.ParcelId == parcelId).ReceivedOn);
         Assert.Contains(code, await hub.PageAsync("/Hub/Assign?hub=GUL"));
         Assert.Contains("1 parcel handed over", await hub.SubmitAsync("/Hub/Assign?hub=GUL", "/Hub/Assign?hub=GUL", ("riderId", $"{deliverer.Id}"), ("codes", code)));
 
@@ -88,6 +95,7 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
 
         await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", code));
         await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Dispatch&hub=MIR", ("Code", code));
+        await SealBagOfAsync(hub, "MIR", code);
         await hub.SubmitAsync("/Hub/Scan?hub=SAV", "/Hub/Scan?mode=Receive&hub=SAV", ("Code", code));
         await hub.SubmitAsync("/Hub/Assign?hub=SAV", "/Hub/Assign?hub=SAV", ("riderId", $"{deliverer.Id}"), ("codes", code));
         var rider = await SignInAsync("onedrop", deliverer.Email);
@@ -99,7 +107,8 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
         Assert.Contains("Run closed", await hub.SubmitAsync("/Hub/Runs?hub=SAV", $"/Hub/Runs?handler=Close&id={runId}&hub=SAV", ("received", "0")));
         Assert.Equal(await QueryAsync("onedrop", db => db.Hubs.Where(h => h.Code == "SAV").Select(h => (long?)h.Id).SingleAsync(Cancel)), (await ParcelAsync(code)).CurrentHubId);
         Assert.Contains("goes back to its merchant from another hub", await hub.SubmitAsync("/Hub/Scan?hub=SAV", "/Hub/Scan?mode=HandBack&hub=SAV", ("Code", code)));
-        Assert.Contains("Send to Mirpur hub", await hub.SubmitAsync("/Hub/Scan?hub=SAV", "/Hub/Scan?mode=Dispatch&hub=SAV", ("Code", code)));
+        Assert.Contains("Bag for Mirpur hub", await hub.SubmitAsync("/Hub/Scan?hub=SAV", "/Hub/Scan?mode=Dispatch&hub=SAV", ("Code", code)));
+        await SealBagOfAsync(hub, "SAV", code);
         Assert.Contains($"hand it back to {shop.Name}", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", code)));
         Assert.Contains($"Returned to {shop.Name}", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=HandBack&hub=MIR", ("Code", code)));
 
@@ -163,5 +172,21 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
         Assert.DoesNotContain(mirpurCode, await other.PageAsync("/Rider"));
         Assert.Equal(HttpStatusCode.NotFound, (await other.GetAsync($"/Rider/Delivery/{mirpurCode}")).StatusCode);
         Assert.Equal(ParcelStatus.OutForDelivery, (await ParcelAsync(mirpurCode)).Status);
+    }
+
+    /// <summary>Line-haul at <paramref name="hubCode"/> seals the open bag the parcel was scanned into; returns its number.</summary>
+    private async Task<string> SealBagOfAsync(Visitor hub, string hubCode, string code)
+    {
+        var number = await QueryAsync("onedrop", db => (
+            from line in db.BagParcels
+            join bag in db.Bags on line.BagId equals bag.Id
+            join parcel in db.Parcels on line.ParcelId equals parcel.Id
+            where parcel.TrackingCode == code && bag.Status == BagStatus.Open
+            select bag.Number).SingleAsync(Cancel));
+        Assert.Contains(
+            $"Bag {number} is sealed",
+            await hub.SubmitAsync($"/Hub/Bags?hub={hubCode}", $"/Hub/Bags?handler=Seal&hub={hubCode}", ("number", number), ("vehicle", "")));
+
+        return number;
     }
 }

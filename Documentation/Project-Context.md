@@ -33,9 +33,10 @@ and collects the cash on delivery (COD), and the shop is paid that cash, less th
   number's record before sending COD (fraud check); sees what it is owed, its payouts and invoices; manages API keys
   and a webhook.
 - **Hub staff** (2026-10-12): each has a job at one hub and works only its desks there: receiving (scan in, weigh,
-  flag), line-haul (scan out to another hub), delivery desk (pickups, assigning parcels to riders, run sheets),
-  returns desk (return lists, hand back), cash desk (close each rider's run with the cash handed in), or hub manager
-  (every desk, and the hub's own staff logins). Relief staff at head office cover any desk at any hub, the hub picked
+  flag, check the bags that come in), line-haul (bag parcels per hub, seal the bags onto the truck), delivery desk
+  (pickups, assigning parcels to riders, run sheets), returns desk (return lists, hand back), cash desk (close each
+  rider's run with the cash handed in, pay the hub's cash into the bank), or hub manager (every desk, riders' cash
+  shortfalls, and the hub's own staff logins). Relief staff at head office cover any desk at any hub, the hub picked
   on the page.
 - **Head office staff** (2026-10-12): operations manager (every hub's work, the dashboard, stuck parcels, riders,
   requests), accounts (payouts, adjustments, online payments, reports), merchant support (sign-ups, merchants,
@@ -112,7 +113,9 @@ hour; the admin can send it again or cancel it (`Cancelled`, its lines freed). T
 balance with an `Adjustment` line (no parcel, a reason the merchant reads). A merchant whose charges come to more
 than its cash can pay what it owes online through SSLCommerz (`OnlinePayment`, `PAY-100001`): once the gateway, asked by
 our server, confirms the money, the payment writes one `Adjustment` credit, and never a second. The rider's cash is
-checked when hub staff close the run (`CashExpected` vs `CashReceived`); payouts do not wait for it.
+checked when hub staff close the run (`CashExpected` vs `CashReceived`); payouts do not wait for it. What was handed in
+is the hub's cash until its cash desk pays it into the bank (`CashDeposit`, `DP-100001`) and finance confirms it; a run
+closed short waits for the hub manager to accept the shortfall (2026-10-21, 5.5).
 
 ### Multi-tenancy
 A **tenant is a courier operator** with its own hubs, zones, areas, rates, riders and merchants. One courier is seeded
@@ -275,6 +278,26 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   super admin stays one. Permissions are read on every request, so a change applies from the next click; a stop or a
   move in or out of super admin reaches an open session within a minute. A hub with staff cannot close. Not yet:
   sorting (5.3, no racks yet), a desk home per job and "who did it" (5.2).
+- **Bags between hubs** (5.4, 2026-10-21). A parcel leaves for another hub only in a sealed bag. Line-haul scans it
+  in "Bag for another hub" mode and the answer names the bag: the one open bag for the hub it goes to next
+  (`Delivery.Bag`, `BG-100001`; one open per pair of hubs, opened by the first parcel; a parcel whose way changed
+  moves to the right bag). `/Hub/Bags` shows each open bag with its parcels and weight, what still waits for a bag,
+  "Take out", and "Seal and send" with the truck (a parcel that no longer goes the bag's way, sent back to its merchant
+  say, holds the seal until taken out): sealing sends every parcel (`InTransit`, the bag's number in its history) and
+  records who sealed it. `/Hub/Bag/{number}` is the manifest to print, with the bag's QR code. The hub it is for scans
+  the bag in Receive mode (another hub is told not to open it), then each parcel, which is ticked off ("1 of 2 scanned
+  in"); the last one closes the bag by itself. Receiving closes a bag with parcels not found: each is flagged
+  exceptional "Missing from bag BG-…: sealed at Mirpur hub by Karim, not found at Gulshan hub by Rahim" and marked
+  missing on the bag; found later, it is scanned in like any parcel and the flag is cleared by hand. Parcels sent
+  before bags (no bag line) are received as before. The hub board shows bags to seal and bags coming in.
+- **Hub cash and deposits** (5.5, 2026-10-21). A hub's cash is what its riders handed in at closing less what it paid
+  into the bank (refused deposits not counted). `/Hub/Cash`: the cash at the hub, what waits for finance, a deposit
+  form for the cash desk (amount at most the cash held, bank, slip number unique while not refused, the day within 30),
+  and riders' shortfalls: a run closed short waits until someone with "Accept cash shortfalls" (hub and operations
+  managers; it can be ticked for anyone at a hub) accepts it with what was done. `/Admin/Cash` (finance): each hub's
+  cash, deposits to confirm ("In the bank") or refuse with what the bank shows (the cash is the hub's again), the
+  latest answered, and the shortfalls not accepted; a line each in the admin's bell and a mark in the menu. Rider
+  closing says when a shortfall went to the manager; the hub board shows the cash at the hub and the shortfalls.
 - **Payout accounts and getting paid now.** A merchant account keeps several bKash, Nagad and bank accounts
   (`Merchants.MerchantPayoutAccount`, on the account's main profile like moderators) and chooses the one payouts go
   to, which is copied onto the main profile as before so every business, the payout run and the admin's page read it
@@ -445,6 +468,13 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   takes money in and cannot send it to merchants), the app's own SQL login instead of `sa`.
 
 ### Database
+- 2026-10-21 (bags and hub cash): `Delivery.Bag` (from and to hub, status 1 open, 2 sealed, 3 arrived, 4 closed; the
+  truck, who sealed and closed it; `UX_Bag_From_To_Open`), `Delivery.BagParcel` (received, missing), sequence
+  `Delivery.BagNumber` (`BG-100001`); `Payments.CashDeposit` (hub, amount, bank, slip, day; 1 recorded, 2 confirmed,
+  3 refused with the answer), sequence `Payments.CashDepositNumber` (`DP-100001`); all three tables in the policy
+  (35 tables). `Delivery.DeliveryRun` gained `ShortAcceptedOn`, `ShortAcceptedById`, `ShortNote` (nullable, so no
+  `Scripts/Pre`). Permission 1024 (accept cash shortfalls) joins the hub and operations manager presets, and
+  `Scripts/2026/015_ManagersAcceptShortfalls.sql` gave it to the managers already made. Both databases published.
 - 2026-10-20 (two stores): `Payments.GatewayStore` keeps `SandboxStoreId`, `SandboxPassword`, `LiveStoreId`, `LivePassword`
   (each pair both set or both NULL; `chk_GatewayStore_InUse`: the store `IsLive` picks has its details) in place of
   `StoreId` and `StorePassword`; `Scripts/Pre/006_TwoGatewayStores.sql` moved each courier's one store into its slot.
@@ -544,11 +574,12 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   (Merchant, MerchantApiKey, MerchantPicture, MerchantPayoutAccount, Moderator, PickupPoint), `Parcels` (Parcel,
   ParcelEvent, ParcelRequest, sequence TrackingNumber →
   `OD10000001`),
-  `Delivery` (Rider, DeliveryRun, DeliveryAttempt, PickupRequest, VehicleCapacity, ReturnList, ReturnListParcel,
-  sequence ReturnListNumber → `RL-100001`), `Payments` (LedgerEntry, Payout, PayoutRequest, OnlinePayment, sequences
-  PayoutNumber → `INV-000001` and OnlinePaymentNumber → `PAY-100001`), `Notifications` (OutboxMessage).
+  `Delivery` (Rider, DeliveryRun, DeliveryAttempt, PickupRequest, VehicleCapacity, ReturnList, ReturnListParcel, Bag,
+  BagParcel, sequences ReturnListNumber → `RL-100001` and BagNumber → `BG-100001`), `Payments` (LedgerEntry, Payout,
+  PayoutRequest, OnlinePayment, CashDeposit, sequences PayoutNumber → `INV-000001`, OnlinePaymentNumber →
+  `PAY-100001` and CashDepositNumber → `DP-100001`), `Notifications` (OutboxMessage).
 - Every tenant table has `TenantId` + FK + index, the housekeeping columns, and its predicates in the security policy
-  `Platform.TenantIsolation` (32 tables).
+  `Platform.TenantIsolation` (35 tables).
 - Seed (`001_SeedCourier.sql`, then `002`, `003`): OneDrop Courier (Asia/Dhaka, BDT, SMS sender `OneDrop`, hotline 09610-001122,
   10 businesses per merchant account, 3
   attempts); 16 hubs (Dhaka city 5; suburbs Savar, Gazipur, Narayanganj; Chattogram, Sylhet, Rajshahi, Khulna,
@@ -627,6 +658,8 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
 | **2026-10-16: a live start with no admin named makes the demo admin** (owner: the owner's teammate put the site live on IIS from the GitHub code and nobody could sign in, since the demo login exists only in Development and nothing named an admin: "when the project is live it automatically generates the super admin"). Outside Development, with `Setup:AdminEmail` empty, `Program.cs` makes the admin from `Setup:DefaultAdminEmail` / `Setup:DefaultAdminPassword` (`admin@onedrop.test` / `OneDrop#2026`, in `appsettings.json`) through the same `AdminSetup`, so it is created once and never changed. `deploy/docker-compose.yml` no longer requires `ADMIN_EMAIL`. Naming an admin (`ADMIN_EMAIL`) never falls back to it: with no password the start stops with the reason | A fresh server must always have someone who can sign in, and the owner wants the same login that works locally. The fallback is in the app, not in the compose file, so it holds on any host and cannot be reached by a half-filled `.env`: a named admin with no password would otherwise silently get a published password. It reverses the 2026-10-08 rule that no demo login belongs on a live site, for the portfolio's sake: the password is in the README, so anyone can sign in as a super admin until it is changed at `/Account/Password`, and the start logs a warning each time the fallback is used. A server that already names its own admin is untouched (it must empty `Setup__AdminEmail` and `Setup__AdminPassword`, in `.env` for Docker or on the IIS app pool, to get the demo admin as well). The first live start had left `admin@onedrop.test` existing with a password nobody had (and locked out by the guesses), which the fallback cannot touch, so `Scripts/2026/012_DemoAdminPassword.sql` gives that one login (a TenantAdmin of `onedrop`) the demo password once, on each database it runs on, and lets it back in; it creates no login, and a password changed afterwards stays changed because DbUp never runs a script twice |
 | **2026-10-16: wrong passwords no longer lock a login** (owner: "Remove the too many attempt blocking", after the live site's super admin was locked by guesses). Sign-in calls `PasswordSignInAsync` with `lockoutOnFailure: false` and Identity's limit of five is gone. A login someone stopped is still refused: a stop is a lock with no end date (`IUserAccounts.SetLoginEnabledAsync`), which sign-in checks whatever the failure setting is, and it now says "This login has been stopped" instead of "Too many attempts" | The lock let anyone shut a known login out just by guessing at it, which is what happened to the live admin (its email and password are public), and it cost the owner a long wait. The price is that nothing now slows guessing at a password: sign-in has no per-address limit (only the tracking, tracking-payment and sign-up pages have one, 30 a minute). If protection is wanted back, a per-address throttle on sign-in that locks no account, like those, is the way, not a lock per login |
 | **2026-10-18: the courier's mail server and SSLCommerz store are set in the admin panel** (owner: "the admin will set the email and app password and SSL info from the frontend", after the live site could not get the settings file onto its server; the owner took the four recommendations). A row each per courier, passwords sealed with Data Protection and the key ring in the database; super admins only; a test email and a sandbox/live switch; the courier's own settings win and the server's configuration is the fallback | The settings were on the server only, so a courier needed whoever runs the server to change its mail password or put its store live, and the live site had no way to get them without a file passed around by hand. They are the courier's business, so they belong to the courier, beside its other settings. Sealed rather than plain because they would otherwise be readable by any query, log or screen of the table; the key ring sits in the database so nothing on the server has to be kept (a lost key ring would mean re-entering the passwords), at the price that a full database backup holds both the sealed passwords and their key. Super admins only because the store decides where money goes. Falling back to the file keeps developers' `appsettings.Local.json` working. Resolving the sender and gateway per courier and per use, instead of once at start, is what lets a change apply at once and keeps couriers apart |
+| **2026-10-21: parcels travel between hubs only in sealed bags** (Phase 5.4, the owner's "continue with 5.4 and 5.5"). The Dispatch scan puts a parcel in the one open bag for the hub it goes to next instead of sending it; sealing the bag sends every parcel in it; the hub at the other end ticks each parcel off as it scans it in, and closing a bag flags the rest exceptional, naming the hubs and the people | A parcel scanned out alone left no trace between the two scans: if it never arrived, nothing said which truck, which bag or whose hands it was last in. One open bag per pair of hubs means the scanner always knows which bag, so line-haul never chooses. A parcel stays at its hub until the bag is sealed, because until the truck leaves it can still be taken out, sent back or found to be in the wrong bag; a parcel whose way changed holds the seal rather than travelling wrong. Missing parcels become the existing exceptional flag rather than a new status, so the admin's bell, the merchant's tab and "a flagged parcel is not handed to a rider" already apply. Parcels sent before bags existed are received exactly as before |
+| **2026-10-21: a hub's cash is followed to the bank, and a rider's shortfall needs the hub manager** (Phase 5.5). Cash at a hub is worked out (handed in at closing less deposits not refused), never stored; the cash desk records each bank deposit with its slip, at most what the hub holds; finance confirms or refuses it; a run closed short stays open work until someone with the new "accept cash shortfalls" permission (hub and operations managers) says what was done | Until now a rider's cash stopped at "run closed": nothing said whether it ever reached the bank, which is where couriers lose money. Working the balance out from the runs and deposits keeps one source of truth, the same way the ledger and the bell are worked out. Closing short is still allowed, because the cash desk must be able to count what came in, but the shortfall is no longer just a number in a report: a named manager owns it. A refused deposit gives the cash back to the hub so the books never hide it. Payouts still do not wait for any of this (decided 2026-10-07) |
 
 ---
 
@@ -715,6 +748,7 @@ dotnet run --project src/Web
 | Headless screenshots do not move animations that run on the compositor (the planet's turn) | To see a frame, pause every animation at a time: `document.getAnimations().forEach(a => { a.pause(); a.currentTime = t; })` |
 | Until 2026-10-16 the sign-in page listed every `.test` login ("Demo accounts") in Development; with the thousands in `OneDrop-Test` one GET of `/Account/Login` took about 50 s. The list was removed so the page is the same everywhere and nothing shows a password | Sign in with the email and password; the demo seed still makes the logins, but the page no longer lists them (see the README) |
 | A short class name on a page can collide with a shared partial's (`.step` vs `.progress-steps .step`) | Front-page classes are prefixed (`how-step`, `hero-…`); search `Pages` before adding a bare one |
+| A query value named `page` never binds in Razor Pages: "page" is the route value that names the page, so every list's "Next" showed page 1 again until 2026-10-21 | The pager (`_Pager`) and the lists bind `p` (`[BindProperty(SupportsGet = true, Name = "p")]`); `PagingTests` opens page 2 of each long list |
 
 ---
 

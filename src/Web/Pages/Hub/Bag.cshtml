@@ -1,0 +1,103 @@
+@page "{number}"
+@using Domain.Delivery
+@using Web.Labels
+@model Web.Pages.Hub.BagModel
+@{
+    var view = Model.View!;
+    var bag = view.Bag;
+    ViewData["Title"] = $"Bag {bag.Number}";
+}
+
+<div class="page-head no-print">
+    <div>
+        <h1>Bag @bag.Number</h1>
+        <p>@bag.FromHub to @bag.ToHub. Print the manifest and send it with the bag; the hub it is for scans the code on it.</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn btn-primary" type="button" onclick="window.print()">@Icons.Get("printer") Print</button>
+        <a class="btn" asp-page="/Hub/Bags" asp-route-hub="@Model.Hub?.Code">Back to bags</a>
+    </div>
+</div>
+
+<div class="card run-sheet">
+    <div class="run-sheet-head">
+        <div>
+            <div class="run-sheet-brand">@Model.Courier · bag manifest</div>
+            <h2 class="mono" style="font-size:22px">@bag.Number</h2>
+            <div class="run-sheet-sub">From @bag.FromHub (@bag.FromHubCode) to @bag.ToHub (@bag.ToHubCode)</div>
+            <div class="run-sheet-sub">
+                @if (bag.SealedOn is { } sealedOn)
+                {
+                    <span>Sealed @sealedOn.ToString("ddd d MMM yyyy, h:mm tt")@(bag.SealedBy is null ? "" : $" by {bag.SealedBy}")</span>
+                }
+                else
+                {
+                    <span>Not sealed yet</span>
+                }
+                @if (bag.Vehicle is not null)
+                {
+                    <span> · @bag.Vehicle</span>
+                }
+            </div>
+            <div class="mt-xs">@Statuses.Badge(bag.Status)</div>
+        </div>
+        <div class="run-sheet-total">
+            <div style="width:104px;margin-left:auto">@LabelQrCode.Svg(bag.Number)</div>
+            <div class="run-sheet-sub">@view.Parcels.Count parcel@(view.Parcels.Count == 1 ? "" : "s") · @Money.Kg(bag.WeightGrams)</div>
+        </div>
+    </div>
+
+    @if (view.Parcels.Count == 0)
+    {
+        <div class="empty">@Icons.Get("bag")<h3>The bag is empty</h3></div>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="table run-sheet-table">
+                <thead><tr><th class="num">#</th><th>Parcel</th><th>Merchant</th><th>Recipient's area</th><th class="num">Weight</th><th>At @bag.ToHubCode</th></tr></thead>
+                <tbody>
+                    @foreach (var (p, at) in view.Parcels.Select((p, at) => (p, at + 1)))
+                    {
+                        <tr>
+                            <td class="num">@at</td>
+                            <td class="mono">@p.TrackingCode</td>
+                            <td>@p.Merchant</td>
+                            <td>@p.Area</td>
+                            <td class="num">@Money.Kg(p.WeightGrams)</td>
+                            <td class="run-sheet-sign">
+                                @if (p.ReceivedOn is { } received)
+                                {
+                                    <span class="positive">Scanned in @received.ToString("d MMM, h:mm tt")</span>
+                                }
+                                else if (p.Missing)
+                                {
+                                    <span class="negative">Missing</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr><td colspan="4" class="text-right">Total</td><td class="num">@Money.Kg(bag.WeightGrams)</td><td></td></tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+    <div class="run-sheet-foot">
+        <div>Sealed by: ______________________</div>
+        <div>Driver: ______________________</div>
+        <div>Opened at @bag.ToHubCode by: ______________________</div>
+        <div>Help: @Model.Hotline</div>
+    </div>
+    @if (bag.ClosedOn is { } closedOn)
+    {
+        <div class="card-foot muted">
+            Closed @closedOn.ToString("d MMM, h:mm tt")@(bag.ClosedBy is null ? " when the last parcel was scanned in" : $" by {bag.ClosedBy}").
+            @if (bag.Missing > 0)
+            {
+                <span class="negative">@bag.Missing parcel@(bag.Missing == 1 ? " was" : "s were") missing and flagged exceptional.</span>
+            }
+        </div>
+    }
+</div>

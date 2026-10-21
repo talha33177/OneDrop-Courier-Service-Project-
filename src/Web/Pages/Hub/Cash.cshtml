@@ -1,0 +1,162 @@
+@page
+@using Domain.Payments
+@model Web.Pages.Hub.CashModel
+@{
+    ViewData["Title"] = "Cash and deposits";
+    var data = Model.Data;
+}
+
+<div class="page-head">
+    <div>
+        <h1>Cash and deposits</h1>
+        <p>The cash riders hand in at closing stays at the hub until the cash desk pays it into the bank. Record each deposit with its slip; finance confirms it once the money shows in the bank.</p>
+    </div>
+    <div class="page-actions">@await Html.PartialAsync("_HubSwitch", Model)</div>
+</div>
+
+<partial name="_Alerts" />
+
+@if (data is null)
+{
+    <div class="card"><div class="empty">@Icons.Get("warehouse")<h3>No hubs yet</h3></div></div>
+    return;
+}
+
+@{
+    var waiting = data.Shortfalls.Where(s => s.Waiting).ToList();
+}
+
+<div class="grid grid-3 mb">
+    <div class="stat">
+        <div class="stat-icon green">@Icons.Get("cash")</div>
+        <div><div class="stat-label">Cash at the hub</div><div class="stat-value">@Money.Taka(data.InHand)</div><div class="stat-sub">Handed in by riders, not yet paid in</div></div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon">@Icons.Get("bank")</div>
+        <div><div class="stat-label">Waiting for finance</div><div class="stat-value">@Money.Taka(data.AwaitingFinance)</div><div class="stat-sub">Paid in, not yet found in the bank</div></div>
+    </div>
+    <div class="stat">
+        <div class="stat-icon @(waiting.Count > 0 ? "red" : "")">@Icons.Get("alert")</div>
+        <div><div class="stat-label">Shortfalls to accept</div><div class="stat-value">@waiting.Count</div><div class="stat-sub">@if (waiting.Count == 0) { <text>Every rider's cash is settled</text> } else { @Money.Taka(waiting.Sum(s => s.Short)) <text> short, for the hub manager</text> }</div></div>
+    </div>
+</div>
+
+<div class="grid grid-main">
+    <div class="stack">
+        @if (data.Shortfalls.Count > 0)
+        {
+            <div class="card">
+                <div class="card-head"><div><h2>@Icons.Get("alert") Riders' shortfalls</h2><p>Runs closed with less cash than the rider collected. The hub manager accepts each and says what was done.</p></div></div>
+                <div class="table-wrap">
+                    <table class="table compact">
+                        <thead><tr><th>Rider</th><th class="num">Collected</th><th class="num">Handed in</th><th class="num">Short</th><th>Hub manager</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in data.Shortfalls)
+                            {
+                                <tr>
+                                    <td>@s.Rider<div class="cell-sub">@s.RunDate.ToString("ddd d MMM") · closed @s.ClosedOn.ToString("h:mm tt")</div></td>
+                                    <td class="num">@Money.Taka(s.Expected)</td>
+                                    <td class="num">@Money.Taka(s.Received)</td>
+                                    <td class="num negative strong">@Money.Taka(s.Short)</td>
+                                    <td>
+                                        @if (!s.Waiting)
+                                        {
+                                            <span class="badge badge-done">Accepted</span>
+                                            <div class="cell-sub">@s.AcceptedBy, @s.AcceptedOn?.ToString("d MMM"): @s.Note</div>
+                                        }
+                                        else if (Model.MayAccept)
+                                        {
+                                            <form method="post" asp-page-handler="Accept" asp-route-id="@s.RunId" asp-route-hub="@Model.Hub?.Code" class="gap">
+                                                <input type="text" name="note" required maxlength="200" placeholder="What was done (taken from pay, found…)" aria-label="What was done" style="min-width:200px" />
+                                                <button class="btn btn-primary btn-sm" type="submit">Accept</button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge badge-hold">Waiting for the hub manager</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-head"><div><h2>@Icons.Get("bank") Deposits</h2><p>Waiting for finance, and those of the last month</p></div></div>
+            @if (data.Deposits.Count == 0)
+            {
+                <div class="empty">@Icons.Get("bank")<h3>No deposits yet</h3><p>Record each one as soon as the bank stamps the slip.</p></div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="table compact">
+                        <thead><tr><th>Deposit</th><th>Bank and slip</th><th class="num">Amount</th><th>Status</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in data.Deposits)
+                            {
+                                <tr>
+                                    <td><span class="mono strong">@d.Number</span><div class="cell-sub">@d.DepositedOn.ToString("ddd d MMM")@(d.RecordedBy is null ? "" : $" · {d.RecordedBy}")</div></td>
+                                    <td>@d.Bank<div class="cell-sub mono">@d.SlipNumber</div></td>
+                                    <td class="num strong">@Money.Taka(d.Amount)</td>
+                                    <td>
+                                        @Statuses.Badge(d.Status)
+                                        @if (d.Answer is not null)
+                                        {
+                                            <div class="cell-sub">@d.Answer</div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="stack">
+        @if (Model.MayDeposit)
+        {
+            <form method="post" asp-page-handler="Deposit" asp-route-hub="@Model.Hub?.Code" class="card">
+                <div class="card-head"><div><h2>@Icons.Get("plus") Record a deposit</h2><p>As the bank's slip shows it</p></div></div>
+                <div class="card-body">
+                    <div class="field">
+                        <label for="amount">Amount paid in</label>
+                        <div class="input-group"><span class="prefix">৳</span><input id="amount" name="amount" type="number" min="1" step="1" max="@data.InHand.ToString("0")" required /></div>
+                        <div class="hint">The hub holds @Money.Taka(data.InHand).</div>
+                    </div>
+                    <div class="field">
+                        <label for="bank">Bank and branch</label>
+                        <input type="text" id="bank" name="bank" maxlength="@CashDeposit.MaxBankLength" required placeholder="City Bank, Mirpur branch" />
+                    </div>
+                    <div class="field">
+                        <label for="slip">Slip number</label>
+                        <input type="text" id="slip" name="slip" maxlength="@CashDeposit.MaxSlipLength" required autocomplete="off" />
+                    </div>
+                    <div class="field">
+                        <label for="depositedOn">Paid in on</label>
+                        <input id="depositedOn" name="depositedOn" type="date" value="@data.Today.ToString("yyyy-MM-dd")" max="@data.Today.ToString("yyyy-MM-dd")" min="@data.Today.AddDays(-CashDeposit.MaxDaysLate).ToString("yyyy-MM-dd")" required />
+                    </div>
+                </div>
+                <div class="card-foot"><button class="btn btn-primary btn-block" type="submit" @(data.InHand <= 0 ? "disabled" : "")>@Icons.Get("bank") Record the deposit</button></div>
+            </form>
+        }
+        <div class="card">
+            <div class="card-head"><div><h2>@Icons.Get("bulb") How the hub's cash adds up</h2></div></div>
+            <div class="table-wrap">
+                <table class="table compact">
+                    <tbody>
+                        <tr><td>Handed in by riders at closing</td><td class="num">@Money.Taka(data.HandedIn)</td></tr>
+                        <tr><td>Paid into the bank</td><td class="num">− @Money.Taka(data.Deposited)</td></tr>
+                        <tr><td class="strong">At the hub now</td><td class="num strong">@Money.Taka(data.InHand)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-body muted" style="font-size:13px">A deposit finance refuses counts as the hub's cash again until it is recorded right.</div>
+        </div>
+    </div>
+</div>

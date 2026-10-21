@@ -23,7 +23,8 @@ public class ParcelsModel(ParcelListHandler parcels) : PageModel
     [BindProperty(SupportsGet = true)]
     public bool Late { get; set; }
 
-    [BindProperty(SupportsGet = true, Name = "page")]
+    // "p": "page" is the route value Razor Pages names the page by, so it never binds
+    [BindProperty(SupportsGet = true, Name = "p")]
     public int PageNumber { get; set; } = 1;
 
     public ParcelList List { get; private set; } = null!;

@@ -5,8 +5,8 @@
     ViewData["Title"] = "Scan parcels";
     (ScanMode Mode, string Name, string Icon, string Help)[] modes =
     [
-        (ScanMode.Receive, "Receive", "inbox", "A parcel arrives: from a pickup, from another hub, or back from a rider."),
-        (ScanMode.Dispatch, "Send to another hub", "send", "A parcel leaves for the hub that delivers it, or a return for the hub that collected it."),
+        (ScanMode.Receive, "Receive", "inbox", "A parcel arrives: from a pickup, back from a rider, or in a bag from another hub. Scan a bag's label first, then each parcel in it."),
+        (ScanMode.Dispatch, "Bag for another hub", "bag", "A parcel goes in the bag for the hub it travels to next. Seal the bags on the Bags page when the truck is loaded."),
         (ScanMode.HandBack, "Hand back to merchant", "return", "A returning parcel goes back to its merchant here.")
     ];
     // Only the modes this person's desk works; the page model already moved them off any other
@@ -35,11 +35,11 @@
 <div class="grid grid-side">
     <div class="card">
         <div class="card-body">
-            <p class="muted mt-0" style="display:flex;gap:8px;align-items:flex-start">@Icons.Get("info") <span>@current.Help</span></p>
+            <p class="muted mt-0" style="display:flex;gap:8px;align-items:flex-start">@Icons.Get("info") <span>@current.Help @if (Model.Mode != ScanMode.HandBack) { <a asp-page="/Hub/Bags" asp-route-hub="@Model.Hub?.Code">Open the bags</a> }</span></p>
             <form method="post" asp-route-mode="@Model.Mode" asp-route-hub="@Model.Hub?.Code" class="scan-box" data-scan-form>
                 <div class="scan-field">
                     @Icons.Get("scan")
-                    <input asp-for="Code" autofocus autocomplete="off" spellcheck="false" placeholder="Scan or type the tracking code" aria-label="Tracking code" />
+                    <input asp-for="Code" autofocus autocomplete="off" spellcheck="false" placeholder="Scan or type the code" aria-label="Tracking code or bag number" />
                 </div>
                 <button class="btn btn-primary" type="submit">@Icons.Get(current.Icon) @current.Name</button>
             </form>
@@ -76,7 +76,7 @@
         <div class="card-head"><h2>@Icons.Get("bulb") Scanning tips</h2></div>
         <div class="card-body">
             <ol class="timeline">
-                <li><span class="dot"></span><div class="tl-title">Pick the mode first</div><div class="tl-meta">Receive when parcels arrive, Send when they leave for another hub, Hand back when a merchant collects returns.</div></li>
+                <li><span class="dot"></span><div class="tl-title">Pick the mode first</div><div class="tl-meta">Receive when parcels or bags arrive, Bag when parcels leave for another hub, Hand back when a merchant collects returns.</div></li>
                 <li><span class="dot"></span><div class="tl-title">Scan one label at a time</div><div class="tl-meta">A hand scanner types the code and presses Enter for you. The box stays ready for the next one.</div></li>
                 <li><span class="dot"></span><div class="tl-title">Listen and look</div><div class="tl-meta">A high tone and green card mean done. A low buzz and red card mean stop and read the message.</div></li>
                 <li><span class="dot"></span><div class="tl-title">Scanning twice is safe</div><div class="tl-meta">A parcel already recorded here is simply reported, nothing changes.</div></li>

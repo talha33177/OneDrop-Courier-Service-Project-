@@ -56,8 +56,10 @@
     [
         ("Parcels coming in", leaves is { } truck ? $"The van leaves at {Statuses.Clock(truck)}" : "From merchants and other hubs",
             "Pickups to send", b.PickupsOpen, "Give each one a van", false, "/Hub/Pickups", null),
-        ("Parcels coming in", "", "Coming in", b.Incoming, "Scan them in as they arrive", false, "/Hub/Scan", "Receive"),
-        ("Sorted here", "What is on the floor now", "Send to other hubs", b.ToDispatchCount, "Scan out in Send mode", false, "/Hub/Scan", "Dispatch"),
+        ("Parcels coming in", "", "Coming in", b.Incoming,
+            b.BagsComingIn > 0 ? $"{b.BagsComingIn} bag{(b.BagsComingIn == 1 ? "" : "s")}: scan each bag, then its parcels" : "Scan them in as they arrive", false, "/Hub/Scan", "Receive"),
+        ("Sorted here", "What is on the floor now", "Send to other hubs", b.ToDispatchCount,
+            b.BagsToSeal > 0 ? $"{b.BagsToSeal} bag{(b.BagsToSeal == 1 ? "" : "s")} to seal onto the truck" : "Bag them per hub", false, "/Hub/Bags", null),
         ("Sorted here", "", "Waiting for a rider", b.ToAssign.Count,
             b.LateToAssign > 0 ? $"{b.LateToAssign} late: hand these out first" : "Hand them to riders", b.LateToAssign > 0, "/Hub/Assign", null),
         ("Parcels going out", "Closed off at the end of the day", "Out with riders", b.WithRiders,
@@ -71,15 +73,22 @@
     (string Icon, string What, string Why, string Action, string Page, string? Mode, bool Urgent)[] jobs =
     [
         ("clock", $"{b.LateRuns} rider{(b.LateRuns == 1 ? "" : "s")} late back with cash", "Close the run and count what they handed in", "Close runs", "/Hub/Runs", null, true),
+        ("alert", $"{b.ShortfallsWaiting} rider shortfall{(b.ShortfallsWaiting == 1 ? "" : "s")} to accept", "A rider handed in less cash than they collected", "Settle it", "/Hub/Cash", null, true),
         ("send", $"{b.LateToAssign} parcel{(b.LateToAssign == 1 ? " is" : "s are")} past the day {(b.LateToAssign == 1 ? "it was" : "they were")} due", "Hand these to a rider before anything else", "Assign first", "/Hub/Assign", null, true),
         ("truck", $"{b.PickupsOpen} pickup{(b.PickupsOpen == 1 ? "" : "s")} with no van", "Merchants are waiting to be collected from", "Give the round to a van", "/Hub/Pickups", null, false),
         ("scan", $"{b.Incoming} parcel{(b.Incoming == 1 ? " is" : "s are")} on the way here", "Scan each one in as it reaches the floor", "Open Receive", "/Hub/Scan", "Receive", false),
         ("send", $"{b.ToAssign.Count} parcel{(b.ToAssign.Count == 1 ? "" : "s")} waiting for a rider", "These are for your own areas", "Assign to riders", "/Hub/Assign", null, false),
-        ("route", $"{b.ToDispatchCount} parcel{(b.ToDispatchCount == 1 ? "" : "s")} to send to other hubs", "Scan them out and bag them per hub", "Open Send", "/Hub/Scan", "Dispatch", false),
+        ("bag", $"{b.BagsToSeal} bag{(b.BagsToSeal == 1 ? "" : "s")} to seal", "Seal each one when the truck is loaded, and print its manifest", "Open bags", "/Hub/Bags", null, false),
+        ("route", $"{b.ToDispatchCount} parcel{(b.ToDispatchCount == 1 ? "" : "s")} to send to other hubs", "Scan them into the bag for their hub", "Bag them", "/Hub/Scan", "Dispatch", false),
         ("return", $"{b.ToHandBackCount} return{(b.ToHandBackCount == 1 ? "" : "s")} to hand back", "Send them out on a return list, or hand them over here", "Open returns", "/Hub/Returns", null, false),
-        ("cash", $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} still open", "Count the cash when the rider is back", "Close runs", "/Hub/Runs", null, false)
+        ("cash", $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} still open", "Count the cash when the rider is back", "Close runs", "/Hub/Runs", null, false),
+        ("bank", $"৳{b.CashAtHub:N0} at the hub to pay into the bank", "Record each deposit with its slip", "Deposit cash", "/Hub/Cash", null, false)
     ];
-    var counts = new[] { b.LateRuns, b.LateToAssign, b.PickupsOpen, b.Incoming, b.ToAssign.Count, b.ToDispatchCount, b.ToHandBackCount, b.OpenRuns };
+    var counts = new[]
+    {
+        b.LateRuns, b.ShortfallsWaiting, b.LateToAssign, b.PickupsOpen, b.Incoming, b.ToAssign.Count, b.BagsToSeal, b.ToDispatchCount,
+        b.ToHandBackCount, b.OpenRuns, b.CashAtHub > 0 ? 1 : 0
+    };
     var needed = jobs.Where((job, at) => counts[at] > 0 && Go(job.Page, job.Mode) is not null).Take(3).ToList();
 }
 
@@ -195,7 +204,7 @@
 
         <div class="stack">
             <div class="card">
-                <div class="card-head"><div><h2>@Icons.Get("route") Send to other hubs</h2><p>@(all ? "What each hub has to send on" : "Scan each one in Send mode, then bag it for its hub")</p></div></div>
+                <div class="card-head"><div><h2>@Icons.Get("route") Send to other hubs</h2><p>@(all ? "What each hub has to send on" : "Scan each one into the bag for its hub, then seal the bags")</p></div></div>
                 @if (b.ToDispatch.Count == 0)
                 {
                     <div class="card-body muted">Nothing to send on.</div>
@@ -235,7 +244,10 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="card-foot"><a class="btn btn-outline btn-sm btn-block" href="@Go("/Hub/Scan", "Dispatch")">@Icons.Get("scan") Scan to send</a></div>
+                    @if (Go("/Hub/Bags") is { } bags)
+                    {
+                        <div class="card-foot"><a class="btn btn-outline btn-sm btn-block" href="@bags">@Icons.Get("bag") Open the bags</a></div>
+                    }
                 }
             </div>
             <div class="card">
@@ -284,6 +296,10 @@
                 <div class="stat-icon green">@Icons.Get("cash")</div>
                 <div><div class="stat-label">Cash with riders</div><div class="stat-value">@Money.Taka(b.CashWithRiders)</div><div class="stat-sub">Counted when each run is closed</div></div>
             </div>
+            <a class="stat" href="@(Go("/Hub/Cash") ?? "#")">
+                <div class="stat-icon">@Icons.Get("bank")</div>
+                <div><div class="stat-label">Cash at the hub</div><div class="stat-value">@Money.Taka(b.CashAtHub)</div><div class="stat-sub">Handed in, not yet paid into the bank</div></div>
+            </a>
         </div>
     </div>
 </div>

@@ -8,6 +8,8 @@ using Application.Delivery.RiderDay;
 using Application.Delivery.Riders;
 using Application.Hubs;
 using Application.Hubs.AssignParcels;
+using Application.Hubs.Bags;
+using Application.Hubs.Cash;
 using Application.Hubs.HubBoard;
 using Application.Hubs.HubOverview;
 using Application.Hubs.HubScan;
@@ -80,6 +82,8 @@ public static class DependencyInjection
         services.AddScoped<HubOverviewHandler>();
         services.AddScoped<AssignParcelsHandler>();
         services.AddScoped<RunsHandler>();
+        services.AddScoped<BagsHandler>();
+        services.AddScoped<HubCashHandler>();
 
         services.AddScoped<PickupsHandler>();
         services.AddScoped<PickupSchedule>();

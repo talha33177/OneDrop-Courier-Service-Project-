@@ -14,10 +14,10 @@ The one place to see where we are and what comes next for **OneDrop Courier**, t
 
 | | |
 |---|---|
-| Current phase | **Phase 5** — staff jobs at the hubs and at head office (Phase 4 left: 4.8, the pass over every admin page) |
-| Next task | The owner's review of 5.1 (staff jobs and permissions). Then 5.4 bags between hubs and 5.5 hub cash and deposits (recommended order), or 4.8. The owner's senior puts the site live with [Deployment.md](../Documentation/Deployment.md) (server and address are theirs to choose). Still waiting on the owner: review and commit of everything since `db63259` (uncommitted on `main`); 2.6 and 2.7 wait on accounts and a decision |
-| Last session | 2026-10-18 — the mail server and SSLCommerz store set by the super admin on `/Admin/Connections` (uncommitted). **`OneDrop` (dev) is gone from `ras-x2`, and `OneDrop-Test` was too** (the publish re-created the test database from nothing); ask the owner before re-creating the dev one |
-| Blockers | The dev database `OneDrop` does not exist on `ras-x2` |
+| Current phase | **Phase 5** — staff jobs at the hubs and at head office (Phase 4 is done) |
+| Next task | The owner's review of 5.1, 5.4 (bags between hubs), 5.5 (hub cash and deposits) and 4.8 (the admin pages). Then 5.2 desk homes and who did it, then 5.3 racks and the sort scan. The owner's senior puts the site live with [Deployment.md](../Documentation/Deployment.md) (server and address are theirs to choose). Still waiting on the owner: review and commit of everything since `db63259` (uncommitted on `main`); 2.6 and 2.7 wait on accounts and a decision |
+| Last session | 2026-10-21 — 5.4 bags between hubs, 5.5 hub cash and deposits, then 4.8 the pass over every admin page (all uncommitted; both databases published) |
+| Blockers | None. `OneDrop` was re-created clean on 2026-10-20 (map, rates, delivery types, one admin; no merchants or riders) |
 
 ---
 
@@ -161,7 +161,7 @@ to say why it is stuck.
 - [x] **4.6 Stuck parcels** (2026-10-12). `/Admin/Stuck`, a bell line and a menu mark; a move is a change of status or
       place (`Parcel.MovedOn`); the days are the courier's setting.
 - [x] **4.7 A page per rider** (2026-10-12). `/Admin/Rider/{id}`: runs, deliveries, cash collected against handed in.
-- [ ] **4.8 A pass over every admin page** at desktop and phone width, fixing what is broken.
+- [x] **4.8 A pass over every admin page** (2026-10-21) at desktop and phone width, fixing what is broken.
 - [x] **4.9 Merchants pay what they owe online, through SSLCommerz** (2026-10-08, owner's sandbox store). "Pay ৳X
       online" on Payments when the charges come to more than the cash; the gateway is asked before anything is
       credited, one credit per payment, a check job for payers who never came back, risky payments held for the
@@ -265,12 +265,12 @@ Riders and merchants stay as they are.
 - [ ] **5.3 Racks and the sort scan.** Racks per hub (`B-2 → Chattogram`, `D-1 → Mirpur zone 10`, returns, problems);
       the Receive answer names the rack; the sorter scans the parcel then the rack's QR (a wrong rack beeps); a parcel
       shows its rack; the delivery desk can give a rider a whole rack.
-- [ ] **5.4 Bags between hubs.** Line-haul scans parcels into a bag for a destination hub and seals it (`BG-100001`,
-      a manifest, the truck); the receiving hub scans the bag, then each parcel; whatever is missing when the bag is
-      closed is flagged exceptional with the hub and the person.
-- [ ] **5.5 Hub cash and deposits.** Each hub's cash in hand (cash received at closing less deposits); the cash desk
-      records each bank deposit (slip number, amount), finance confirms it; a shortfall needs the hub manager. Today a
-      rider's cash stops at "run closed".
+- [x] **5.4 Bags between hubs** (2026-10-21). Line-haul scans parcels into a bag for a destination hub and seals it
+      (`BG-100001`, a manifest, the truck); the receiving hub scans the bag, then each parcel; whatever is missing when
+      the bag is closed is flagged exceptional with the hub and the person. `/Hub/Bags`, `/Hub/Bag/{number}`.
+- [x] **5.5 Hub cash and deposits** (2026-10-21). Each hub's cash in hand (cash received at closing less deposits);
+      the cash desk records each bank deposit (slip number, amount), finance confirms or refuses it on `/Admin/Cash`;
+      a shortfall waits for the hub manager (new permission "accept cash shortfalls") on `/Hub/Cash`.
 
 **The owner's answers (2026-10-12):** (1) one person may hold more than one job: a preset plus ticks; (2) the super admin
 makes staff logins, and a hub manager for their own hub, never granting more than they hold; (3) one hub or head office
@@ -333,12 +333,73 @@ New ones are added there and dated here.
 | 2026-10-16 | Demo data is never made on a site that serves a courier at an address of its own, whatever its environment; the live site's own database is emptied once by `Scripts/2026/014` and its app pool set to Production by the deploy (owner) |
 | 2026-10-16 | Wrong passwords no longer lock a login; a stopped login is still refused and says it was stopped. Nothing now slows guessing at a sign-in password (owner) |
 | 2026-10-18 | The courier's mail server and SSLCommerz store are set by its super admins on `/Admin/Connections`, passwords encrypted with the key ring in the database; the panel wins over the server's file (owner) |
+| 2026-10-21 | Parcels travel between hubs only in sealed bags, one open bag per pair of hubs; a parcel not found when its bag is closed is flagged exceptional with the hubs and the people (5.4) |
+| 2026-10-21 | A hub's cash is worked out (handed in less deposits not refused); finance confirms each bank deposit; a run closed short waits for someone who may accept cash shortfalls, a new permission in the hub and operations manager presets (5.5) |
 
 ---
 
 ## Daily log
 
 Newest first.
+
+### 2026-10-21 (later: 4.8, a pass over every admin page)
+- **Owner's request:** "lets complete it first" (4.8 before the review of Phase 5).
+- **How:** the app on `OneDrop-Test` (thousands of rows) and on the clean dev `OneDrop`; headless Chrome over DevTools
+  at 1440 and 390 px for the 21 admin pages and 13 hub pages admins use, with console errors, load time and sideways
+  scroll measured per page; every link each role's pages offer opened as admin, relief staff, accounts, a hub
+  manager and a receiving clerk (curl).
+- **Broken, fixed:** paging never worked on any list (Razor Pages owns the `page` route value, so `?page=2` showed
+  page 1: merchant and hub parcel lists): the pager now uses `p`, and `PagingTests` covers it; the merchants list
+  returned all 1,222 merchants on one page (now 50 a page); payouts listed 100 (now 25 a page); the dashboard's
+  "Owed to merchants" netted merchants who owe the courier against those owed (−৳1,783 beside "All clear"; now only
+  positive balances); failed emails were called "Website update" with their class name as the subject and no
+  recipient (now "Email", what it said, and to whom); a returning parcel's total added a COD charge it never pays,
+  and returned or cancelled parcels listed one (`Parcel.TotalCharge`, domain test); the hub chooser did not know
+  Bags or Cash, so the all-hubs board's bag and cash steps opened the board (from 5.4 and 5.5).
+- **Out of date, fixed:** How it works said parcels are "scanned out (Send)"; it now has bags, a cash-in-the-bank step,
+  courier settings and staff in setup (eight steps, two rows of four) and a "hub paid cash in or a rider handed in
+  short" line.
+- **Smaller:** "Pay now" offered with nothing owed; accounts staff shown "Add merchant" and hub cash links they cannot
+  open; "1 parcels" on invoices; a bKash number shown as +880; Reports' rider and returns tables squeezed side by side
+  (now one above the other); Requests' cards half empty (approve and refuse side by side); input suffixes wrapping
+  (rates, settings); "Super admin" wrapping on Staff; Stuck parcels' dates without a year; the empty delivery-success
+  ring showing 0%; "+ ৳x tomorrow" running off the owed card.
+- **Then (owner): the back button in sky blue** "so that it is more visible". `.icon-btn.topbar-back` is filled with `--accent` and the ink arrow (a plain `.topbar-back` lost to `.icon-btn`, defined later with the same weight). Seen at 1440 and 390 px: #7cc6f2 behind the arrow.
+- **Tested:** build 0 warnings; domain **281**, architecture 6; integration **139 of 139, none skipped** (new
+  `PagingTests`). Re-shot the fixed pages: none with console errors or sideways scroll.
+- **Left as they are, worth knowing:** hub boards take about 3 s on `OneDrop-Test` over `ras-x2`: no statement is slow
+  (the slowest averages 89 ms), it is 20-odd small queries (board, bell, menu marks) each crossing the network; a
+  server next to its database will not see it. Riders and Staff overflow at desktop width only with the test data's
+  50-character emails. Operations, merchant support, customer support and cash desk logins were not crawled (no demo
+  login for them; `StaffRolesTests` covers their pages).
+
+### 2026-10-21 (bags between hubs and hub cash, 5.4 and 5.5)
+- **Owner's request:** "continue with 5.4 and 5.5".
+- **5.4 done:** `Bag` and `BagParcel` (`Delivery.Bag`, `Delivery.BagParcel`, sequence `Delivery.BagNumber`); the
+  Dispatch scan is now "Bag for another hub" (the parcel goes in the one open bag for its next hub and stays at the
+  hub until the bag is sealed); a bag label scanned in Receive mode opens it at the hub it is for; each parcel scanned
+  in is ticked off, the last one closes the bag; `/Hub/Bags` (open bags with take out and seal, what waits for a bag,
+  bags coming in with close, recent bags), `/Hub/Bag/{number}` (the manifest with its QR code). Closing with parcels
+  not found flags each exceptional "Missing from bag BG-…: sealed at … by …, not found at … by …". `Parcel.CanDispatch`
+  and `OnwardHubId` split out of `DispatchTo`, which now names the bag in the history.
+- **5.5 done:** `CashDeposit` (`Payments.CashDeposit`, sequence `Payments.CashDepositNumber`); `DeliveryRun.AcceptShort`
+  (three nullable columns); permission `CashShortfalls` (1024) in the hub and operations manager presets, given to
+  existing managers by `Scripts/2026/015`; `HubCashHandler`; `/Hub/Cash` (cash at the hub, deposit form, shortfalls to
+  accept) and `/Admin/Cash` (finance: confirm or refuse deposits, each hub's cash, shortfalls not accepted); bell lines
+  and a menu mark; rider closing says when a shortfall went to the manager. The hub board shows bags to seal, bags
+  coming in, the cash at the hub and shortfalls to accept.
+- **Tested:** build 0 warnings; domain **281** (8 new: `BagTests` 4, `HubCashTests` 4), architecture 6; both databases
+  published (`015` ran on each); integration **138 of 138, none skipped** (new: `HubBagsTests` 2 on Chattogram, Sylhet
+  and Khulna, which no other test uses; `HubCashTests` 1 on Khulna; sweep lines for the four pages; `DeliveryFlowTests`
+  now seals the bag before the next hub receives). Live on `OneDrop-Test` (port 5090; no browser extension, so headless
+  Chrome over DevTools) at 1440 and 390 px: the bags pages at Chattogram and Sylhet, a manifest, Khulna's cash, the hub
+  board and finance's page as accounts; no sideways scroll. Every role answered as its permissions say (curl).
+- **What the checks caught, fixed:** taking a parcel out of a bag threw (EF needs the line deleted: `ClientCascade`);
+  the new text boxes had no `type` and so no styling; the manifest's number was shrunk by `.mono`; finance's shortfall
+  list had no limit (now 10 and a count).
+- **Worth knowing:** test data persists in `OneDrop-Test`, so a run that stops mid-way leaves an open bag that the next
+  run's parcels join; the bag test counts what is in the bag instead of assuming. Bags hold parcels from every test
+  that scans a hub pair, so tests that bag use pairs of their own. A hub's cash counts every run closed before 5.5 too.
 
 ### 2026-10-20 (last: a back button on every panel page)
 - **Owner's request:** "Add a go back button on every page so that is easy to navigate."

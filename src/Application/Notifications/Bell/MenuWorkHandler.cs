@@ -19,7 +19,8 @@ public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenant
 {
     /// <summary>
     /// For an admin: sign-ups to approve, requests to answer, parcels a hub flagged, parcels stuck in one place, work at
-    /// the hubs (a pickup with no rider, a parcel on a hub's shelf), messages that failed, and payouts that wait for the
+    /// the hubs (a pickup with no rider, a parcel on a hub's shelf), messages that failed, hubs' bank deposits to confirm
+    /// and riders' shortfalls no hub manager has accepted, and payouts that wait for the
     /// admin: a merchant asking to be paid now, a transfer refused by the gateway, an online payment held for a check, or
     /// money owed to a merchant with no payout account.
     /// </summary>
@@ -57,6 +58,12 @@ public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenant
         if (await db.OutboxMessages.AnyAsync(m => m.Status == OutboxStatus.Failed, cancellationToken))
         {
             waiting.Add("/Admin/Messages");
+        }
+
+        if (await db.CashDeposits.AnyAsync(d => d.Status == CashDepositStatus.Recorded, cancellationToken) ||
+            await db.DeliveryRuns.AnyAsync(r => r.Status == RunStatus.Closed && r.CashReceived < r.CashExpected && r.ShortAcceptedOn == null, cancellationToken))
+        {
+            waiting.Add("/Admin/Cash");
         }
 
         var owedWithNoAccount =

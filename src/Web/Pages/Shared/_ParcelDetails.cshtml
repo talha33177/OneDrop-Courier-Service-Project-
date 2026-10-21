@@ -165,7 +165,10 @@
                     {
                         <div class="sub"><span class="muted">incl. @Model.ProductName.ToLowerInvariant()</span><span>@Money.Taka(Model.ProductCharge)</span></div>
                     }
-                    <div><span class="muted">COD charge (@Model.CodChargePercent.ToString("0.##")%)</span><span>@Money.Taka(Model.CodCharge)</span></div>
+                    @if (Model.Status is not (ParcelStatus.Returning or ParcelStatus.Returned or ParcelStatus.Cancelled))
+                    {
+                        <div><span class="muted">COD charge (@Model.CodChargePercent.ToString("0.##")%)</span><span>@Money.Taka(Model.CodCharge)</span></div>
+                    }
                     @if (Model.Status is ParcelStatus.Returning or ParcelStatus.Returned)
                     {
                         <div><span class="muted">Return charge</span><span>@Money.Taka(Model.ReturnCharge)</span></div>

@@ -24,7 +24,7 @@ public partial class StaffRolesTests(WebAppFactory factory) : AppTests(factory)
 
         // The scanner offers only receiving; another desk's mode moves them back to it, and posting one is refused
         var scanner = await clerk.PageAsync("/Hub/Scan");
-        Assert.DoesNotContain("Send to another hub", scanner);
+        Assert.DoesNotContain("Bag for another hub", scanner);
         Assert.DoesNotContain("Hand back to merchant", scanner);
         var moved = await clerk.GetAsync("/Hub/Scan?mode=Dispatch");
         Assert.Equal(HttpStatusCode.Redirect, moved.StatusCode);

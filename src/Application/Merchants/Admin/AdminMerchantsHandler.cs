@@ -112,9 +112,14 @@ public class AdminMerchantsHandler(
 {
     public static readonly Error NotFound = Error.NotFound("merchant.notFound", "That merchant was not found.");
 
-    public async Task<IReadOnlyList<MerchantRow>> ListAsync(
+    /// <summary>How many merchants a page of the list shows.</summary>
+    public const int PageSize = 50;
+
+    /// <summary>The merchants of a status (or every one), sign-ups first, a page at a time.</summary>
+    public async Task<Page<MerchantRow>> ListAsync(
         MerchantStatus? status,
         string? search,
+        int page = 1,
         CancellationToken cancellationToken = default)
     {
         var tenant = tenantContext.Require();
@@ -134,9 +139,14 @@ public class AdminMerchantsHandler(
             merchants = merchants.Where(m => m.Id == id || m.Name.Contains(text) || m.OwnerName.Contains(text) || m.ContactPhone == value);
         }
 
+        var total = await merchants.CountAsync(cancellationToken);
+        var shown = Math.Clamp(page, 1, Math.Max(1, (total + PageSize - 1) / PageSize));
         var rows = await merchants
             .OrderBy(m => m.Status)
             .ThenBy(m => m.Name)
+            .ThenBy(m => m.Id)
+            .Skip((shown - 1) * PageSize)
+            .Take(PageSize)
             .Select(m => new MerchantRow(
                 m.Id,
                 m.Name,
@@ -154,7 +164,13 @@ public class AdminMerchantsHandler(
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        return [.. rows.Select(r => r with { Joined = tenant.Local(r.Joined) })];
+        return new Page<MerchantRow>([.. rows.Select(r => r with { Joined = tenant.Local(r.Joined) })], total, shown, PageSize);
+    }
+
+    /// <summary>How many sign-ups wait for approval.</summary>
+    public Task<int> WaitingAsync(CancellationToken cancellationToken = default)
+    {
+        return db.Merchants.CountAsync(m => m.Status == MerchantStatus.Pending && !m.Archived, cancellationToken);
     }
 
     public async Task<Result<MerchantView>> GetAsync(long id, CancellationToken cancellationToken = default)

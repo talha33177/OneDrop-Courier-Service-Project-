@@ -22,7 +22,7 @@
         <ol>
             <li>The rider records every parcel on their phone</li>
             <li>Count the cash they hand in and enter it</li>
-            <li>Close the run: parcels not delivered go back on the shelf</li>
+            <li>Close the run: parcels not delivered go back on the shelf, the cash joins the hub's, and a shortfall goes to the hub manager</li>
         </ol>
     </div>
 </div>
@@ -105,7 +105,7 @@
             const check = () => {
                 const short = Number(form.dataset.expected) - Number(input.value || 0);
                 if (short > 0) {
-                    form.dataset.confirm = `${form.dataset.rider} hands in ৳${short.toLocaleString("en-US")} less than they collected. The shortfall is recorded on the run for follow-up.`;
+                    form.dataset.confirm = `${form.dataset.rider} hands in ৳${short.toLocaleString("en-US")} less than they collected. The shortfall waits on the Cash page for the hub manager to accept.`;
                     form.dataset.confirmTitle = "Close with cash short?";
                     form.dataset.confirmOk = "Close run anyway";
                 } else {

@@ -40,6 +40,9 @@ public sealed record PayoutsOverview(
     /// <summary>The hourly run has not run for over two hours, or never: the scheduler, or the app, is not running.</summary>
     public bool RunIsLate { get; init; }
 
+    /// <summary>Which page of the payouts list this is, how many pages, and how many payouts in all.</summary>
+    public (int Number, int Pages, int Total) PayoutsPage { get; init; } = (1, 1, 0);
+
     /// <summary>What the next run sends: each merchant it pays, its lines up to yesterday.</summary>
     public decimal PayableNow => Owed.Where(m => m.IsPaidNext).Sum(m => m.Payable);
 
@@ -61,7 +64,10 @@ public class AdminPayoutsHandler(
     IJobSchedule schedule,
     TimeProvider time)
 {
-    public async Task<PayoutsOverview> GetAsync(PayoutStatus? status, CancellationToken cancellationToken = default)
+    /// <summary>How many payouts a page of the list shows.</summary>
+    public const int PayoutsShown = 25;
+
+    public async Task<PayoutsOverview> GetAsync(PayoutStatus? status, int page = 1, CancellationToken cancellationToken = default)
     {
         var tenant = tenantContext.Require();
         var upTo = tenant.Today(time.GetUtcNow().UtcDateTime).AddDays(-1);
@@ -97,6 +103,9 @@ public class AdminPayoutsHandler(
             payouts = payouts.Where(p => p.Status == only);
         }
 
+        var made = await payouts.CountAsync(cancellationToken);
+        var number = Math.Clamp(page, 1, Math.Max(1, (made + PayoutsShown - 1) / PayoutsShown));
+
         var today = tenant.Today(time.GetUtcNow().UtcDateTime);
         var monthStart = tenant.StartUtc(new DateOnly(today.Year, today.Month, 1));
         var paidThisMonth = await db.Payouts
@@ -109,7 +118,7 @@ public class AdminPayoutsHandler(
 
         return new PayoutsOverview(
             [.. owed.OrderByDescending(m => m.Net)],
-            await payments.RowsAsync(payouts.OrderByDescending(p => p.Id).Take(100), tenant, cancellationToken),
+            await payments.RowsAsync(payouts.OrderByDescending(p => p.Id).Skip((number - 1) * PayoutsShown).Take(PayoutsShown), tenant, cancellationToken),
             await payments.RowsAsync(
                 db.Payouts.Where(p => p.Status == PayoutStatus.Pending && p.FailedAttempts > 0).OrderBy(p => p.Id),
                 tenant,
@@ -120,7 +129,8 @@ public class AdminPayoutsHandler(
                 times.LastRun is { } last ? tenant.Local(last) : null,
                 times.NextRun is { } next ? tenant.Local(next) : null))
         {
-            RunIsLate = times.LastRun is not { } ran || time.GetUtcNow().UtcDateTime - ran > TimeSpan.FromHours(2)
+            RunIsLate = times.LastRun is not { } ran || time.GetUtcNow().UtcDateTime - ran > TimeSpan.FromHours(2),
+            PayoutsPage = (number, Math.Max(1, (made + PayoutsShown - 1) / PayoutsShown), made)
         };
     }
 }

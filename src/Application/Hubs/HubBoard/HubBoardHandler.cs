@@ -4,6 +4,7 @@ using Application.Common;
 using Application.Pricing.DeliveryOptions;
 using Domain.Delivery;
 using Domain.Parcels;
+using Domain.Payments;
 
 namespace Application.Hubs.HubBoard;
 
@@ -57,6 +58,18 @@ public sealed record HubBoard(
     decimal CashWithRiders,
     DateOnly Today)
 {
+    /// <summary>Open bags with parcels in them, waiting to be sealed onto the truck.</summary>
+    public int BagsToSeal { get; init; }
+
+    /// <summary>Sealed bags on their way here, and bags opened here whose parcels are still being scanned in.</summary>
+    public int BagsComingIn { get; init; }
+
+    /// <summary>Cash handed in at closing and not yet paid into the bank.</summary>
+    public decimal CashAtHub { get; init; }
+
+    /// <summary>Runs closed short whose shortfall the hub manager has not accepted.</summary>
+    public int ShortfallsWaiting { get; init; }
+
     public int LateToAssign => ToAssign.Count(p => p.DueOn < Today);
 
     public int ToDispatchCount => ToDispatch.Sum(group => group.Parcels.Count);
@@ -187,6 +200,18 @@ public class HubBoardHandler(IAppDbContext db, ITenantContext tenantContext, Hub
             select (decimal?)attempt.CollectedAmount)
             .SumAsync(cancellationToken) ?? 0;
         var runDates = await openRuns.Select(r => r.RunDate).ToListAsync(cancellationToken);
+        var bagsToSeal = await db.Bags.CountAsync(
+            b => b.Status == BagStatus.Open && (hubId == null || b.FromHubId == hubId) && b.Parcels.Any(),
+            cancellationToken);
+        var bagsComingIn = await db.Bags.CountAsync(
+            b => (b.Status == BagStatus.Sealed || b.Status == BagStatus.Arrived) && (hubId == null || b.ToHubId == hubId),
+            cancellationToken);
+        var closed = db.DeliveryRuns.Where(r => (hubId == null || r.HubId == hubId) && r.Status == RunStatus.Closed);
+        var handedIn = await closed.SumAsync(r => r.CashReceived, cancellationToken) ?? 0;
+        var deposited = await db.CashDeposits
+            .Where(d => (hubId == null || d.HubId == hubId) && d.Status != CashDepositStatus.Refused)
+            .SumAsync(d => (decimal?)d.Amount, cancellationToken) ?? 0;
+        var shortfalls = await closed.CountAsync(r => r.CashReceived < r.CashExpected && r.ShortAcceptedOn == null, cancellationToken);
 
         return new HubBoard(
             hub,
@@ -199,6 +224,12 @@ public class HubBoardHandler(IAppDbContext db, ITenantContext tenantContext, Hub
             runDates.Count,
             runDates.Count(day => tenant.RunIsLate(day, now)),
             cash,
-            today);
+            today)
+        {
+            BagsToSeal = bagsToSeal,
+            BagsComingIn = bagsComingIn,
+            CashAtHub = handedIn - deposited,
+            ShortfallsWaiting = shortfalls
+        };
     }
 }

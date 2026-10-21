@@ -239,7 +239,8 @@ public class Parcel : TenantEntity, IMerchantOwned
     public decimal TotalCharge => Status switch
     {
         ParcelStatus.Delivered or ParcelStatus.PartlyDelivered => DeliveryCharge + (CodCharge ?? 0),
-        ParcelStatus.Returned => DeliveryCharge + ReturnCharge,
+        // A parcel on its way back pays what a returned one does: no cash was collected, so no COD charge
+        ParcelStatus.Returning or ParcelStatus.Returned => DeliveryCharge + ReturnCharge,
         ParcelStatus.Cancelled => 0,
         _ => DeliveryCharge + ParcelCharges.CodCharge(CodAmount, CodChargePercent)
     };
@@ -386,15 +387,48 @@ public class Parcel : TenantEntity, IMerchantOwned
     /// <summary>
     /// Hub staff sent the parcel from <paramref name="fromHubId"/> to <paramref name="toHubId"/>: forward towards the hub
     /// that delivers it, or, when it is returning, back towards the hub that collected it. Sending it again to the same
-    /// hub changes nothing.
+    /// hub changes nothing. A sealed bag sends each parcel in it, and its <paramref name="bagNumber"/> goes in the history.
     /// </summary>
-    public Result<ScanOutcome> DispatchTo(long fromHubId, long toHubId)
+    public Result<ScanOutcome> DispatchTo(long fromHubId, long toHubId, string? bagNumber = null)
     {
         if (TransferToHubId == toHubId && Status is ParcelStatus.InTransit or ParcelStatus.Returning)
         {
             return ScanOutcome.AlreadyRecorded;
         }
 
+        var can = CanDispatch(fromHubId, toHubId);
+        if (can.IsFailure)
+        {
+            return can.Error!;
+        }
+
+        var bag = bagNumber is null ? "" : $" in bag {bagNumber}";
+        CurrentHubId = null;
+        TransferToHubId = toHubId;
+        if (Status == ParcelStatus.Returning)
+        {
+            events.Add(new ParcelEvent(this, Status, $"Sent back towards the merchant's hub{bag}", fromHubId));
+        }
+        else
+        {
+            MoveTo(ParcelStatus.InTransit, $"Sent to the delivery hub{bag}", fromHubId);
+        }
+
+        return ScanOutcome.Recorded;
+    }
+
+    /// <summary>
+    /// The hub the parcel goes to next from the hub it is at: the hub that delivers it, or, while it is returning, the
+    /// hub that collected it.
+    /// </summary>
+    public long OnwardHubId()
+    {
+        return Status == ParcelStatus.Returning ? PickupHubId : DeliveryHubId;
+    }
+
+    /// <summary>Whether the parcel can leave <paramref name="fromHubId"/> for <paramref name="toHubId"/> now.</summary>
+    public Result CanDispatch(long fromHubId, long toHubId)
+    {
         if (CurrentHubId != fromHubId || Status is not (ParcelStatus.AtHub or ParcelStatus.Returning))
         {
             return Error.Conflict(
@@ -421,18 +455,7 @@ public class Parcel : TenantEntity, IMerchantOwned
                 $"{TrackingCode} goes back to its merchant from this hub. Hand it back instead.");
         }
 
-        CurrentHubId = null;
-        TransferToHubId = toHubId;
-        if (Status == ParcelStatus.Returning)
-        {
-            events.Add(new ParcelEvent(this, Status, "Sent back towards the merchant's hub", fromHubId));
-        }
-        else
-        {
-            MoveTo(ParcelStatus.InTransit, "Sent to the delivery hub", fromHubId);
-        }
-
-        return ScanOutcome.Recorded;
+        return Result.Success();
     }
 
     /// <summary>

@@ -167,9 +167,10 @@ public class RunsHandler(IAppDbContext db, ITenantContext tenantContext, HubDire
 
     /// <summary>
     /// The rider handed in <paramref name="received"/> in cash. Every parcel of the run needs an outcome first; the ones
-    /// held or refused come back to the hub with the closing.
+    /// held or refused come back to the hub with the closing. Returns what the rider handed in short, which waits for the
+    /// hub manager.
     /// </summary>
-    public async Task<Result> CloseAsync(string hubCode, long runId, decimal received, CancellationToken cancellationToken = default)
+    public async Task<Result<decimal>> CloseAsync(string hubCode, long runId, decimal received, CancellationToken cancellationToken = default)
     {
         var hub = await hubs.FindAsync(hubCode, cancellationToken);
         var run = hub is null
@@ -192,7 +193,7 @@ public class RunsHandler(IAppDbContext db, ITenantContext tenantContext, HubDire
         var closed = run.Close(attempts.Sum(a => a.CollectedAmount), received, time.GetUtcNow().UtcDateTime);
         if (closed.IsFailure)
         {
-            return closed;
+            return closed.Error!;
         }
 
         // The parcels the rider brings back: held for another day or refused, still with this rider
@@ -217,6 +218,6 @@ public class RunsHandler(IAppDbContext db, ITenantContext tenantContext, HubDire
             return Error.Conflict("run.changed", "This run changed just now. Reload and close it again.");
         }
 
-        return Result.Success();
+        return Math.Max(run.CashShort ?? 0, 0);
     }
 }

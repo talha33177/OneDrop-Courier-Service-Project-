@@ -98,6 +98,15 @@ public class UserAccounts(UserManager<AppUser> users, ITenantContext tenantConte
             .ToDictionaryAsync(u => u.Id, u => u.Email ?? u.UserName ?? "", cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<long, string>> NamesAsync(
+        IReadOnlyCollection<long> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        return await users.Users
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.DisplayName.Length > 0 ? u.DisplayName : u.Email ?? "", cancellationToken);
+    }
+
     public async Task SetLoginEnabledAsync(long userId, bool enabled, CancellationToken cancellationToken = default)
     {
         if (await users.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken) is not { } user)

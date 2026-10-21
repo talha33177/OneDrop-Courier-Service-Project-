@@ -4,9 +4,9 @@
     string Url(int page)
     {
         var query = Context.Request.Query
-            .Where(pair => pair.Key != "page")
+            .Where(pair => pair.Key != "p")
             .SelectMany(pair => pair.Value.Select(value => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(value ?? "")}"))
-            .Append($"page={page}");
+            .Append($"p={page}");
 
         return Context.Request.Path + "?" + string.Join("&", query);
     }

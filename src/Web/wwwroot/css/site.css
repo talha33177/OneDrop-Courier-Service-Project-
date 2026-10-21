@@ -293,7 +293,8 @@ kbd {
     border-bottom: 1px solid var(--line); transition: box-shadow .2s;
 }
 .topbar.scrolled { box-shadow: 0 6px 18px -14px rgba(20, 24, 32, .25); }
-.topbar-back { width: 38px; height: 38px; color: var(--ink-2); margin-right: -4px; }
+.icon-btn.topbar-back { width: 38px; height: 38px; margin-right: -4px; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.icon-btn.topbar-back:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
 .topbar-back[hidden] { display: none; }
 .topbar-title { font-size: 19px; font-weight: 750; letter-spacing: -.02em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
@@ -704,6 +705,10 @@ a.now-row:hover .now-row-name { color: var(--accent-text); }
 .tool small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); }
 
 .section-title { font-size: 18px; font-weight: 750; letter-spacing: -.015em; margin: 30px 0 14px; }
+.request-answer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
+.request-answer form { display: flex; gap: 8px; align-items: center; }
+.request-answer input { flex: 1; min-width: 0; }
+@media (max-width: 860px) { .request-answer { grid-template-columns: minmax(0, 1fr); } }
 
 /* The money waiting for the merchant, large, beside how it adds up */
 .balance-card { display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; min-height: 240px; padding: 28px 30px; border-radius: var(--radius); background: var(--accent-tint); border: 1px solid #d3ebfa; }
@@ -795,7 +800,7 @@ a.now-row:hover .now-row-name { color: var(--accent-text); }
 .todo-text small { display: block; margin-top: 2px; font-weight: 500; font-size: 13px; color: var(--muted); }
 
 /* The admin's guide: the setup in order, a parcel's day as numbered steps, and where to look back */
-.guide-setup { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); counter-reset: setup; }
+.guide-setup { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); counter-reset: setup; }
 .guide-setup li { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px; counter-increment: setup; }
 .guide-setup li::after {
     content: counter(setup); position: absolute; top: 16px; right: 16px; width: 24px; height: 24px; border-radius: 50%;
@@ -873,8 +878,10 @@ a.flow-step:not(:last-child):hover::after { background: var(--brand-tint); }
 .hub-job .btn { flex: none; }
 @media (max-width: 1100px) {
     .hub-phases { grid-template-columns: 1fr; gap: 14px; }
+    .guide-setup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
+    .guide-setup { grid-template-columns: minmax(0, 1fr); }
     .hub-job { flex-wrap: wrap; }
     .hub-job-text { flex-basis: calc(100% - 60px); }
     .hub-job .btn { margin-left: 58px; }
@@ -1038,6 +1045,7 @@ input[type=checkbox], input[type=radio] { width: 17px; height: 17px; accent-colo
     display: grid; place-items: center; padding: 0 13px; background: var(--surface-2); border: 1px solid var(--line-strong);
     color: var(--muted); font-weight: 650;
 }
+.input-group .suffix { white-space: nowrap; }
 .input-group .prefix { border-right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .input-group .suffix { border-left: 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 .input-group input { border-radius: 0; }
@@ -1623,7 +1631,7 @@ tr.later td { opacity: .7; }
     .topbar { height: 62px; gap: 8px; }
     .topbar-actions { gap: 6px; }
     .topbar .icon-btn { width: 40px; height: 40px; }
-    .topbar .topbar-back { width: 34px; height: 34px; border: 0; margin: 0 -4px; background: none; }
+    .topbar .topbar-back { width: 32px; height: 32px; margin: 0 -2px; }
     .tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .tabs { flex-wrap: nowrap; overflow-x: auto; }
     .balance-card .balance-value { font-size: 40px; }

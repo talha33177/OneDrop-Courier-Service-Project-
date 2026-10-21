@@ -204,7 +204,7 @@ public class PayoutTests(WebAppFactory factory) : AppTests(factory)
         await using var scope = await ScopeAsync("onedrop");
         var handler = ActivatorUtilities.CreateInstance<AdminPayoutsHandler>(scope.ServiceProvider, (TimeProvider)new FakeTimeProvider(utcNow));
 
-        return await handler.GetAsync(null, Cancel);
+        return await handler.GetAsync(null, cancellationToken: Cancel);
     }
 
     private async Task<(PayoutRun Run, IReadOnlyList<Payout> Payouts)> RunAsync(DateTime utcNow)

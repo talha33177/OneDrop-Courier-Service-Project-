@@ -1,0 +1,256 @@
+@page
+@using Domain.Delivery
+@model Web.Pages.Hub.BagsModel
+@{
+    ViewData["Title"] = "Bags between hubs";
+    var data = Model.Data;
+}
+
+<div class="page-head">
+    <div>
+        <h1>Bags between hubs</h1>
+        <p>Parcels leave for other hubs in a sealed bag on the line-haul truck. Fill one bag per hub on the scanner, seal it when the truck is loaded, and check every bag that comes in.</p>
+    </div>
+    <div class="page-actions">
+        @await Html.PartialAsync("_HubSwitch", Model)
+        @if (Model.MayClose)
+        {
+            <a class="btn btn-outline" asp-page="/Hub/Scan" asp-route-hub="@Model.Hub?.Code" asp-route-mode="Receive">@Icons.Get("inbox") Scan bags in</a>
+        }
+        @if (Model.MaySeal)
+        {
+            <a class="btn btn-primary" asp-page="/Hub/Scan" asp-route-hub="@Model.Hub?.Code" asp-route-mode="Dispatch">@Icons.Get("scan") Scan into bags</a>
+        }
+    </div>
+</div>
+
+<partial name="_Alerts" />
+
+@if (data is null)
+{
+    <div class="card"><div class="empty">@Icons.Get("warehouse")<h3>No hubs yet</h3></div></div>
+    return;
+}
+
+<div class="tip" data-tip="hub-bags">
+    @Icons.Get("bulb")
+    <div>
+        <div class="tip-title">How a bag travels</div>
+        <ol>
+            <li>Line-haul scans each parcel in "Bag for another hub" mode: the answer names the bag it goes in</li>
+            <li>When the truck is loaded, seal each bag here and print its manifest for the driver</li>
+            <li>The hub it is for scans the bag, then each parcel; the bag closes itself when the last one is in</li>
+            <li>A parcel that never turns up: close the bag, and it is flagged exceptional as missing with the hubs and the people</li>
+        </ol>
+    </div>
+</div>
+
+<div class="grid grid-main">
+    <div class="stack">
+        <div class="part-head" style="margin-top:0"><h2>@Icons.Get("bag") Leaving this hub</h2></div>
+        @if (data.Open.Count == 0)
+        {
+            <div class="card">
+                <div class="empty">@Icons.Get("bag")<h3>No bag being filled</h3><p>A bag for a hub opens with the first parcel scanned in "Bag for another hub" mode.</p></div>
+            </div>
+        }
+        @foreach (var view in data.Open)
+        {
+            var bag = view.Bag;
+            var stray = view.Parcels.Count(p => !p.Goes);
+            <div class="card">
+                <div class="card-head">
+                    <div>
+                        <h2><span class="mono">@bag.Number</span> @Icons.Get("arrow-right") @bag.ToHub</h2>
+                        <p>@view.Parcels.Count parcel@(view.Parcels.Count == 1 ? "" : "s") · @Money.Kg(bag.WeightGrams) · opened @bag.Opened.ToString("d MMM, h:mm tt")</p>
+                    </div>
+                    @Statuses.Badge(bag.Status)
+                </div>
+                @if (view.Parcels.Count == 0)
+                {
+                    <div class="card-body muted">Empty: every parcel was taken out. Scan the next parcel for @bag.ToHub into it.</div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="table compact">
+                            <thead><tr><th>Parcel</th><th>Merchant</th><th>Area</th><th class="num">Weight</th>@if (Model.MaySeal) { <th></th> }</tr></thead>
+                            <tbody>
+                                @foreach (var p in view.Parcels)
+                                {
+                                    <tr class="@(p.Goes ? "" : "later")">
+                                        <td>
+                                            <a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a>
+                                            @if (!p.Goes)
+                                            {
+                                                <div class="row-note">@Icons.Get("alert") No longer goes to @bag.ToHub: take it out</div>
+                                            }
+                                            @if (p.Issue is { } issue)
+                                            {
+                                                <div class="mt-xs">@Statuses.Badge(issue)</div>
+                                            }
+                                        </td>
+                                        <td>@p.Merchant</td>
+                                        <td>@p.Area</td>
+                                        <td class="num">@Money.Kg(p.WeightGrams)</td>
+                                        @if (Model.MaySeal)
+                                        {
+                                            <td class="text-right">
+                                                <form method="post" asp-page-handler="TakeOut" asp-route-hub="@Model.Hub?.Code">
+                                                    <input type="hidden" name="number" value="@bag.Number" />
+                                                    <input type="hidden" name="code" value="@p.TrackingCode" />
+                                                    <button class="btn btn-ghost btn-sm" type="submit">Take out</button>
+                                                </form>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @if (Model.MaySeal && view.Parcels.Count > 0)
+                {
+                    <form method="post" asp-page-handler="Seal" asp-route-hub="@Model.Hub?.Code" class="card-foot spread">
+                        <input type="hidden" name="number" value="@bag.Number" />
+                        <div class="gap">
+                            <label class="sr-only" for="vehicle-@bag.Number">Truck</label>
+                            <input type="text" id="vehicle-@bag.Number" name="vehicle" maxlength="@Bag.MaxVehicleLength" placeholder="Truck and driver (optional)" style="width:240px" />
+                            <button class="btn btn-primary" type="submit" @(stray > 0 ? "disabled" : "")
+                                    data-confirm="Every parcel in it leaves the hub for @bag.ToHub. Nothing goes in or out of the bag until it arrives."
+                                    data-confirm-title="Seal bag @bag.Number?" data-confirm-ok="Seal and send">@Icons.Get("lock") Seal and send</button>
+                        </div>
+                        <span class="muted">@(stray > 0 ? $"Take out the {stray} parcel{(stray == 1 ? "" : "s")} that no longer go{(stray == 1 ? "es" : "")} first." : "Seal it once it is on the truck.")</span>
+                    </form>
+                }
+            </div>
+        }
+
+        <div class="part-head"><h2>@Icons.Get("inbox") Coming to this hub</h2></div>
+        @if (data.Incoming.Count == 0)
+        {
+            <div class="card">
+                <div class="empty">@Icons.Get("check-circle")<h3>No bags on the way</h3><p>A bag another hub seals for this one shows up here until every parcel in it is scanned in.</p></div>
+            </div>
+        }
+        @foreach (var view in data.Incoming)
+        {
+            var bag = view.Bag;
+            var waiting = view.Parcels.Count(p => p.ReceivedOn is null);
+            <div class="card">
+                <div class="card-head">
+                    <div>
+                        <h2><span class="mono">@bag.Number</span> from @bag.FromHub</h2>
+                        <p>
+                            @bag.Received of @bag.Parcels scanned in · sealed @bag.SealedOn?.ToString("d MMM, h:mm tt")@(bag.SealedBy is null ? "" : $" by {bag.SealedBy}")
+                            @if (bag.Vehicle is not null)
+                            {
+                                <span> · @bag.Vehicle</span>
+                            }
+                        </p>
+                    </div>
+                    @Statuses.Badge(bag.Status)
+                </div>
+                <div class="table-wrap">
+                    <table class="table compact">
+                        <thead><tr><th>Parcel</th><th>Merchant</th><th>Area</th><th>Scanned in</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in view.Parcels.OrderBy(p => p.ReceivedOn is not null))
+                            {
+                                <tr>
+                                    <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a></td>
+                                    <td>@p.Merchant</td>
+                                    <td>@p.Area</td>
+                                    <td>
+                                        @if (p.ReceivedOn is { } received)
+                                        {
+                                            <span class="positive">@Icons.Get("check") @received.ToString("h:mm tt")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">Not yet</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-foot spread">
+                    <a class="btn btn-ghost btn-sm" asp-page="/Hub/Bag" asp-route-number="@bag.Number" asp-route-hub="@Model.Hub?.Code">@Icons.Get("file") Manifest</a>
+                    @if (Model.MayClose)
+                    {
+                        <form method="post" asp-page-handler="Close" asp-route-hub="@Model.Hub?.Code" class="gap">
+                            <input type="hidden" name="number" value="@bag.Number" />
+                            <span class="muted">@(waiting == 0 ? "Every parcel is in." : $"{waiting} not scanned in yet.")</span>
+                            <button class="btn @(waiting > 0 ? "btn-danger" : "btn-primary") btn-sm" type="submit"
+                                    data-confirm="@(waiting > 0 ? $"The {waiting} parcel{(waiting == 1 ? "" : "s")} not scanned in {(waiting == 1 ? "is" : "are")} flagged exceptional as missing, with who sealed the bag and who closed it. Look in the bag once more first." : "The bag is checked.")"
+                                    data-confirm-title="Close bag @bag.Number?" data-confirm-ok="Close the bag">Close the bag</button>
+                        </form>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="stack">
+        <div class="card">
+            <div class="card-head"><div><h2>@Icons.Get("route") Waiting for a bag</h2><p>At this hub for other hubs, in no bag yet</p></div></div>
+            @if (data.Unbagged.Count == 0)
+            {
+                <div class="card-body muted">Every parcel for another hub is in a bag.</div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="table compact">
+                        <tbody>
+                            @foreach (var group in data.Unbagged)
+                            {
+                                <tr><td><span class="code-link">@group.HubCode</span> @group.HubName</td><td class="num strong">@group.Parcels</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (Model.MaySeal)
+                {
+                    <div class="card-foot"><a class="btn btn-outline btn-sm btn-block" asp-page="/Hub/Scan" asp-route-hub="@Model.Hub?.Code" asp-route-mode="Dispatch">@Icons.Get("scan") Scan them into bags</a></div>
+                }
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><div><h2>@Icons.Get("clipboard") Recent bags</h2><p>On the truck, and closed in the last two weeks</p></div></div>
+            @if (data.Recent.Count == 0)
+            {
+                <div class="card-body muted">No bags yet.</div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="table compact">
+                        <tbody>
+                            @foreach (var bag in data.Recent)
+                            {
+                                var outgoing = bag.FromHubCode == Model.Hub?.Code;
+                                <tr>
+                                    <td>
+                                        <a class="code-link" asp-page="/Hub/Bag" asp-route-number="@bag.Number" asp-route-hub="@Model.Hub?.Code">@bag.Number</a>
+                                        <div class="cell-sub">@(outgoing ? $"To {bag.ToHub}" : $"From {bag.FromHub}") · @bag.Parcels parcel@(bag.Parcels == 1 ? "" : "s")</div>
+                                    </td>
+                                    <td class="text-right">
+                                        @Statuses.Badge(bag.Status)
+                                        @if (bag.Missing > 0)
+                                        {
+                                            <div class="cell-sub negative">@bag.Missing missing</div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>

@@ -40,14 +40,14 @@ public static class StaffJobs
     {
         return job switch
         {
-            StaffJob.HubManager => StaffPermissions.HubWork | StaffPermissions.Staff,
+            StaffJob.HubManager => StaffPermissions.HubWork | StaffPermissions.Staff | StaffPermissions.CashShortfalls,
             StaffJob.Receiving => StaffPermissions.Receive,
             StaffJob.LineHaul => StaffPermissions.Dispatch,
             StaffJob.DeliveryDesk => StaffPermissions.DeliveryDesk,
             StaffJob.ReturnsDesk => StaffPermissions.Returns,
             StaffJob.CashDesk => StaffPermissions.CashDesk,
             StaffJob.Relief => StaffPermissions.HubWork,
-            StaffJob.OperationsManager => StaffPermissions.HubWork | StaffPermissions.Operations,
+            StaffJob.OperationsManager => StaffPermissions.HubWork | StaffPermissions.Operations | StaffPermissions.CashShortfalls,
             StaffJob.Accounts => StaffPermissions.Finance,
             StaffJob.MerchantSupport => StaffPermissions.Merchants,
             _ => StaffPermissions.None
@@ -77,15 +77,15 @@ public static class StaffJobs
     {
         return job switch
         {
-            StaffJob.HubManager => "Runs one hub: every desk there, and the hub's own staff logins",
-            StaffJob.Receiving => "Unloads vans and trucks, scans parcels in, weighs them and flags problems",
-            StaffJob.LineHaul => "Scans parcels out to the hubs that deliver them",
+            StaffJob.HubManager => "Runs one hub: every desk there, riders' cash shortfalls and the hub's own staff logins",
+            StaffJob.Receiving => "Unloads vans and trucks, scans bags and parcels in, weighs them and flags problems",
+            StaffJob.LineHaul => "Bags parcels for the hubs they go to and seals each bag onto the truck",
             StaffJob.DeliveryDesk => "Sends riders on today's pickups, gives them parcels and prints run sheets",
             StaffJob.ReturnsDesk => "Return lists, handing returns back and sending parcels back to merchants",
-            StaffJob.CashDesk => "Counts each rider's cash and closes their run",
+            StaffJob.CashDesk => "Counts each rider's cash, closes their run and pays the hub's cash into the bank",
             StaffJob.Relief => "Covers any desk at any hub",
             StaffJob.OperationsManager => "Every hub's work, the dashboard, stuck parcels, riders and requests",
-            StaffJob.Accounts => "Payouts, adjustments, online payments and reports",
+            StaffJob.Accounts => "Payouts, adjustments, online payments, hubs' bank deposits and reports",
             StaffJob.MerchantSupport => "Sign-ups, merchants' accounts and their requests",
             _ => "Looks parcels up for the hotline; changes nothing"
         };
@@ -96,10 +96,11 @@ public static class StaffJobs
         return permission switch
         {
             StaffPermissions.Receive => "Receive and weigh",
-            StaffPermissions.Dispatch => "Send to other hubs",
+            StaffPermissions.Dispatch => "Bag for other hubs",
             StaffPermissions.DeliveryDesk => "Pickups and riders",
             StaffPermissions.Returns => "Returns",
-            StaffPermissions.CashDesk => "Close runs and cash",
+            StaffPermissions.CashDesk => "Close runs and deposit cash",
+            StaffPermissions.CashShortfalls => "Accept cash shortfalls",
             StaffPermissions.Operations => "Operations",
             StaffPermissions.Merchants => "Merchants",
             StaffPermissions.Finance => "Money and reports",
@@ -117,6 +118,7 @@ public static class StaffJobs
         StaffPermissions.DeliveryDesk,
         StaffPermissions.Returns,
         StaffPermissions.CashDesk,
+        StaffPermissions.CashShortfalls,
         StaffPermissions.Operations,
         StaffPermissions.Merchants,
         StaffPermissions.Finance,

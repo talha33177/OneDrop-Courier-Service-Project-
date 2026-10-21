@@ -28,13 +28,13 @@
             </div>
             @Statuses.Badge(r.ParcelStatus)
         </div>
-        <div class="card-body stack">
+        <div class="card-body request-answer">
             <form method="post" asp-page-handler="Approve" asp-route-code="@r.TrackingCode" class="gap">
-                <input type="text" name="answer" maxlength="200" placeholder="A note for the merchant (optional)" style="max-width:360px" />
+                <input type="text" name="answer" maxlength="200" placeholder="A note for the merchant (optional)" />
                 <button class="btn btn-primary" type="submit" data-confirm="@(r.Kind == ParcelRequestKind.Cancel ? "The parcel comes back to its merchant, who pays the delivery and return charges." : "The rider collects the new amount, and the COD charge follows it.")" data-confirm-title="Approve this request?" data-confirm-ok="Approve">@Icons.Get("check") Approve</button>
             </form>
             <form method="post" asp-page-handler="Refuse" asp-route-code="@r.TrackingCode" class="gap">
-                <input type="text" name="answer" maxlength="200" placeholder="Why not" style="max-width:360px" required />
+                <input type="text" name="answer" maxlength="200" placeholder="Why not (the merchant reads it)" required />
                 <button class="btn btn-outline" type="submit">@Icons.Get("x") Refuse</button>
             </form>
         </div>

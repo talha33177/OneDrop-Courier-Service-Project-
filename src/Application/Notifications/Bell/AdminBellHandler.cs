@@ -13,8 +13,9 @@ namespace Application.Notifications.Bell;
 /// <summary>
 /// The admin panel's bell: what is waiting for the courier's admin, worked out when asked from what the courier already
 /// keeps. Sign-ups to approve, requests to answer, parcels a hub flagged, parcels stuck in one place, messages that
-/// failed, payouts the gateway refused, merchants asking to be paid now, online payments the gateway held for a check
-/// and merchants owed money with no payout account are listed while they wait, each as one line with its count; riders
+/// failed, payouts the gateway refused, merchants asking to be paid now, online payments the gateway held for a check,
+/// merchants owed money with no payout account, hubs' bank deposits to confirm and riders' shortfalls no hub manager has
+/// accepted are listed while they wait, each as one line with its count; riders
 /// who handed in less cash than they collected and notes merchants left on return lists are listed for the last week. A
 /// notice's time is that of the newest thing in it, so it shows as new when something joined it since the bell was last
 /// opened.
@@ -185,6 +186,36 @@ public class AdminBellHandler(IAppDbContext db, ITenantContext tenantContext, Ti
                 "wallet",
                 $"{Plural(noAccount.Count, "merchant")} owed ৳{noAccount.Sum(m => m.Amount):N0} with no payout account",
                 "/Admin/Payouts"));
+        }
+
+        var deposits = await db.CashDeposits
+            .Where(d => d.Status == CashDepositStatus.Recorded)
+            .GroupBy(d => 1)
+            .Select(g => new { Count = g.Count(), Amount = g.Sum(d => d.Amount), Latest = g.Max(d => d.Created) })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (deposits is not null)
+        {
+            notices.Add(new Notice(
+                deposits.Latest,
+                NoticeTone.Money,
+                "cash",
+                $"{Plural(deposits.Count, "bank deposit")} of ৳{deposits.Amount:N0} from the hubs to confirm",
+                "/Admin/Cash"));
+        }
+
+        var unaccepted = await db.DeliveryRuns
+            .Where(r => r.Status == RunStatus.Closed && r.CashReceived < r.CashExpected && r.ShortAcceptedOn == null)
+            .GroupBy(r => 1)
+            .Select(g => new { Count = g.Count(), Amount = g.Sum(r => r.CashExpected - r.CashReceived), Latest = g.Max(r => r.ClosedOn) })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (unaccepted is not null)
+        {
+            notices.Add(new Notice(
+                unaccepted.Latest!.Value,
+                NoticeTone.Problem,
+                "cash",
+                $"{Plural(unaccepted.Count, "rider shortfall")} of ৳{unaccepted.Amount:N0} waiting for a hub manager",
+                "/Admin/Cash"));
         }
 
         var shortRiders = await db.DeliveryRuns

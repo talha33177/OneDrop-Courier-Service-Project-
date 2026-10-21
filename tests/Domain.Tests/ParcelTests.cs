@@ -200,6 +200,7 @@ public class ParcelTests
         Assert.Equal(ParcelStatus.Returning, parcel.Status);
 
         parcel.ReceiveAt(Build.Gulshan, Today);
+        Assert.Equal(parcel.DeliveryCharge + parcel.ReturnCharge, parcel.TotalCharge);
         Assert.Equal("parcel.handBack.otherHub", parcel.ReturnToMerchant(Build.Gulshan, Now).Error?.Code);
         Assert.Equal(ScanOutcome.Recorded, parcel.DispatchTo(Build.Gulshan, Build.Mirpur).Value);
         Assert.Equal(ParcelStatus.Returning, parcel.Status);

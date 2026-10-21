@@ -221,6 +221,7 @@
             </div>
         </div>
         @await Html.PartialAsync("_PayoutTable", (d.Payouts, "/Admin/Payout/", true))
+        <partial name="_Pager" model="d.PayoutsPage" />
     </div>
     <div class="stack" style="align-self:start">
         <div class="card">
@@ -250,7 +251,7 @@
                                     </td>
                                     <td class="num strong">
                                         @Money.Taka(m.Payable)
-                                        @if (m.DueTomorrow != 0) { <div class="cell-sub">@Money.Taka(m.DueTomorrow) from today, tomorrow</div> }
+                                        @if (m.DueTomorrow != 0) { <div class="cell-sub" title="Collected today: paid with tomorrow's payouts">+ @Money.Taka(m.DueTomorrow) tomorrow</div> }
                                     </td>
                                 </tr>
                             }

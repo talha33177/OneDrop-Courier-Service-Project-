@@ -56,7 +56,7 @@
                             <td><a class="code-link" asp-page="/Hub/Parcel" asp-route-code="@p.TrackingCode">@p.TrackingCode</a><div class="cell-sub">@p.Merchant</div></td>
                             <td>@Statuses.Badge(p.Status) @if (p.Issue is { } issue) { @Statuses.Badge(issue) }@if (p.HoldUntil is { } until) { <div class="cell-sub">Held for @until.ToString("d MMM")</div> }</td>
                             <td>@if (p.HubCode is { } code) { <a asp-page="/Hub/Index" asp-route-hub="@code">@p.Where</a> } else { @p.Where }</td>
-                            <td class="nowrap">@p.MovedOn.ToString("d MMM, h:mm tt")</td>
+                            <td class="nowrap">@p.MovedOn.ToString(p.MovedOn.Year == DateTime.Now.Year ? "d MMM, h:mm tt" : "d MMM yyyy")</td>
                             <td class="num strong negative">@p.Days</td>
                         </tr>
                     }

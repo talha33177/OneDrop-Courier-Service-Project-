@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Domain.Merchants;
+using Domain.Network;
 using Domain.Parcels;
 using Domain.Payments;
+using Infrastructure.Identity;
 
 namespace Infrastructure.Persistence.Configurations;
 
@@ -47,6 +49,29 @@ public class PayoutConfiguration : IEntityTypeConfiguration<Payout>
         builder.Property(p => p.RowVersion).IsRowVersion();
         builder.HasOne<Merchant>().WithMany().HasForeignKey(p => p.MerchantId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(p => p.Number).IsUnique().HasDatabaseName("UX_Payout_Number");
+    }
+}
+
+public class CashDepositConfiguration : IEntityTypeConfiguration<CashDeposit>
+{
+    public void Configure(EntityTypeBuilder<CashDeposit> builder)
+    {
+        builder.MapTenantOwned(Schemas.Payments);
+
+        // DP-100001, from the Payments.CashDepositNumber sequence in the column default; EF reads it back after insert
+        builder.Property(d => d.Number)
+            .HasMaxLength(20)
+            .ValueGeneratedOnAdd()
+            .HasDefaultValueSql("(concat(N'DP-',NEXT VALUE FOR [Payments].[CashDepositNumber]))");
+        builder.Property(d => d.Amount).IsMoney();
+        builder.Property(d => d.Bank).HasMaxLength(CashDeposit.MaxBankLength);
+        builder.Property(d => d.SlipNumber).HasMaxLength(CashDeposit.MaxSlipLength);
+        builder.Property(d => d.Answer).HasMaxLength(CashDeposit.MaxAnswerLength);
+        builder.Property(d => d.RowVersion).IsRowVersion();
+        builder.HasOne<Hub>().WithMany().HasForeignKey(d => d.HubId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(d => d.RecordedById).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(d => d.AnsweredById).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(d => d.Number).IsUnique().HasDatabaseName("UX_CashDeposit_Number");
     }
 }
 

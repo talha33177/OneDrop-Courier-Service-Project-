@@ -22,6 +22,10 @@ public class PayoutsModel(
     [BindProperty(SupportsGet = true)]
     public PayoutStatus? Status { get; set; }
 
+    // "p": "page" is the route value Razor Pages names the page by, so it never binds
+    [BindProperty(SupportsGet = true, Name = "p")]
+    public int PageNumber { get; set; } = 1;
+
     public PayoutsOverview Data { get; private set; } = null!;
 
     public AdminOnlinePayments Online { get; private set; } = null!;
@@ -30,7 +34,7 @@ public class PayoutsModel(
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Data = await payouts.GetAsync(Status, cancellationToken);
+        Data = await payouts.GetAsync(Status, PageNumber, cancellationToken);
         Online = await online.ForCourierAsync(cancellationToken);
         Requests = await requests.OpenAsync(cancellationToken);
     }
