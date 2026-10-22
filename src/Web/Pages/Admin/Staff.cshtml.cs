@@ -99,6 +99,11 @@ public class StaffModel(StaffHandler handler, HubDirectory hubDirectory) : PageM
             ?? await AgainAsync(cancellationToken);
     }
 
+    public async Task<IActionResult> OnPostDeleteAsync(long id, CancellationToken cancellationToken)
+    {
+        return Answer(await handler.DeleteAsync(id, cancellationToken), "Deleted.") ?? await AgainAsync(cancellationToken);
+    }
+
     public async Task<IActionResult> OnPostLetBackInAsync(long id, CancellationToken cancellationToken)
     {
         var allowed = await handler.LetBackInAsync(id, cancellationToken);

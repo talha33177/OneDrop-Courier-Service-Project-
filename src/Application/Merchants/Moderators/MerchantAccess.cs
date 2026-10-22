@@ -4,8 +4,12 @@ using Domain.Merchants;
 
 namespace Application.Merchants.Moderators;
 
-/// <summary>What the signed-in merchant login may do, and whether it is the account's owner or a moderator.</summary>
-public sealed record MerchantRights(bool IsOwner, bool IsStopped, MerchantPermissions Permissions, string? Name)
+/// <summary>
+/// What the signed-in merchant login may do, and whether it is the account's owner or a moderator. After the courier
+/// has terminated the account (<paramref name="Terminated"/>) everyone in it, owner and moderators alike, opens the same
+/// pages as before but only to read them: the pages draw their forms disabled and the server refuses every post.
+/// </summary>
+public sealed record MerchantRights(bool IsOwner, bool IsStopped, MerchantPermissions Permissions, string? Name, bool Terminated = false)
 {
     /// <summary>The owner of the account: everything, including the moderators themselves.</summary>
     public static readonly MerchantRights Owner = new(true, false, MerchantPermissions.All, null);
@@ -44,8 +48,12 @@ public class MerchantAccess(IAppDbContext db, ICurrentUser currentUser)
             .AsNoTracking()
             .SingleOrDefaultAsync(m => m.UserId == userId, cancellationToken);
 
+        // Termination is the account's: every business of it is archived together
+        var terminated = currentUser.MerchantId is { } merchantId &&
+            await db.Merchants.AnyAsync(m => m.Id == merchantId && m.Archived, cancellationToken);
+
         return rights = moderator is null
-            ? MerchantRights.Owner
-            : new MerchantRights(false, moderator.Archived, moderator.Permissions, moderator.Name);
+            ? MerchantRights.Owner with { Terminated = terminated }
+            : new MerchantRights(false, moderator.Archived, moderator.Permissions, moderator.Name, terminated);
     }
 }

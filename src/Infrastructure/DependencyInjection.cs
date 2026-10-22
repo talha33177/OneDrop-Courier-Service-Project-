@@ -19,6 +19,7 @@ using Infrastructure.Persistence;
 using Infrastructure.Security;
 using Infrastructure.Seeding;
 using Infrastructure.Sms;
+using Infrastructure.Spreadsheets;
 using Infrastructure.Webhooks;
 
 namespace Infrastructure;
@@ -71,6 +72,7 @@ public static class DependencyInjection
                 configuration.GetConnectionString("Database")
                     ?? throw new InvalidOperationException("ConnectionStrings:Database is not configured.")));
         services.AddSingleton<ISecretBox, SecretBox>();
+        services.AddSingleton<IParcelSheets, ParcelSheets>();
 
         // Each courier's mail server and SSLCommerz store: its own from /Admin/Connections, else the server's
         // configuration (Email:*, Sslcommerz:*, in a git-ignored Local.json); with neither, the fakes in Development

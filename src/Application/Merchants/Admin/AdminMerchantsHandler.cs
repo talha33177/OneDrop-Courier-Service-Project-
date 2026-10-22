@@ -3,6 +3,7 @@ using Application.Abstractions;
 using Application.Common;
 using Application.Merchants.Onboarding;
 using Domain.Common;
+using Domain.Delivery;
 using Domain.Merchants;
 using Domain.Parcels;
 using Domain.Payments;
@@ -59,10 +60,24 @@ public sealed record MerchantView(
     /// <summary>Why the courier holds the account's payouts; null while they go out.</summary>
     public string? PayoutHold { get; init; }
 
+    /// <summary>The courier ended this business for good: its history stays, nothing else works.</summary>
+    public bool Terminated { get; init; }
+
     /// <summary>The adjustments the courier wrote on this business, newest first.</summary>
     public IReadOnlyList<AdjustmentRow> Adjustments { get; init; } = [];
 
     public int Cancelled { get; init; }
+
+    /// <summary>What paying now would send that the daily run would not yet: lines dated today.</summary>
+    public decimal UnpaidToday { get; init; }
+
+    /// <summary>Cash in the unpaid balance that riders collected and have not yet handed in (their run is open).</summary>
+    public decimal CashWithRiders { get; init; }
+
+    /// <summary>Parcels still on their way, and the delivery and return charges the merchant owes if they come back.</summary>
+    public int OnTheWay { get; init; }
+
+    public decimal ChargesIfReturned { get; init; }
 
     /// <summary>Parcels booked and not yet finished: with the courier, or waiting for their pickup.</summary>
     public int InProgress => Parcels - Delivered - Returned - Cancelled;
@@ -85,7 +100,7 @@ public sealed record MerchantAccountView(
 /// <summary>One business of the account; <see cref="OnTheWay"/> counts its parcels not yet finished.</summary>
 public sealed record BusinessLine(long Id, string Name, MerchantStatus Status, bool IsMain, int OnTheWay, decimal Unpaid);
 
-public sealed record ModeratorLine(string Name, string Email, MerchantPermissions Permissions, bool Stopped);
+public sealed record ModeratorLine(long Id, string Name, string Email, MerchantPermissions Permissions, bool Stopped);
 
 public sealed record PayoutAccountLine(PayoutMethod Method, string Number, string Name, bool InUse);
 
@@ -120,10 +135,11 @@ public class AdminMerchantsHandler(
         MerchantStatus? status,
         string? search,
         int page = 1,
+        bool terminated = false,
         CancellationToken cancellationToken = default)
     {
         var tenant = tenantContext.Require();
-        var merchants = db.Merchants.Where(m => !m.Archived);
+        var merchants = db.Merchants.Where(m => m.Archived == terminated);
         if (status is { } only)
         {
             merchants = merchants.Where(m => m.Status == only);
@@ -198,6 +214,25 @@ public class AdminMerchantsHandler(
         var unpaid = await db.LedgerEntries
             .Where(e => e.MerchantId == id && e.PayoutId == null)
             .SumAsync(e => (decimal?)e.Amount, cancellationToken) ?? 0;
+        var today = tenant.Today(time.GetUtcNow().UtcDateTime);
+        var unpaidToday = await db.LedgerEntries
+            .Where(e => e.MerchantId == id && e.PayoutId == null && e.EntryDate >= today)
+            .SumAsync(e => (decimal?)e.Amount, cancellationToken) ?? 0;
+        var cashWithRiders = await (
+            from attempt in db.DeliveryAttempts
+            join run in db.DeliveryRuns on attempt.RunId equals run.Id
+            where attempt.MerchantId == id && run.Status == RunStatus.Open &&
+                (attempt.Outcome == AttemptOutcome.Delivered || attempt.Outcome == AttemptOutcome.PartlyDelivered) &&
+                // Only cash still in the balance: a parcel already paid out is the courier's matter with its rider
+                db.LedgerEntries.Any(line => line.ParcelId == attempt.ParcelId && line.Kind == LedgerEntryKind.Cod && line.PayoutId == null)
+            select (decimal?)attempt.CollectedAmount)
+            .SumAsync(cancellationToken) ?? 0;
+        var coming = ParcelStatuses.ToDeliver.Append(ParcelStatus.Returning).ToList();
+        var onTheWay = await db.Parcels
+            .Where(p => p.MerchantId == id && coming.Contains(p.Status))
+            .GroupBy(p => 1)
+            .Select(g => new { Count = g.Count(), Charges = g.Sum(p => p.DeliveryCharge + p.ReturnCharge) })
+            .SingleOrDefaultAsync(cancellationToken);
 
         return new MerchantView(
             merchant.Id,
@@ -218,7 +253,12 @@ public class AdminMerchantsHandler(
                 ? await db.Merchants.Where(a => a.Id == main).Select(a => new AccountLink(a.Id, a.Name)).SingleAsync(cancellationToken)
                 : null,
             PayoutHold = merchant.PayoutHold,
+            Terminated = merchant.Archived,
             Cancelled = counts.GetValueOrDefault(ParcelStatus.Cancelled),
+            UnpaidToday = unpaidToday,
+            CashWithRiders = cashWithRiders,
+            OnTheWay = onTheWay?.Count ?? 0,
+            ChargesIfReturned = onTheWay?.Charges ?? 0,
             Adjustments = await (
                 from line in db.LedgerEntries
                 join payout in db.Payouts on line.PayoutId equals (long?)payout.Id into paid
@@ -327,7 +367,7 @@ public class AdminMerchantsHandler(
 
         return new MerchantAccountView(
             businesses,
-            [.. moderators.Select(m => new ModeratorLine(m.Name, emails.GetValueOrDefault(m.UserId, ""), m.Permissions, m.Archived))],
+            [.. moderators.Select(m => new ModeratorLine(m.Id, m.Name, emails.GetValueOrDefault(m.UserId, ""), m.Permissions, m.Archived))],
             [.. saved.Select(a => new PayoutAccountLine(a.Method, a.Number, a.Name, a.IsInUse(main)))],
             payouts,
             [.. requests.OrderByDescending(r => r.Asked)]);
@@ -356,6 +396,38 @@ public class AdminMerchantsHandler(
     public Task<Result> ReactivateAsync(long id, CancellationToken cancellationToken = default)
     {
         return ChangeAccountAsync(id, merchant => merchant.Reactivate(), cancellationToken);
+    }
+
+    /// <summary>Stops one of an account's moderators: their login is shut out at once, as when the owner stops them.</summary>
+    public async Task<Result> StopModeratorAsync(long moderatorId, CancellationToken cancellationToken = default)
+    {
+        var moderator = await db.Moderators.SingleOrDefaultAsync(m => m.Id == moderatorId, cancellationToken);
+        if (moderator is null)
+        {
+            return Error.NotFound("moderator.notFound", "That person was not found.");
+        }
+
+        moderator.Stop();
+        await db.SaveChangesAsync(cancellationToken);
+        await accounts.SetLoginEnabledAsync(moderator.UserId, enabled: false, cancellationToken);
+
+        return Result.Success();
+    }
+
+    /// <summary>Lets a stopped moderator back in.</summary>
+    public async Task<Result> LetModeratorBackInAsync(long moderatorId, CancellationToken cancellationToken = default)
+    {
+        var moderator = await db.Moderators.SingleOrDefaultAsync(m => m.Id == moderatorId, cancellationToken);
+        if (moderator is null)
+        {
+            return Error.NotFound("moderator.notFound", "That person was not found.");
+        }
+
+        moderator.LetBackIn();
+        await db.SaveChangesAsync(cancellationToken);
+        await accounts.SetLoginEnabledAsync(moderator.UserId, enabled: true, cancellationToken);
+
+        return Result.Success();
     }
 
     /// <summary>Stops the account's payouts, every business of it, with why; its lines keep counting.</summary>

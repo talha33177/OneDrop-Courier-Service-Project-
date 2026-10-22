@@ -1,36 +1,38 @@
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Application.Network.ListAreas;
+using Application.Abstractions;
 using Application.Parcels.BulkImport;
 
 namespace Web.Pages.Merchant;
 
 /// <summary>
-/// The merchant books many parcels from a CSV file (exported from a spreadsheet or a shop). Every row is checked first;
-/// nothing is booked until all rows are good, and the page lists the rows to fix.
+/// The merchant books many parcels from a filled-in Excel workbook (the template) or a CSV file. Every row is checked
+/// first; nothing is booked until all rows are good, and the page lists the rows to fix.
 /// </summary>
-public class BulkUploadModel(BulkImportHandler handler, ListAreasHandler areas) : PageModel
+public class BulkUploadModel(BulkImportHandler handler, IParcelSheets sheets) : PageModel
 {
     public const long MaxBytes = 1024 * 1024;
+
+    private const string WorkbookType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     public ImportResult? Result { get; private set; }
 
     public string? Problem { get; private set; }
 
-    public IReadOnlyList<AreaItem> Areas { get; private set; } = [];
+    public ParcelTemplate Template { get; private set; } = null!;
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Areas = await areas.HandleAsync(cancellationToken);
+        Template = await handler.TemplateAsync(cancellationToken);
     }
 
     public async Task<IActionResult> OnPostAsync(IFormFile? file, CancellationToken cancellationToken)
     {
-        Areas = await areas.HandleAsync(cancellationToken);
+        Template = await handler.TemplateAsync(cancellationToken);
         if (file is null || file.Length == 0)
         {
-            Problem = "Choose a CSV file to upload.";
+            Problem = "Choose the filled-in template (.xlsx) or a CSV file to upload.";
             return Page();
         }
 
@@ -40,8 +42,9 @@ public class BulkUploadModel(BulkImportHandler handler, ListAreasHandler areas) 
             return Page();
         }
 
-        using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8);
-        var imported = await handler.ImportAsync(await reader.ReadToEndAsync(cancellationToken), cancellationToken);
+        using var content = new MemoryStream();
+        await file.CopyToAsync(content, cancellationToken);
+        var imported = await handler.ImportFileAsync(content.ToArray(), cancellationToken);
         if (imported.IsFailure)
         {
             Problem = imported.Error!.Message;
@@ -55,8 +58,11 @@ public class BulkUploadModel(BulkImportHandler handler, ListAreasHandler areas) 
 
     public async Task<IActionResult> OnGetTemplateAsync(CancellationToken cancellationToken)
     {
-        var area = (await areas.HandleAsync(cancellationToken)).FirstOrDefault()?.Name ?? "Mirpur 10";
+        return File(sheets.Template(await handler.TemplateAsync(cancellationToken)), WorkbookType, "parcels-template.xlsx");
+    }
 
-        return File(Encoding.UTF8.GetBytes(BulkImportHandler.Template(area)), "text/csv", "parcels-template.csv");
+    public async Task<IActionResult> OnGetCsvTemplateAsync(CancellationToken cancellationToken)
+    {
+        return File(Encoding.UTF8.GetBytes((await handler.TemplateAsync(cancellationToken)).ToCsv()), "text/csv", "parcels-template.csv");
     }
 }

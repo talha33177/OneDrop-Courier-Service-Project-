@@ -12,11 +12,8 @@ public class ResetPasswordModel(PasswordResetHandler reset, ITenantContext tenan
 {
     public string Where => tenantContext.Tenant?.Name ?? "the platform";
 
-    [BindProperty(SupportsGet = true, Name = "user")]
-    public long UserId { get; set; }
-
-    [BindProperty(SupportsGet = true)]
-    public string? Token { get; set; }
+    [BindProperty(SupportsGet = true, Name = "c")]
+    public string? Code { get; set; }
 
     public string? Problem { get; private set; }
 
@@ -39,7 +36,7 @@ public class ResetPasswordModel(PasswordResetHandler reset, ITenantContext tenan
             return Page();
         }
 
-        var changed = await reset.ResetAsync(UserId, Token, password, cancellationToken);
+        var changed = await reset.ResetAsync(Code, password, cancellationToken);
         if (changed.IsFailure)
         {
             Problem = changed.Error!.Message;

@@ -17,29 +17,53 @@
 
     void HubCard(HubWork work)
     {
-        <a class="card hub-card @(work.Total == 0 ? "quiet" : "")" href="@Url.Page($"/Hub/{Model.Next}", new { hub = work.Hub.Code, mode = Model.Mode })">
+        var cash = Model.Next == "Cash";
+        var quiet = cash ? !work.CashWaiting : work.Total == 0;
+        <a class="card hub-card @(quiet ? "quiet" : "")" href="@Url.Page($"/Hub/{Model.Next}", new { hub = work.Hub.Code, mode = Model.Mode })">
             <div class="hub-card-head"><span class="code-link">@work.Hub.Code</span> <strong>@work.Hub.Name</strong></div>
             <div class="cell-sub">@work.Hub.Address</div>
             <div class="hub-card-counts">
-                @if (work.Total == 0)
+                @if (cash)
                 {
-                    <span>Nothing waiting</span>
+                    @if (work.CashAtHub > 0)
+                    {
+                        <span><strong>@Money.Taka(work.CashAtHub)</strong> to pay into the bank</span>
+                    }
+                    @if (work.Shortfalls > 0)
+                    {
+                        <span><strong>@work.Shortfalls</strong> @(work.Shortfalls == 1 ? "rider shortfall" : "rider shortfalls") to accept</span>
+                    }
+                    @if (quiet)
+                    {
+                        <span>No cash to pay in</span>
+                    }
                 }
-                @if (work.PickupsOpen > 0)
+                else
                 {
-                    <span><strong>@work.PickupsOpen</strong> @(work.PickupsOpen == 1 ? "pickup" : "pickups")</span>
-                }
-                @if (work.ToAssign > 0)
-                {
-                    <span><strong>@work.ToAssign</strong> waiting for a rider</span>
-                }
-                @if (work.Incoming > 0)
-                {
-                    <span><strong>@work.Incoming</strong> coming in</span>
-                }
-                @if (work.WithRiders > 0)
-                {
-                    <span><strong>@work.WithRiders</strong> out with riders</span>
+                    @if (work.Total == 0)
+                    {
+                        <span>Nothing waiting</span>
+                    }
+                    @if (work.PickupsOpen > 0)
+                    {
+                        <span><strong>@work.PickupsOpen</strong> @(work.PickupsOpen == 1 ? "pickup" : "pickups")</span>
+                    }
+                    @if (work.ToAssign > 0)
+                    {
+                        <span><strong>@work.ToAssign</strong> waiting for a rider</span>
+                    }
+                    @if (work.Incoming > 0)
+                    {
+                        <span><strong>@work.Incoming</strong> coming in</span>
+                    }
+                    @if (work.WithRiders > 0)
+                    {
+                        <span><strong>@work.WithRiders</strong> out with riders</span>
+                    }
+                    else if (work.OpenRuns > 0)
+                    {
+                        <span><strong>@work.OpenRuns</strong> @(work.OpenRuns == 1 ? "run" : "runs") to close</span>
+                    }
                 }
             </div>
         </a>
@@ -61,7 +85,7 @@
 
 @if (Model.Busy.Count > 0)
 {
-    <h2 class="hub-cards-title">@Icons.Get("alert") Work waiting</h2>
+    <h2 class="hub-cards-title">@Icons.Get("alert") @(Model.Next == "Cash" ? "Cash waiting" : "Work waiting")</h2>
     <div class="hub-cards">
         @foreach (var work in Model.Busy)
         {
@@ -72,7 +96,7 @@
 
 @if (Model.Quiet.Count > 0)
 {
-    <h2 class="hub-cards-title @(Model.Busy.Count > 0 ? "mt-lg" : "")">@(Model.Busy.Count > 0 ? "Other hubs" : "Nothing is waiting at any hub")</h2>
+    <h2 class="hub-cards-title @(Model.Busy.Count > 0 ? "mt-lg" : "")">@(Model.Busy.Count > 0 ? "Other hubs" : Model.Next == "Cash" ? "No hub has cash to pay in" : "Nothing is waiting at any hub")</h2>
     <div class="hub-cards">
         @foreach (var work in Model.Quiet)
         {

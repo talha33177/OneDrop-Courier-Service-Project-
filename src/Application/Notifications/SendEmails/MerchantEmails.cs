@@ -33,8 +33,12 @@ public class MerchantEmails(
         var merchant = await db.Merchants
             .IgnoreQueryFilters([QueryFilters.Merchant])
             .AsNoTracking()
-            .SingleOrDefaultAsync(m => m.Id == payload.MerchantId, cancellationToken)
-            ?? throw new InvalidOperationException($"Merchant {payload.MerchantId} of outbox message {message.Id} is gone.");
+            .SingleOrDefaultAsync(m => m.Id == payload.MerchantId, cancellationToken);
+        if (merchant is null)
+        {
+            // Deleted since: its news is out of date
+            return;
+        }
 
         var to = merchant.ContactEmail ?? await accounts.MerchantEmailAsync(merchant.AccountId, cancellationToken);
         if (to is null)
@@ -51,6 +55,8 @@ public class MerchantEmails(
             MerchantEmailKind.Approved => merchant.Status == MerchantStatus.Active ? Approved(hello, tenant) : null,
             MerchantEmailKind.Suspended => merchant.Status == MerchantStatus.Suspended ? Suspended(hello, tenant) : null,
             MerchantEmailKind.Reactivated => merchant.Status == MerchantStatus.Active ? Reactivated(hello, tenant) : null,
+            MerchantEmailKind.Terminated => merchant.Archived ? Terminated(hello, tenant) : null,
+            MerchantEmailKind.Restored => !merchant.Archived && merchant.Status == MerchantStatus.Active ? Restored(hello, tenant) : null,
             MerchantEmailKind.PayoutsHeld => merchant.PayoutHold is { } hold ? PayoutsHeld(hello, hold, tenant) : null,
             MerchantEmailKind.PayoutsReleased => merchant.PayoutHold is null ? PayoutsReleased(hello) : null,
             MerchantEmailKind.PayoutRequestRefused => await PayoutRequestRefusedAsync(payload.SubjectId, hello, tenant, cancellationToken),
@@ -145,6 +151,45 @@ public class MerchantEmails(
             Greeting = hello,
             Paragraphs = ["Your account is no longer suspended. You can book parcels again from now on."],
             Button = ("Book a parcel", links.Page("Merchant/NewParcel"))
+        };
+    }
+
+    private EmailContent Terminated(string hello, TenantInfo tenant)
+    {
+        return new EmailContent
+        {
+            Subject = $"Your {tenant.Name} account has been closed",
+            Preview = "You can no longer book parcels, but you can still look at your history. Call us if this is a mistake.",
+            Label = "Account closed",
+            Tone = EmailTone.Bad,
+            Title = "Your account has been closed",
+            Greeting = hello,
+            Paragraphs =
+            [
+                "We have closed your account. You can no longer book parcels or change anything, your API keys have stopped working, and parcels that had not been picked up yet were called off.",
+                "You can still sign in to look at your parcels, payments and history, but only to read them. Everything was settled before we closed it.",
+                $"If you think this is a mistake, please call our hotline on {tenant.SupportPhone}."
+            ],
+            Button = ("See your history", links.Page("Merchant"))
+        };
+    }
+
+    private EmailContent Restored(string hello, TenantInfo tenant)
+    {
+        return new EmailContent
+        {
+            Subject = $"Welcome back: your {tenant.Name} account has been brought back",
+            Preview = "You can sign in and book parcels again.",
+            Label = "Account back",
+            Tone = EmailTone.Good,
+            Title = "Your account is back",
+            Greeting = hello,
+            Paragraphs =
+            [
+                "We have brought your account back. You can book parcels and change your settings again, with the same email and password.",
+                "Your old API keys stay closed: make a new key under API keys if your website uses one."
+            ],
+            Button = ("Open your merchant panel", links.Page("Merchant"))
         };
     }
 

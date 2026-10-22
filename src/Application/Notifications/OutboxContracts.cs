@@ -29,7 +29,9 @@ public enum MerchantEmailKind
     ReturnListToConfirm = 10,
     PaymentReceived = 11,
     PaymentRefunded = 12,
-    Adjustment = 13
+    Adjustment = 13,
+    Terminated = 14,
+    Restored = 15
 }
 
 /// <summary>Something a merchant is told about by email; <paramref name="SubjectId"/> is the row it is about.</summary>
@@ -111,6 +113,8 @@ public static class OutboxContracts
                         MerchantNotice.Suspended => MerchantEmailKind.Suspended,
                         MerchantNotice.Reactivated => MerchantEmailKind.Reactivated,
                         MerchantNotice.PayoutsHeld => MerchantEmailKind.PayoutsHeld,
+                        MerchantNotice.Terminated => MerchantEmailKind.Terminated,
+                        MerchantNotice.Restored => MerchantEmailKind.Restored,
                         _ => MerchantEmailKind.PayoutsReleased
                     },
                     changed.Merchant.Id));

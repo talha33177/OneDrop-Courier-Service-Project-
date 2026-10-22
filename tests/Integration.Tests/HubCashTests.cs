@@ -25,6 +25,11 @@ public class HubCashTests(WebAppFactory factory) : AppTests(factory)
         await rider.SubmitAsync($"/Rider/Delivery/{code}", $"/Rider/Delivery/{code}?handler=Deliver", ("collected", "1000"), ("reason", ""));
         var runId = await QueryAsync("onedrop", db => db.DeliveryRuns.Where(r => r.RiderId == deliverer.Id).Select(r => r.Id).SingleAsync(Cancel));
 
+        // Every parcel is recorded but the run is open: the board still has work, and says it is the run to close
+        var openRun = await hub.PageAsync("/Hub?hub=KHU");
+        Assert.Contains("All recorded: 1 run to close", openRun);
+        Assert.Contains("1 run still open", openRun);
+
         // Closed ৳100 short: the cash at the hub grows by what was handed in, and the shortfall waits for a manager
         Assert.Contains("Run closed ৳100 short", await hub.SubmitAsync("/Hub/Runs?hub=KHU", $"/Hub/Runs?handler=Close&id={runId}&hub=KHU", ("received", "900")));
         Assert.Equal(before + 900, await InHandAsync());
@@ -33,8 +38,17 @@ public class HubCashTests(WebAppFactory factory) : AppTests(factory)
         Assert.DoesNotContain("handler=Accept", cash);
         var refused = await hub.PostFormAsync("/Hub/Cash?hub=KHU", $"/Hub/Cash?handler=Accept&id={runId}&hub=KHU", ("note", "Taken from pay"));
         Assert.NotEqual(HttpStatusCode.OK, refused.StatusCode);
+        Assert.Contains("Khulna hub: cash and deposits", cash);
+        Assert.Contains("Khulna hub holds", cash);
         var admin = await SignInAsync("onedrop", "admin@onedrop.test");
         Assert.Contains("waiting for a hub manager", await admin.PageAsync("/Admin/Cash"));
+
+        // Whoever looks for the cash is told which hub holds it: on the board of every hub, and in the hub chooser
+        var board = await admin.PageAsync("/Hub?hub=*");
+        Assert.Contains("Cash at the hubs", board);
+        Assert.Contains("/Hub/Cash?hub=KHU", WebUtility.HtmlDecode(board));
+        var chooser = await admin.PageAsync("/Hub/Choose?next=Cash");
+        Assert.Contains("Khulna hub", chooser);
         Assert.Contains("Shortfall accepted", await admin.SubmitAsync("/Hub/Cash?hub=KHU", $"/Hub/Cash?handler=Accept&id={runId}&hub=KHU", ("note", "Taken from Rafiq's pay")));
         var run = await QueryAsync("onedrop", db => db.DeliveryRuns.SingleAsync(r => r.Id == runId, Cancel));
         Assert.Equal("Taken from Rafiq's pay", run.ShortNote);

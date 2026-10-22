@@ -14,6 +14,10 @@ public class MerchantsModel(AdminMerchantsHandler merchants) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Search { get; set; }
 
+    /// <summary>The accounts the super admin ended, kept for the record.</summary>
+    [BindProperty(SupportsGet = true)]
+    public bool Terminated { get; set; }
+
     // "p": "page" is the route value Razor Pages names the page by, so it never binds
     [BindProperty(SupportsGet = true, Name = "p")]
     public int PageNumber { get; set; } = 1;
@@ -24,6 +28,6 @@ public class MerchantsModel(AdminMerchantsHandler merchants) : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        List = await merchants.ListAsync(Status, Search, PageNumber, cancellationToken);
+        List = await merchants.ListAsync(Status, Search, PageNumber, Terminated, cancellationToken);
     }
 }

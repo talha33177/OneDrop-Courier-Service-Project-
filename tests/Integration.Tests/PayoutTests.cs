@@ -50,6 +50,17 @@ public class PayoutTests(WebAppFactory factory) : AppTests(factory)
         var invoice = await merchant.PageAsync($"/Merchant/Payment/{payout.Number}");
         Assert.Contains(delivered, invoice);
         Assert.Contains("৳930", invoice);
+
+        // The merchant reads it as money it received; the courier reads the same payout as money it paid
+        Assert.Contains("Received", invoice);
+        Assert.Contains("You received", invoice);
+        Assert.DoesNotContain("Paid to", invoice);
+        var payments = await merchant.PageAsync("/Merchant/Payments");
+        Assert.Contains("Received", payments);
+        Assert.Contains("Sent to", payments);
+        var courierView = await (await SignInAsync("onedrop", "admin@onedrop.test")).PageAsync($"/Admin/Payout/{payout.Number}");
+        Assert.Contains("Paid to", courierView);
+        Assert.DoesNotContain("You received", courierView);
         var other = await SignInAsync("onedrop", owing.Email);
         Assert.Equal(HttpStatusCode.NotFound, (await other.GetAsync($"/Merchant/Payment/{payout.Number}")).StatusCode);
         Assert.Contains(payout.Number, await (await SignInAsync("onedrop", "admin@onedrop.test")).PageAsync("/Admin/Payouts"));
@@ -84,6 +95,12 @@ public class PayoutTests(WebAppFactory factory) : AppTests(factory)
         {
             var admin = await SignInAsync("onedrop", "admin@onedrop.test");
             var merchantPage = $"/Admin/Merchant/{shop.Id}";
+
+            // Paying ahead of the run asks first, and says what is at stake
+            var warning = WebUtility.HtmlDecode(await admin.PageAsync(merchantPage));
+            Assert.Contains("ahead of the daily run", warning);
+            Assert.Contains("still with riders whose run is not closed", warning);
+            Assert.Contains("cannot be taken back", warning);
             Assert.Contains("the gateway refused it", await admin.SubmitAsync(merchantPage, $"{merchantPage}?handler=PayNow"));
             var payout = await QueryAsync("onedrop", db => db.Payouts.SingleAsync(p => p.MerchantId == shop.Id, Cancel));
             // Another test's run may have tried it again meanwhile, so it was refused at least once

@@ -1,7 +1,11 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -120,13 +124,27 @@ public partial class IsolationTests(WebAppFactory factory) : AppTests(factory)
             // EmailsTests checks the link is emailed only for a login of the courier asked; the page answers the same for anyone
             ("/Account/ForgotPassword", async () => Assert.Contains("Check your email", await publicRival.SubmitAsync(
                 "/Account/ForgotPassword", "/Account/ForgotPassword", ("Email", shop.Email)))),
-            // A link is only good for a login of the courier it was made at: another courier's login is not found there
+            // A link is only good for a login of the courier it was made at: another courier's code finds nobody there
             ("/Account/ResetPassword", async () =>
             {
-                var shopUser = await QueryAsync("onedrop", db => db.Users.Where(u => u.Email == shop.Email).Select(u => u.Id).SingleAsync(Cancel));
-                var page = $"/Account/ResetPassword?user={shopUser}&token=x";
-                Assert.Contains("does not work any more", await publicRival.SubmitAsync(
-                    page, page, ("user", shopUser.ToString()), ("Token", "x"), ("password", "Taken#2026x"), ("confirm", "Taken#2026x")));
+                const string code = "isolationSweep23";
+                await QueryAsync("onedrop", async db =>
+                {
+                    var shopUser = await db.Users.Where(u => u.Email == shop.Email).Select(u => u.Id).SingleAsync(Cancel);
+                    db.UserTokens.Add(new IdentityUserToken<long>
+                    {
+                        UserId = shopUser,
+                        LoginProvider = "PasswordLink",
+                        Name = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code))),
+                        Value = DateTime.UtcNow.AddDays(1).Ticks.ToString(CultureInfo.InvariantCulture)
+                    });
+
+                    return await db.SaveChangesAsync(Cancel);
+                });
+                var page = $"/Account/ResetPassword?c={code}";
+                Assert.Contains("expired or was used already", await publicRival.SubmitAsync(
+                    page, page, ("c", code), ("password", "Taken#2026x"), ("confirm", "Taken#2026x")));
+                await QueryAsync("onedrop", db => db.UserTokens.Where(t => t.LoginProvider == "PasswordLink").ExecuteDeleteAsync(Cancel));
             }),
             ("/Account/Register", async () => Assert.DoesNotContain("Gulshan", await publicRival.PageAsync("/Account/Register"))),
             ("/Account/Password", async () =>

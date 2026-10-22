@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Application.Abstractions;
 using Application.Common;
+using Application.Hubs.HubOverview;
 using Application.Parcels.Stuck;
 using Domain.Delivery;
 using Domain.Merchants;
@@ -15,8 +16,34 @@ namespace Application.Notifications.Bell;
 /// mark them. Only work that is open counts, never what merely happened: the bell tells what happened. Each question is
 /// an <c>EXISTS</c>, so the menu costs a few small reads per page.
 /// </summary>
-public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenantContext tenantContext, TimeProvider time)
+public class MenuWorkHandler(
+    IAppDbContext db,
+    ICurrentUser currentUser,
+    ITenantContext tenantContext,
+    HubOverviewHandler hubOverview,
+    TimeProvider time)
 {
+    /// <summary>
+    /// For hub staff: the hub pages with work waiting at their hub, counted exactly as the hub board counts it (pickups,
+    /// parcels coming in or waiting for a rider, parcels out with riders), plus cash to pay in or a shortfall to accept.
+    /// </summary>
+    public async Task<IReadOnlySet<string>> HubAsync(CancellationToken cancellationToken = default)
+    {
+        HashSet<string> waiting = [];
+        var work = await hubOverview.ListAsync(cancellationToken);
+        if (work.Any(w => w.Total > 0))
+        {
+            waiting.Add("/Hub");
+        }
+
+        if (work.Any(w => w.CashWaiting))
+        {
+            waiting.Add("/Hub/Cash");
+        }
+
+        return waiting;
+    }
+
     /// <summary>
     /// For an admin: sign-ups to approve, requests to answer, parcels a hub flagged, parcels stuck in one place, work at
     /// the hubs (a pickup with no rider, a parcel on a hub's shelf), messages that failed, hubs' bank deposits to confirm
@@ -50,7 +77,8 @@ public class MenuWorkHandler(IAppDbContext db, ICurrentUser currentUser, ITenant
         // Today's pickups: tomorrow's list (points the van has already been to today) is not work yet
         var today = tenantContext.Require().Today(time.GetUtcNow().UtcDateTime);
         if (await db.PickupRequests.AnyAsync(r => r.Status == PickupStatus.Scheduled && r.PickupDate <= today, cancellationToken) ||
-            await db.Parcels.AnyAsync(p => p.CurrentHubId != null, cancellationToken))
+            await db.Parcels.AnyAsync(p => p.CurrentHubId != null, cancellationToken) ||
+            (await hubOverview.ListAsync(cancellationToken)).Any(w => w.Total > 0))
         {
             waiting.Add("/Hub");
         }

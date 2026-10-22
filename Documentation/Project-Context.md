@@ -151,8 +151,12 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
 
 ### Features
 - **Booking.** `CreateParcelHandler` serves the API, the form (`/Merchant/NewParcel`, a live quote beside it) and the
-  CSV upload (`/Merchant/BulkUpload`: every row booked in one transaction or none, with the rows to fix; a template to
-  download). Area by id or name; the pickup point defaults to the merchant's default; the phone is normalised to E.164;
+  bulk upload (`/Merchant/BulkUpload`: an Excel workbook or a CSV, every row booked in one transaction or none, with
+  the rows to fix). The downloadable template is a workbook (2026-10-22, `IParcelSheets`, ClosedXML in
+  `Infrastructure/Spreadsheets`): one empty "Parcels" sheet (required headings marked *, a tip and a check on each
+  column, drop-downs for area, speed and contents read from a hidden "Lists" sheet, phone kept as text) with no sample
+  parcels anywhere (the CSV template is the heading row alone); the filled workbook is uploaded as it is (sheet "Parcels", else the first), and headings may
+  be the template's titles ("Recipient name *") or the CSV names. A plain CSV template stays. Area by id or name; the pickup point defaults to the merchant's default; the phone is normalised to E.164;
   charges are snapshot from the rate card. Idempotency per merchant and request hash (same key + same body → 200 with
   the same parcel, other body → 409). A merchant not `Active` cannot book (403 `parcel.merchantNotActive`).
 - **Every panel.** The menu is one list (`Display/Menu.cs`) that draws the sidebar and the favourites: a bar under the
@@ -347,6 +351,19 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   `MerchantPermissionFilter` against the list in `Web/Authentication/MerchantPages.cs` — a merchant page missing
   from that list is the owner's alone — and the menu, favourites and dashboard only offer what the person may open.
   Moderators themselves are the owner's: a moderator never sees that page.
+- **Ending an account** (2026-10-22, super admin only: `StaffPages.SuperAdminOnly`). A rider who is stopped has their
+  login shut too, and **Delete** erases one who never worked (any run, hand-over, pickup or return list keeps them on
+  record: stop instead). On `/Admin/Merchant/{id}` the super admin **terminates** the whole account (every business:
+  archived and suspended, API keys revoked, parcels not yet picked up cancelled) once
+  no parcel is on the way and its balance is exactly ৳0, an unsent payout, an open request and an online payment
+  being settled all counting as open, and the owner is emailed; or **deletes** an account that never had a parcel,
+  ledger line, payment, pickup or return list (wiped, no record). A terminated merchant leaves the courier's lists
+  (`Merchant.Archived`) and shows on the Terminated tab of `/Admin/Merchants`; its owner and moderators **still sign
+  in, read only** (`MerchantRights.Terminated`: every page they had opens under a banner "terminated by {courier}" with
+  its forms disabled, and `MerchantPermissionFilter` refuses every post, sending it back to the same page). The super admin can **bring it
+  back** (owner emailed; its API keys stay revoked). The super admin also stops and lets back in a
+  merchant's moderators, and deletes staff who never did any work (anyone who touched a record is stopped instead,
+  since their id is on it).
 - **Sign-up and approval.** `/Account/Register` makes a `Pending` merchant with its login and default pickup point and
   signs it in; the admin approves (`Active`), suspends or reactivates on `/Admin/Merchant/{id}`, or adds a merchant
   directly (`/Admin/NewMerchant`, active at once).
@@ -365,6 +382,18 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   next), weigh a parcel on the parcel page (the charge follows the scale), pickups (assign a rider of this hub), assign parcels to a rider (opens the rider's `DeliveryRun` for the day and
   a `DeliveryAttempt` per parcel), rider closing (cash received against expected; held and refused parcels go back on
   the shelf), parcel search and page (ask for a return), label reprints.
+- **Scanning at the hub** (2026-10-22). Two ways to read a label, both feeding one queue on `/Hub/Scan`. **Hand
+  scanners** (USB or Bluetooth, in keyboard mode) type the code into the focused box and end with Enter (or Tab); each
+  scan is posted at once and answered in the order made, so a scanner faster than the server loses none. **The camera**
+  (a "Camera" button; a phone or tablet, and the way to try the page without a scanner): `wwwroot/js/scanner.js`
+  (`CameraScanner`, reusable by other pages) uses the browser's `BarcodeDetector` where there is one and otherwise
+  jsQR (`wwwroot/lib/jsqr`, Apache-2.0, loaded only when needed); it keeps reading label after label, counts a label
+  held in view once (it must leave the view for 1.5 s to count again), vibrates, can switch the torch on, and closes
+  itself when the tab is hidden. The camera needs a secure address: https, or `localhost` / `*.localhost` on the same
+  machine; the page says so otherwise. What arrives is read by `Domain.Parcels.ScanCode` (a symbology prefix such as
+  `]Q1`, control characters and spaces are dropped; a tracking link `…/Track?code=OD…` gives its code), so a QR holding
+  the link scans like the bare code. Labels carry a **QR code only**: a 1D laser scanner cannot read it (a Code 128
+  barcode on the label would be needed).
 - **Rider app.** Today: cash in hand, stops with address, phone, COD; a delivery page per parcel with Delivered,
   Partly delivered (amount and reason), On hold (reason and date), Refused (reason); pickups to collect (a pickup van
   only, and only what the van still holds).
@@ -421,7 +450,8 @@ owner's senior, who chooses the server and the address. The plan's "Today" says 
   wrote. The courier's super admins: a new sign-up to approve. Recipients who paid online (the email they give on
   the payment page, `OnlinePayment.PayerEmail`): the receipt and a refund. Logins: "Forgot your password?"
   (`/Account/ForgotPassword`, the same answer for any address, rate limited) sends a link to
-  `/Account/ResetPassword` that works once for a day; a new moderator, staff member or rider gets a welcome with a
+  `/Account/ResetPassword?c=` and a short random code (only its hash is kept, in `Identity.UserToken`; the link shows
+  no login id) that works once for a day; a new moderator, staff member or rider gets a welcome with a
   link to choose a password. Events: `MerchantAccountChanged`, `PayoutRequestRefused`, `ParcelRequestAnswered`,
   `ReturnListHandedOver`, `AdjustmentWritten` (only when the admin writes one, `LedgerEntry.TellMerchant`),
   `OnlinePaymentPaid`, `OnlinePaymentRefunded`; contracts `MerchantEmailMessage` (13 kinds), `CourierEmailMessage`,

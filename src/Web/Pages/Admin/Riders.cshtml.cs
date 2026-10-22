@@ -4,6 +4,7 @@ using Application.Delivery.Riders;
 using Application.Hubs;
 using Domain.Common;
 using Domain.Delivery;
+using Web.Authentication;
 
 namespace Web.Pages.Admin;
 
@@ -24,6 +25,9 @@ public class RidersModel(AdminRidersHandler riders, HubDirectory hubs) : PageMod
     public IReadOnlyList<HubItem> Hubs { get; private set; } = [];
 
     public string? Problem { get; private set; }
+
+    /// <summary>Deleting a rider is the super admin's alone.</summary>
+    public bool IsSuperAdmin => StaffPages.Rights(HttpContext)?.IsSuperAdmin == true;
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -72,6 +76,11 @@ public class RidersModel(AdminRidersHandler riders, HubDirectory hubs) : PageMod
     public async Task<IActionResult> OnPostActiveAsync(long id, bool active, CancellationToken cancellationToken)
     {
         return Answer(await riders.SetActiveAsync(id, active, cancellationToken), active ? "Rider restarted." : "Rider stopped: no new work is assigned to them.");
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(long id, CancellationToken cancellationToken)
+    {
+        return Answer(await riders.DeleteAsync(id, cancellationToken), "Rider deleted.");
     }
 
     private IActionResult Answer(Result result, string done)

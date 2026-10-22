@@ -23,8 +23,8 @@ public class AccountEmails(ITenantContext tenantContext, IEmailSender email, IUs
             return;
         }
 
-        var token = await accounts.PasswordTokenAsync(login.UserId, cancellationToken);
-        var choose = links.Page($"Account/ResetPassword?user={login.UserId}&token={Uri.EscapeDataString(token)}");
+        var code = await accounts.PasswordLinkCodeAsync(login.UserId, cancellationToken);
+        var choose = links.Page($"Account/ResetPassword?c={code}");
         var content = payload.Kind == AccountEmailKind.PasswordReset
             ? new EmailContent
             {

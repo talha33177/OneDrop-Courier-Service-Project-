@@ -241,6 +241,45 @@ public class Merchant : TenantEntity, IArchivable
         return Result.Success();
     }
 
+    /// <summary>
+    /// The courier ends the business: it can no longer book or change anything (its people only read their history), it
+    /// leaves the courier's lists and takes no webhooks. Its parcels, ledger and payouts stay on record. The courier's
+    /// settlement of what is owed is the caller's to check.
+    /// </summary>
+    public void Terminate()
+    {
+        Status = MerchantStatus.Suspended;
+        Archived = true;
+        WebhookUrl = null;
+
+        // One email to the owner for the account, not one for each of its businesses
+        if (IsMainProfile)
+        {
+            Raise(new MerchantAccountChanged(this, MerchantNotice.Terminated));
+        }
+    }
+
+    /// <summary>
+    /// The courier brings a terminated business back: it is active again and listed. What termination shut stays shut
+    /// (its API keys, moderators and the parcels called off), because those were decisions of their own.
+    /// </summary>
+    public Result Restore()
+    {
+        if (!Archived)
+        {
+            return Error.Conflict("merchant.restore", $"{Name} has not been terminated.");
+        }
+
+        Archived = false;
+        Status = MerchantStatus.Active;
+        if (IsMainProfile)
+        {
+            Raise(new MerchantAccountChanged(this, MerchantNotice.Restored));
+        }
+
+        return Result.Success();
+    }
+
     public Result Reactivate()
     {
         if (Status != MerchantStatus.Suspended)
@@ -358,7 +397,9 @@ public enum MerchantNotice
     Suspended = 3,
     Reactivated = 4,
     PayoutsHeld = 5,
-    PayoutsReleased = 6
+    PayoutsReleased = 6,
+    Terminated = 7,
+    Restored = 8
 }
 
 /// <summary>A merchant account signed up, was approved, suspended or let back in, or had its payouts held or released.</summary>

@@ -17,7 +17,7 @@
 
 <partial name="_Alerts" />
 
-@if (!Model.CanBook)
+@if (!Model.CanBook && Model.HttpContext.Items[MerchantPages.RightsKey] is not MerchantRights { Terminated: true })
 {
     <div class="alert alert-warning">@Icons.Get("clock")<div>Your account is not active yet, so parcels cannot be booked. You can try the form and see the charges.</div></div>
 }

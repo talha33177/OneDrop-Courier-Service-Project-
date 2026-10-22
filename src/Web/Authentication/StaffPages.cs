@@ -89,6 +89,21 @@ public static class StaffPages
             ["/Admin/Staff"] = StaffPermissions.Staff
         };
 
+    /// <summary>
+    /// Buttons ("page/handler") only a super admin may press, on pages other staff may open: ending a rider's or a
+    /// merchant's account for good is the courier's owner's decision, whatever a job's permissions say.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SuperAdminOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "/Admin/Riders/Delete",
+        "/Admin/Merchant/Terminate",
+        "/Admin/Merchant/Restore",
+        "/Admin/Merchant/Delete",
+        "/Admin/Merchant/StopModerator",
+        "/Admin/Merchant/LetModeratorIn",
+        "/Admin/Staff/Delete"
+    };
+
     /// <summary>Where the rights of the person signed in are kept for the rest of the request.</summary>
     public const string RightsKey = "staff-rights";
 
@@ -140,6 +155,7 @@ public class StaffPermissionFilter(StaffAccess access) : IAsyncPageFilter
             ?? "";
         var handler = context.HandlerMethod?.Name;
         var allowed = StaffPages.MayOpen(rights, page) &&
+            !StaffPages.SuperAdminOnly.Contains($"{page}/{handler}") &&
             (handler is null || !StaffPages.Needs.TryGetValue($"{page}/{handler}", out var needed) || rights.May(needed));
         if (!allowed)
         {

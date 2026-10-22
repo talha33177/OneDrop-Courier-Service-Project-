@@ -10,7 +10,7 @@
 <div class="page-head">
     <div>
         <div class="breadcrumb"><a asp-page="/Admin/Merchants">Merchants</a> <span>/</span> <span>@m.Profile.Name</span></div>
-        <h1>@m.Profile.Name @Statuses.Badge(m.Status)</h1>
+        <h1>@m.Profile.Name @if (m.Terminated) { <span class="badge badge-cancel">Terminated</span> } else { @Statuses.Badge(m.Status) }</h1>
         <p>@m.Profile.OwnerName · joined @m.Joined.ToString("d MMM yyyy")@(m.LoginEmail is null ? "" : $" · signs in as {m.LoginEmail}")</p>
         @if (m.Account is { } account)
         {
@@ -19,22 +19,29 @@
     </div>
     <div class="page-actions">
         <a class="btn btn-outline" asp-page="/Hub/Parcels" asp-route-merchantId="@m.Id">@Icons.Get("package") Parcels</a>
-        @if (m.Status == MerchantStatus.Pending)
+        @if (!m.Terminated)
         {
-            <form method="post" asp-page-handler="Approve" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-primary" type="submit">@Icons.Get("check") Approve</button></form>
-        }
-        @if (m.Status == MerchantStatus.Suspended)
-        {
-            <form method="post" asp-page-handler="Reactivate" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-primary" type="submit">Reactivate</button></form>
-        }
-        else
-        {
-            <form method="post" asp-page-handler="Suspend" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-danger" type="submit" data-confirm="They cannot book parcels until you reactivate them." data-confirm-title="Suspend this merchant?" data-confirm-ok="Suspend">Suspend</button></form>
+            @if (m.Status == MerchantStatus.Pending)
+            {
+                <form method="post" asp-page-handler="Approve" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-primary" type="submit">@Icons.Get("check") Approve</button></form>
+            }
+            @if (m.Status == MerchantStatus.Suspended)
+            {
+                <form method="post" asp-page-handler="Reactivate" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-primary" type="submit">Reactivate</button></form>
+            }
+            else
+            {
+                <form method="post" asp-page-handler="Suspend" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-danger" type="submit" data-confirm="They cannot book parcels until you reactivate them." data-confirm-title="Suspend this merchant?" data-confirm-ok="Suspend">Suspend</button></form>
+            }
         }
     </div>
 </div>
 
 <partial name="_Alerts" />
+@if (m.Terminated)
+{
+    <div class="alert alert-warning">@Icons.Get("alert")<div><strong>This account was terminated.</strong> Its people can still sign in, but only to read their history: they cannot book or change anything, and its API keys are shut. Its parcels, money and payouts stay here as a record.@(Model.IsSuperAdmin ? " The super admin can bring it back at the bottom of this page." : "")</div></div>
+}
 
 <div class="stats">
     <div class="stat"><div class="stat-icon blue">@Icons.Get("package")</div><div><div class="stat-label">Parcels</div><div class="stat-value">@m.Parcels</div></div></div>
@@ -123,13 +130,26 @@
         {
             <div class="table-wrap">
                 <table class="table compact">
-                    <thead><tr><th>Person</th><th>May use</th></tr></thead>
+                    <thead><tr><th>Person</th><th>May use</th>@if (Model.IsSuperAdmin) { <th></th> }</tr></thead>
                     <tbody>
                         @foreach (var person in whole.Moderators)
                         {
                             <tr>
                                 <td class="cell-main">@person.Name<div class="cell-sub">@person.Email</div>@if (person.Stopped) { <span class="badge badge-cancel">Stopped</span> }</td>
                                 <td>@string.Join(", ", Web.Pages.Merchant.ModeratorsModel.Choices.Where(c => person.Permissions.HasFlag(c.Permission)).Select(c => c.Label))</td>
+                                @if (Model.IsSuperAdmin)
+                                {
+                                    <td class="text-right nowrap">
+                                        @if (person.Stopped)
+                                        {
+                                            <form method="post" asp-page-handler="LetModeratorIn" asp-route-id="@m.Id" asp-route-moderatorId="@person.Id" class="inline-form"><button class="btn btn-ghost btn-sm" type="submit">Let back in</button></form>
+                                        }
+                                        else
+                                        {
+                                            <form method="post" asp-page-handler="StopModerator" asp-route-id="@m.Id" asp-route-moderatorId="@person.Id" class="inline-form"><button class="btn btn-ghost btn-sm" type="submit" data-confirm="@($"{person.Name} is signed out of this account and cannot sign in until let back in.")" data-confirm-title="@($"Stop {person.Name}?")" data-confirm-ok="Stop" data-confirm-tone="danger">Stop</button></form>
+                                        }
+                                    </td>
+                                }
                             </tr>
                         }
                     </tbody>
@@ -145,7 +165,7 @@
         <div class="page-actions">
             @if (m.PayoutHold is null && m.Unpaid > 0)
             {
-                <form method="post" asp-page-handler="PayNow" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-outline btn-sm" type="submit" data-confirm="Everything not yet paid out, today's parcels too, goes to the payout account in one payout now." data-confirm-title="Pay @m.Profile.Name now?" data-confirm-ok="Pay now" data-confirm-tone="calm">@Icons.Get("send") Pay now</button></form>
+                <form method="post" asp-page-handler="PayNow" asp-route-id="@m.Id" class="inline-form"><button class="btn btn-outline btn-sm" type="submit" data-confirm="This sends ৳@m.Unpaid.ToString("N0") to the payout account at once, ahead of the daily run. ৳@m.UnpaidToday.ToString("N0") of it is today's, which would otherwise wait until tomorrow. ৳@m.CashWithRiders.ToString("N0") of the cash is still with riders whose run is not closed. @m.OnTheWay parcels are still on their way: if they come back, the merchant owes ৳@m.ChargesIfReturned.ToString("N0") in charges. A payout cannot be taken back once the gateway has sent it." data-confirm-title="Pay @m.Profile.Name before the daily run?" data-confirm-ok="Yes, pay now">@Icons.Get("send") Pay now</button></form>
             }
         </div>
     </div>
@@ -286,3 +306,31 @@
     <div class="card-head"><h2>Latest parcels</h2><a class="btn btn-ghost btn-sm" asp-page="/Hub/Parcels" asp-route-merchantId="@m.Id">View all @Icons.Get("arrow-right")</a></div>
     @await Html.PartialAsync("_ParcelTable", (Model.Recent, "/Hub/Parcel/", false, false))
 </div>
+
+@if (Model.IsSuperAdmin)
+{
+    <div class="card mt-lg">
+        <div class="card-head"><div><h2>@Icons.Get("alert") End this account</h2><p>Super admin only. It applies to the whole account@(m.Account is null && whole.Businesses.Count > 1 ? $", all {whole.Businesses.Count} businesses" : "").</p></div></div>
+        <div class="card-body">
+            <div class="grid grid-2">
+                <div>
+                    <h3 class="mb">Terminate: close it, keep the record</h3>
+                    <p class="muted">For a shop that has worked here. It moves to the Terminated tab. Its owner and moderators can still sign in, but only to read their parcels and payments, under a warning that the account was terminated: they cannot book or change anything, and the API keys stop. Parcels not yet picked up are called off, and the merchant is emailed. Parcels still on the way and any balance owed either way must be settled first. You can bring it back.</p>
+                    @if (!m.Terminated)
+                    {
+                        <form method="post" asp-page-handler="Terminate" asp-route-id="@m.Id"><button class="btn btn-danger" type="submit" data-confirm="@($"{m.Profile.Name} can still sign in to read its history but cannot book or change anything, its API keys stop working and it is emailed. You can bring it back later from the Terminated tab.")" data-confirm-title="Terminate this merchant?" data-confirm-ok="Terminate" data-confirm-tone="danger">Terminate account</button></form>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Restore" asp-route-id="@m.Id"><button class="btn btn-primary" type="submit" data-confirm="@($"{m.Profile.Name} can book and change things again, and is emailed. Its API keys stay closed.")" data-confirm-title="Bring this merchant back?" data-confirm-ok="Bring back" data-confirm-tone="calm">Bring account back</button></form>
+                    }
+                </div>
+                <div>
+                    <h3 class="mb">Delete: erase it, no record</h3>
+                    <p class="muted">Only for an account that never did anything, such as a spam sign-up or a merchant added by mistake. It is wiped with its logins and cannot be brought back. Refused once it has a parcel, a payment or any money on its ledger: terminate it instead.</p>
+                    <form method="post" asp-page-handler="Delete" asp-route-id="@m.Id"><button class="btn btn-outline text-danger" type="submit" data-confirm="@($"{m.Profile.Name} and its logins are erased for good.")" data-confirm-title="Delete this merchant?" data-confirm-ok="Delete" data-confirm-tone="danger">Delete account</button></form>
+                </div>
+            </div>
+        </div>
+    </div>
+}

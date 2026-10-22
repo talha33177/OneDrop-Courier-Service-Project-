@@ -211,6 +211,49 @@ public class StaffHandler(
         return Result.Success();
     }
 
+    /// <summary>
+    /// Erases someone who never did any work here, with their login (a person added by mistake, or who never started).
+    /// Anyone who has scanned, assigned or changed a record stays on it as the one who did it, so they can only be
+    /// stopped. Super admins only, under the same guards as stopping: not yourself, and never the last super admin.
+    /// </summary>
+    public async Task<Result> DeleteAsync(long userId, CancellationToken cancellationToken = default)
+    {
+        var me = await access.CurrentAsync(cancellationToken);
+        if (!me.IsSuperAdmin)
+        {
+            return Above;
+        }
+
+        var person = await FindAsync(me, userId, cancellationToken);
+        if (person.IsFailure)
+        {
+            return person.Error!;
+        }
+
+        if (person.Value.Person.IsSuperAdmin)
+        {
+            var allowed = MayLeaveAdmins(person.Value);
+            if (allowed.IsFailure)
+            {
+                return allowed;
+            }
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.StaffMembers.Where(s => s.UserId == userId).ExecuteDeleteAsync(cancellationToken);
+        var deleted = await accounts.DeleteLoginAsync(userId, cancellationToken);
+        if (deleted.IsFailure)
+        {
+            return Error.Conflict(
+                "staff.delete",
+                $"{person.Value.Person.Name} has worked here, so they stay on the record of what they did. Stop them instead.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return Result.Success();
+    }
+
     public async Task<Result> LetBackInAsync(long userId, CancellationToken cancellationToken = default)
     {
         var person = await FindAsync(await access.CurrentAsync(cancellationToken), userId, cancellationToken);

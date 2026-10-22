@@ -148,6 +148,8 @@ public class FailedMessagesHandler(IAppDbContext db, ITenantContext tenantContex
             MerchantEmailKind.ReturnListToConfirm => "Returns handed back, to confirm",
             MerchantEmailKind.PaymentReceived => "Its online payment was received",
             MerchantEmailKind.PaymentRefunded => "Its online payment was refunded",
+            MerchantEmailKind.Terminated => "Its account was terminated",
+            MerchantEmailKind.Restored => "Its account was brought back",
             _ => "Its balance was adjusted"
         };
     }

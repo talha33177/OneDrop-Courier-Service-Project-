@@ -45,6 +45,9 @@ public static class MerchantPages
             ["/Merchant/Picture"] = MerchantPermissions.None
         };
 
+    /// <summary>The one button that posts but changes nothing of the account's: working in another of its businesses.</summary>
+    public const string SwitchBusiness = "/Merchant/Businesses/Open";
+
     /// <summary>Where the rights of the person signed in are kept for the rest of the request.</summary>
     public const string RightsKey = "merchant-rights";
 }
@@ -64,6 +67,24 @@ public class MerchantPermissionFilter(MerchantAccess access) : IAsyncPageFilter
     {
         var rights = await access.CurrentAsync(context.HttpContext.RequestAborted);
         context.HttpContext.Items[MerchantPages.RightsKey] = rights;
+        var page = (context.ActionDescriptor as CompiledPageActionDescriptor)?.ViewEnginePath
+            ?? context.ActionDescriptor.DisplayName
+            ?? "";
+        if (rights.Terminated && HttpMethods.IsPost(context.HttpContext.Request.Method) && !IsBusinessSwitch(context, page))
+        {
+            // A form on a terminated account's page is disabled, so only a forged post gets here: send it back where it
+            // came from, with the reason
+            if (context.HandlerInstance is PageModel model)
+            {
+                model.TempData["Problem"] = "Your account has been terminated, so it can only be read now. " +
+                    "Call the hotline if you think this is a mistake.";
+            }
+
+            context.Result = new LocalRedirectResult(context.HttpContext.Request.Path + context.HttpContext.Request.QueryString);
+
+            return;
+        }
+
         if (rights.IsOwner)
         {
             await next();
@@ -71,9 +92,6 @@ public class MerchantPermissionFilter(MerchantAccess access) : IAsyncPageFilter
             return;
         }
 
-        var page = (context.ActionDescriptor as CompiledPageActionDescriptor)?.ViewEnginePath
-            ?? context.ActionDescriptor.DisplayName
-            ?? "";
         if (rights.IsStopped || !MerchantPages.Needs.TryGetValue(page, out var needed) || !rights.May(needed))
         {
             context.Result = new ForbidResult();
@@ -82,5 +100,10 @@ public class MerchantPermissionFilter(MerchantAccess access) : IAsyncPageFilter
         }
 
         await next();
+    }
+
+    private static bool IsBusinessSwitch(PageHandlerExecutingContext context, string page)
+    {
+        return $"{page}/{context.HandlerMethod?.Name}".Equals(MerchantPages.SwitchBusiness, StringComparison.OrdinalIgnoreCase);
     }
 }

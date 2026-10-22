@@ -19,6 +19,8 @@
     var isRider = user.IsInRole(Roles.Rider);
     var isPlatform = user.IsInRole(Roles.PlatformAdmin);
     var rights = Context.Items[MerchantPages.RightsKey] as MerchantRights;
+    // A terminated account signs in to read its history, and nothing else
+    var terminated = isMerchant && rights is { Terminated: true };
     // The courier's staff: a super admin, or a job at one hub or at head office (read once per request)
     var staff = isAdmin || isHub ? await StaffAccess.CurrentAsync() : null;
     var atHeadOffice = staff is { AtHeadOffice: true };
@@ -49,6 +51,7 @@
     // The menu places where work waits for this person, marked like the bell
     IReadOnlySet<string> work = tenant is null ? new HashSet<string>()
         : staff is not null && atHeadOffice ? await MenuWork.AdminAsync()
+        : staff is not null ? await MenuWork.HubAsync()
         : isMerchant && CurrentUser.MerchantId is not null ? await MenuWork.MerchantAsync()
         : isRider ? await MenuWork.RiderAsync()
         : new HashSet<string>();
@@ -137,7 +140,7 @@
                 </nav>
             }
 
-            @if (isMerchant)
+            @if (isMerchant && !terminated)
             {
                 <div class="sidebar-help">
                     <strong>@Icons.Get("bulb") How it works</strong>
@@ -187,7 +190,7 @@
                 <a class="icon-btn topbar-back no-print" href="@(menu.FirstOrDefault()?.Items.FirstOrDefault()?.Href ?? "/")" data-back title="Go back" aria-label="Go back">@Icons.Get("arrow-left")</a>
                 <div class="topbar-title">@ViewData["Title"]</div>
                 <div class="topbar-actions">
-                    @if (isMerchant)
+                    @if (isMerchant && !terminated)
                     {
                         @* The check a shop makes before sending any parcel cash on delivery, so it is on every page. *@
                         <form class="topbar-check no-print" method="get" asp-page="/Merchant/FraudCheck">
@@ -281,7 +284,7 @@
                                 <partial name="_BusinessSwitch" model="(businesses, currentBusiness.Id)" />
                             }
                             <nav class="user-menu-links">
-                                @if (isMerchant)
+                                @if (isMerchant && !terminated)
                                 {
                                     <a href="/Merchant/Settings">@Icons.Get("store") Business profile</a>
                                     <a href="/Merchant/Settings#payout">@Icons.Get("wallet") Payout account</a>
@@ -324,7 +327,17 @@
                     </details>
                 </nav>
             }
-            <main class="content">
+            <main class="content @(terminated ? "is-readonly" : "")">
+                @if (terminated)
+                {
+                    <div class="alert alert-error spread" role="alert">
+                        <div class="alert-text">@Icons.Get("alert")<div><strong>This account was terminated by @(tenant?.Name ?? "the courier").</strong> You can still look at your parcels, payments and history, but you cannot book parcels or change anything.@if (tenant is not null) { <text> If you think this is a mistake, call us.</text> }</div></div>
+                        @if (tenant is not null)
+                        {
+                            <a class="btn btn-primary btn-sm" href="tel:@tenant.SupportPhone">@Icons.Get("phone") Call @tenant.SupportPhone</a>
+                        }
+                    </div>
+                }
                 @RenderBody()
             </main>
             <footer class="app-credit no-print">
@@ -333,6 +346,19 @@
         </div>
     </div>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    @if (terminated)
+    {
+        @* Every page opens as it always does, but nothing on it can change anything: forms that post are greyed out and their fields and buttons disabled (the server refuses a forged post as well). Links stay, so a page can be seen disabled. *@
+        <style>
+            main.is-readonly form[method="post" i]:not([action*="handler=Open"]) { opacity: .55; filter: grayscale(.4); }
+        </style>
+        <script>
+            document.querySelectorAll('main.is-readonly form[method="post" i]:not([action*="handler=Open"])').forEach(function (form) {
+                form.querySelectorAll('button, input, select, textarea').forEach(function (field) { field.disabled = true; });
+                form.title = "Your account is terminated: it can only be read.";
+            });
+        </script>
+    }
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

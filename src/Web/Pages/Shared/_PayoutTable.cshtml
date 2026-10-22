@@ -3,7 +3,7 @@
 @* Payouts made: invoice number, the days they cover, cash collected, charges and what was sent *@
 @if (Model.Rows.Count == 0)
 {
-    <div class="empty">@Icons.Get("wallet")<h3>No payouts yet</h3><p>Payouts are made every day for the parcels finished the day before.</p></div>
+    <div class="empty">@Icons.Get("wallet")<h3>No payouts yet</h3><p>@(Model.ShowMerchant ? "Payouts are made every day for the parcels finished the day before." : "We pay you every morning for the parcels finished the day before. Your first payout appears here.")</p></div>
 }
 else
 {
@@ -20,8 +20,8 @@ else
                     <th class="num">Parcels</th>
                     <th class="num">Cash collected</th>
                     <th class="num">Charges</th>
-                    <th class="num">Paid</th>
-                    <th>To</th>
+                    <th class="num">@(Model.ShowMerchant ? "Paid" : "You get")</th>
+                    <th>@(Model.ShowMerchant ? "To" : "Sent to")</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -40,7 +40,7 @@ else
                         <td class="num negative">@Money.Taka(-row.ChargesTotal)</td>
                         <td class="num strong">@Money.Taka(row.Amount)@if (row.AdjustmentsTotal != 0) { <div class="cell-sub">@Money.Taka(row.AdjustmentsTotal) adjusted</div> }</td>
                         <td>@row.Method.DisplayName()<div class="cell-sub">@row.Account</div></td>
-                        <td>@Statuses.Badge(row.Status, row.IsStuck)</td>
+                        <td>@Statuses.Badge(row.Status, row.IsStuck, !Model.ShowMerchant)</td>
                     </tr>
                 }
             </tbody>

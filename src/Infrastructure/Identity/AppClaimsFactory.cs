@@ -30,7 +30,7 @@ public class AppClaimsFactory(
             // The merchant filter would hide them while the login works in one business; the account is the point here
             var businesses = await db.Merchants
                 .IgnoreQueryFilters([QueryFilters.Merchant])
-                .Where(m => m.MainMerchantId == account && !m.Archived)
+                .Where(m => m.MainMerchantId == account)
                 .Select(m => m.Id)
                 .ToListAsync();
             if (businesses.Count > 0)

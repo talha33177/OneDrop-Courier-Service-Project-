@@ -42,7 +42,20 @@
                     <input asp-for="Code" autofocus autocomplete="off" spellcheck="false" placeholder="Scan or type the code" aria-label="Tracking code or bag number" />
                 </div>
                 <button class="btn btn-primary" type="submit">@Icons.Get(current.Icon) @current.Name</button>
+                <button class="btn" type="button" data-camera-open hidden>@Icons.Get("camera") Camera</button>
             </form>
+
+            <div class="camera-scan" data-camera hidden>
+                <div class="camera-frame" data-camera-frame>
+                    <video playsinline muted aria-label="Camera view"></video>
+                    <div class="camera-guide" aria-hidden="true"></div>
+                </div>
+                <div class="camera-bar">
+                    <span class="muted" data-camera-status aria-live="polite">Starting the camera…</span>
+                    <button type="button" class="btn btn-ghost btn-sm" data-camera-torch hidden>@Icons.Get("zap") <span>Light</span></button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-camera-close>@Icons.Get("x") Close camera</button>
+                </div>
+            </div>
 
             <div data-scan-result aria-live="polite">
                 @if (Model.Answer is { } answer)
@@ -77,7 +90,8 @@
         <div class="card-body">
             <ol class="timeline">
                 <li><span class="dot"></span><div class="tl-title">Pick the mode first</div><div class="tl-meta">Receive when parcels or bags arrive, Bag when parcels leave for another hub, Hand back when a merchant collects returns.</div></li>
-                <li><span class="dot"></span><div class="tl-title">Scan one label at a time</div><div class="tl-meta">A hand scanner types the code and presses Enter for you. The box stays ready for the next one.</div></li>
+                <li><span class="dot"></span><div class="tl-title">Scan as fast as you like</div><div class="tl-meta">A hand scanner types the code and presses Enter for you. Scans are answered in the order they were made, so none is lost if you are quicker than the screen.</div></li>
+                <li><span class="dot"></span><div class="tl-title">No hand scanner? Use the camera</div><div class="tl-meta">Press Camera on a phone or tablet and hold a label in front of it. It keeps reading label after label until you close it.</div></li>
                 <li><span class="dot"></span><div class="tl-title">Listen and look</div><div class="tl-meta">A high tone and green card mean done. A low buzz and red card mean stop and read the message.</div></li>
                 <li><span class="dot"></span><div class="tl-title">Scanning twice is safe</div><div class="tl-meta">A parcel already recorded here is simply reported, nothing changes.</div></li>
             </ol>
@@ -86,6 +100,7 @@
 </div>
 
 @section Scripts {
+    <script src="~/js/scanner.js" data-jsqr="@Url.Content("~/lib/jsqr/jsQR.js")" asp-append-version="true"></script>
     <script>
     (() => {
         const form = document.querySelector("[data-scan-form]");
@@ -128,6 +143,7 @@
 
             try {
                 audio ??= new AudioContext();
+                audio.resume();
                 const notes = tone === "success" ? [[880, 0, .09], [1320, .1, .12]] : tone === "info" ? [[660, 0, .14]] : [[200, 0, .16], [170, .2, .22]];
                 for (const [frequency, at, length] of notes) {
                     const oscillator = audio.createOscillator();
@@ -200,44 +216,178 @@
             remember(result.querySelector(".scan-answer"));
         }
 
-        form.addEventListener("submit", async event => {
-            event.preventDefault();
-            if (!input.value.trim()) {
-                input.focus();
+        // An answer made here, when the server could not give one (no connection, a signed-out session)
+        const showLocal = (title, detail) => {
+            const box = document.createElement("div");
+            box.className = "scan-answer error";
+            box.setAttribute("role", "status");
+            box.dataset.tone = "error";
+            box.dataset.code = "";
+            box.innerHTML = `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icons.error}</svg><div><h2></h2><p></p></div>`;
+            box.querySelector("h2").textContent = title;
+            box.querySelector("p").textContent = detail;
+            const fresh = document.createElement("div");
+            fresh.dataset.scanResult = "";
+            fresh.setAttribute("aria-live", "polite");
+            fresh.append(box);
+            result.replaceWith(fresh);
+            result = fresh;
+            beep("error");
+            remember(box);
+        };
+
+        const post = async code => {
+            const body = new FormData(form);
+            body.set("Code", code);
+            let response;
+            try {
+                response = await fetch(form.action, { method: "POST", body, credentials: "same-origin" });
+            } catch {
+                showLocal(`${code} was not recorded`, "The server could not be reached. Check the connection and scan it again.");
+
                 return;
             }
 
-            button.classList.add("is-busy");
-            try {
-                const response = await fetch(form.action, { method: "POST", body: new FormData(form), credentials: "same-origin" });
-                if (!response.ok || response.redirected) {
-                    throw new Error("Scan not answered");
-                }
+            if (response.redirected) {
+                // Signed out meanwhile: the sign-in page
+                location.assign(response.url);
 
-                const page = new DOMParser().parseFromString(await response.text(), "text/html");
-                const fresh = page.querySelector("[data-scan-result]");
-                result.replaceWith(fresh);
-                result = fresh;
-                const answer = fresh.querySelector(".scan-answer");
-                beep(answer?.dataset.tone);
-                remember(answer);
-                input.value = "";
-            } catch {
-                // Fall back to an ordinary post
-                HTMLFormElement.prototype.submit.call(form);
-            } finally {
-                button.classList.remove("is-busy");
+                return;
+            }
+
+            if (!response.ok) {
+                showLocal(`${code} was not recorded`, response.status === 400 ? "This page is out of date. Reload it and scan again." : "The server did not accept the scan. Scan it again.");
+
+                return;
+            }
+
+            const page = new DOMParser().parseFromString(await response.text(), "text/html");
+            const fresh = page.querySelector("[data-scan-result]");
+            result.replaceWith(fresh);
+            result = fresh;
+            const answer = fresh.querySelector(".scan-answer");
+            beep(answer?.dataset.tone);
+            remember(answer);
+        };
+
+        // Scans wait their turn: a hand scanner can read the next label before the server has answered the last one,
+        // and a camera can see the next parcel while the last is still being recorded
+        const queue = [];
+        let working = false;
+        const pump = async () => {
+            if (working) {
+                return;
+            }
+
+            working = true;
+            button.classList.add("is-busy");
+            while (queue.length) {
+                await post(queue.shift());
+            }
+
+            working = false;
+            button.classList.remove("is-busy");
+            if (!scanner?.running) {
                 input.focus();
+            }
+        };
+        const enqueue = code => {
+            queue.push(code);
+            pump();
+        };
+
+        const send = () => {
+            const code = input.value.trim();
+            input.value = "";
+            if (code) {
+                enqueue(code);
+            } else {
+                input.focus();
+            }
+        };
+        form.addEventListener("submit", event => {
+            event.preventDefault();
+            send();
+        });
+
+        // Some hand scanners end a code with Tab instead of Enter
+        input.addEventListener("keydown", event => {
+            if (event.key === "Tab" && input.value.trim()) {
+                event.preventDefault();
+                send();
             }
         });
 
         // Typing anywhere goes to the scan box, so a scanner never types into nothing
         addEventListener("keydown", event => {
             if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey &&
-                !event.target.closest("input, select, textarea, button, a")) {
+                !event.target.closest("input, select, textarea")) {
                 input.focus();
             }
         });
+
+        // The camera: for a phone or tablet at the hub, and for trying this page without a hand scanner
+        const camera = document.querySelector("[data-camera]");
+        const openButton = document.querySelector("[data-camera-open]");
+        const closeButton = document.querySelector("[data-camera-close]");
+        const torchButton = document.querySelector("[data-camera-torch]");
+        const frame = document.querySelector("[data-camera-frame]");
+        const status = document.querySelector("[data-camera-status]");
+        let torchOn = false;
+        let scanner;
+
+        const setTorch = on => {
+            torchOn = on;
+            torchButton.classList.toggle("is-on", on);
+        };
+        scanner = CameraScanner.create({
+            video: camera.querySelector("video"),
+            onCode: code => {
+                navigator.vibrate?.(40);
+                frame.classList.add("hit");
+                setTimeout(() => frame.classList.remove("hit"), 350);
+                enqueue(code);
+            },
+            onTorch: can => {
+                torchButton.hidden = !can;
+                setTorch(false);
+            },
+            onStop: () => {
+                camera.hidden = true;
+                openButton.hidden = false;
+            }
+        });
+
+        openButton.hidden = false;
+        openButton.addEventListener("click", async () => {
+            // The press is the moment a browser lets this page make sound, for the camera's scans to be heard
+            try {
+                audio ??= new AudioContext();
+                audio.resume();
+            } catch {
+                // No sound on this device
+            }
+
+            camera.hidden = false;
+            camera.classList.remove("failed");
+            openButton.hidden = true;
+            status.textContent = "Starting the camera…";
+            try {
+                await scanner.start();
+                status.textContent = "Hold a label in the frame. It reads one after another.";
+            } catch (error) {
+                // Starting failed and stopped itself, which closed the panel: open it again to say why
+                camera.hidden = false;
+                openButton.hidden = true;
+                camera.classList.add("failed");
+                status.textContent = error.friendly ?? "The camera could not be started.";
+            }
+        });
+        closeButton.addEventListener("click", () => {
+            scanner.stop();
+            input.focus();
+        });
+        torchButton.addEventListener("click", async () => setTorch(await scanner.torch(!torchOn)));
     })();
     </script>
 }

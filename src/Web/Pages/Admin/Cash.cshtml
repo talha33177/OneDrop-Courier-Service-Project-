@@ -47,7 +47,7 @@
                     {
                         <tr>
                             <td><span class="mono strong">@d.Number</span><div class="cell-sub">Paid in @d.DepositedOn.ToString("ddd d MMM")@(d.RecordedBy is null ? "" : $" by {d.RecordedBy}")</div></td>
-                            <td>@d.Hub</td>
+                            <td><span class="code-link">@d.HubCode</span> @d.Hub</td>
                             <td>@d.Bank<div class="cell-sub mono">@d.SlipNumber</div></td>
                             <td class="num strong">@Money.Taka(d.Amount)</td>
                             <td>

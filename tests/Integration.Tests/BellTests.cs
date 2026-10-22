@@ -117,6 +117,11 @@ public partial class BellTests(WebAppFactory factory) : AppTests(factory)
 
         await NewMerchantAsync(approved: false);
         Assert.Contains("/Admin/Merchants", Marked(await (await SignInAsync("onedrop", "admin@onedrop.test")).PageAsync("/Admin")));
+
+        // A hub's own staff are marked too: a parcel booked in Mirpur puts a pickup on its board, whatever else is waiting
+        var mirpur = await NewMerchantAsync(area: "Mirpur 10");
+        await BookAsync(mirpur.ApiKey, area: "Mirpur 10", cod: 300);
+        Assert.Contains("/Hub", Marked(await (await SignInAsync("onedrop", "mirpur@onedrop.test")).PageAsync("/Hub")));
     }
 
     /// <summary>The menu items carrying the "work waiting" mark.</summary>

@@ -46,7 +46,7 @@ public class MerchantBusinessesHandler(IAppDbContext db, ICurrentUser currentUse
 
         return await db.Merchants
             .IgnoreQueryFilters([QueryFilters.Merchant])
-            .Where(m => (m.Id == account || m.MainMerchantId == account) && !m.Archived)
+            .Where(m => m.Id == account || m.MainMerchantId == account)
             .OrderBy(m => m.MainMerchantId != null)
             .ThenBy(m => m.Name)
             .Select(m => new BusinessCard(
@@ -83,7 +83,7 @@ public class MerchantBusinessesHandler(IAppDbContext db, ICurrentUser currentUse
 
         return await db.Merchants
             .IgnoreQueryFilters([QueryFilters.Merchant])
-            .Where(m => (m.Id == account || m.MainMerchantId == account) && !m.Archived)
+            .Where(m => m.Id == account || m.MainMerchantId == account)
             .OrderBy(m => m.MainMerchantId != null)
             .ThenBy(m => m.Name)
             .Select(m => new BusinessItem(
@@ -101,7 +101,7 @@ public class MerchantBusinessesHandler(IAppDbContext db, ICurrentUser currentUse
         var account = Account();
         var name = await db.Merchants
             .IgnoreQueryFilters([QueryFilters.Merchant])
-            .Where(m => m.Id == id && (m.Id == account || m.MainMerchantId == account) && !m.Archived)
+            .Where(m => m.Id == id && (m.Id == account || m.MainMerchantId == account))
             .Select(m => m.Name)
             .SingleOrDefaultAsync(cancellationToken);
 

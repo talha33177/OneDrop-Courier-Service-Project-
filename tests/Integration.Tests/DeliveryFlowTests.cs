@@ -39,6 +39,10 @@ public class DeliveryFlowTests(WebAppFactory factory) : AppTests(factory)
         // closes the bag when it is the last one, and hands it to its rider
         Assert.Contains("Send it to Gulshan hub", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", code.ToLowerInvariant())));
         Assert.Contains("Already scanned in here", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", code)));
+
+        // A hand scanner's prefix and line ending, and a phone camera reading a label that holds the tracking link
+        Assert.Contains("Already scanned in here", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", $"]Q1{code}\r\n")));
+        Assert.Contains("Already scanned in here", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Receive&hub=MIR", ("Code", $"https://onedrop.example/Track?code={code}")));
         Assert.Contains("Bag for Gulshan hub", await hub.SubmitAsync("/Hub/Scan?hub=MIR", "/Hub/Scan?mode=Dispatch&hub=MIR", ("Code", code)));
         Assert.Equal(ParcelStatus.AtHub, (await ParcelAsync(code)).Status);
         var bag = await SealBagOfAsync(hub, "MIR", code);

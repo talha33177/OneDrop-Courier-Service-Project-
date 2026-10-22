@@ -22,6 +22,8 @@
     var now = tenant.Local(DateTime.UtcNow);
     var rights = ViewContext.HttpContext.Items[MerchantPages.RightsKey] as MerchantRights;
     bool May(MerchantPermissions permission) => rights is null || rights.May(permission);
+    // A terminated account is told so by the banner on every page, not as suspended, and has nothing left to set up
+    var terminated = rights is { Terminated: true };
 
     // Every stage a parcel can be in right now, in the order a parcel passes through them; a returned parcel collects nothing
     (string Tab, string Name, string Help, string Icon, string Tone, int Count, decimal? Cash, bool Attention)[] stages =
@@ -51,7 +53,10 @@
     </div>
 </div>
 
-@if (d.Status == MerchantStatus.Pending)
+@if (terminated)
+{
+}
+else if (d.Status == MerchantStatus.Pending)
 {
     <div class="alert alert-warning spread">
         <div class="alert-text">@Icons.Get("clock")<div><strong>Your account is waiting for approval.</strong> We check new merchants within a working day. You can look around now, and book parcels once it is approved.</div></div>
@@ -72,7 +77,7 @@ else if (d.Status == MerchantStatus.Suspended)
     </div>
 }
 
-@if (current >= 0)
+@if (current >= 0 && !terminated)
 {
     <div class="card checklist mb">
         <div class="card-head">
@@ -270,7 +275,7 @@ else if (active && s.Pending > 0 && May(MerchantPermissions.Booking))
             <p class="hint mt-0">Paid into your account every morning for the day before.</p>
             <div class="money-list mt">
                 <div>
-                    <span class="muted">Last payment</span>
+                    <span class="muted">Last payout received</span>
                     @if (d.LastPayout is { } last)
                     {
                         <a asp-page="/Merchant/Payment" asp-route-number="@last.Number">@Money.Taka(last.Amount) on @last.PaidOn.ToString("d MMM")</a>

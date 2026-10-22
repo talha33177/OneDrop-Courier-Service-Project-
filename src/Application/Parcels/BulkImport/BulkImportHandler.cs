@@ -3,7 +3,9 @@ using System.Text;
 using Application.Abstractions;
 using Application.Common;
 using Application.Delivery.Pickups;
+using Application.Network.ListAreas;
 using Application.Parcels.CreateParcel;
+using Application.Pricing.DeliveryOptions;
 using Domain.Common;
 using Domain.Parcels;
 using Domain.Pricing;
@@ -17,14 +19,22 @@ public sealed record ImportProblem(int Line, string Message);
 public sealed record ImportResult(IReadOnlyList<CreateParcelResult> Booked, IReadOnlyList<ImportProblem> Problems);
 
 /// <summary>
-/// Books many parcels from a CSV file, as merchants export them from their shop or a spreadsheet. Every row is checked
-/// first; only when all are good are they saved, in one go, so a file is never half booked, and their pickup points
-/// go on the day's pickup list. Columns, with a header row: <c>invoice, recipient_name, recipient_phone,
-/// recipient_address, area, cod_amount, weight_kg</c>, and optionally <c>item_description, note, speed</c> and
-/// <c>product_type</c> (a code or name from the courier's delivery types, such as express or fresh food) and <c>location</c> (the door's
-/// coordinates, or a Google Maps link that holds them).
+/// Books many parcels from a filled-in Excel workbook or a CSV file, as merchants export them from their shop or a
+/// spreadsheet. Every row is checked first; only when all are good are they saved, in one go, so a file is never half
+/// booked, and their pickup points go on the day's pickup list. Columns, with a heading row: <c>invoice,
+/// recipient_name, recipient_phone, recipient_address, area, cod_amount, weight_kg</c>, and optionally
+/// <c>item_description, note, speed</c> and <c>product_type</c> (a code or name from the courier's delivery types, such
+/// as express or fresh food) and <c>location</c> (the door's coordinates, or a Google Maps link that holds them). A
+/// heading may be written as the template titles it ("Recipient name *", "Weight (kg)"): case, spaces and
+/// punctuation do not matter.
 /// </summary>
-public class BulkImportHandler(IAppDbContext db, CreateParcelHandler parcels, PickupSchedule pickups)
+public class BulkImportHandler(
+    IAppDbContext db,
+    CreateParcelHandler parcels,
+    PickupSchedule pickups,
+    ListAreasHandler areas,
+    DeliveryOptionsHandler options,
+    IParcelSheets sheets)
 {
     public const int MaxRows = 500;
 
@@ -34,27 +44,63 @@ public class BulkImportHandler(IAppDbContext db, CreateParcelHandler parcels, Pi
         "item_description", "note", "speed", "product_type", "location"
     ];
 
+    private static readonly string[] OptionalColumns = ["invoice", "item_description", "note", "speed", "product_type", "location"];
+
+    /// <summary>The courier's areas and delivery types with the columns' guide, for the templates and the page.</summary>
+    public async Task<ParcelTemplate> TemplateAsync(CancellationToken cancellationToken = default)
+    {
+        var places = await areas.HandleAsync(cancellationToken);
+        var everyOption = await options.ListAsync(cancellationToken: cancellationToken);
+        var speeds = Choices(everyOption, DeliveryOptionKind.Speed);
+        var contents = Choices(everyOption, DeliveryOptionKind.Contents);
+
+        return new ParcelTemplate(
+            Guide(speeds, contents),
+            [.. places.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)],
+            speeds,
+            contents,
+            MaxRows);
+    }
+
+    /// <summary>Books a file a merchant uploaded: a workbook (a zip, which starts with "PK") or CSV text.</summary>
+    public async Task<Result<ImportResult>> ImportFileAsync(byte[] file, CancellationToken cancellationToken = default)
+    {
+        if (file is [(byte)'P', (byte)'K', ..])
+        {
+            using var workbook = new MemoryStream(file);
+            var sheet = sheets.Read(workbook);
+
+            return sheet.IsFailure ? sheet.Error! : await ImportAsync(sheet.Value, cancellationToken);
+        }
+
+        return await ImportAsync(Encoding.UTF8.GetString(file), cancellationToken);
+    }
+
     public async Task<Result<ImportResult>> ImportAsync(string csv, CancellationToken cancellationToken = default)
     {
-        var lines = ReadRows(csv);
+        return await ImportAsync(ReadRows(csv), cancellationToken);
+    }
+
+    public async Task<Result<ImportResult>> ImportAsync(IReadOnlyList<SheetRow> lines, CancellationToken cancellationToken = default)
+    {
         if (lines.Count == 0)
         {
             return Error.Validation("import.empty", "The file is empty. Download the template and fill in one parcel per row.");
         }
 
-        var header = lines[0].Fields.Select(field => field.Trim().ToLowerInvariant()).ToList();
+        var header = lines[0].Fields.Select(Normalize).ToList();
         var missing = Columns.Take(7).Where(column => !header.Contains(column)).ToList();
         if (missing.Count > 0)
         {
             return Error.Validation(
                 "import.columns",
-                $"The header row is missing {string.Join(", ", missing)}. Use the template's columns.");
+                $"The heading row is missing {string.Join(", ", missing)}. Use the template's columns.");
         }
 
         var rows = lines.Skip(1).Where(row => row.Fields.Any(field => field.Trim().Length > 0)).ToList();
         if (rows.Count == 0)
         {
-            return Error.Validation("import.noRows", "The file has a header but no parcels.");
+            return Error.Validation("import.noRows", "The file has a heading row but no parcels.");
         }
 
         if (rows.Count > MaxRows)
@@ -133,12 +179,71 @@ public class BulkImportHandler(IAppDbContext db, CreateParcelHandler parcels, Pi
             []);
     }
 
-    /// <summary>The template a merchant downloads: the header and two example rows.</summary>
-    public static string Template(string exampleArea)
+    private static List<TemplateChoice> Choices(IReadOnlyList<OptionRow> everyOption, DeliveryOptionKind kind)
     {
-        return string.Join(",", Columns) + "\r\n" +
-            $"INV-1001,Rahim Uddin,01712345678,\"House 12, Road 5\",{exampleArea},1250,0.5,T-shirt,Call before coming,regular,general,\r\n" +
-            $"INV-1002,Nadia Islam,01812345678,\"Flat 3B, House 7\",{exampleArea},800,1,Glass vase,,express,fragile,\"23.8103, 90.4125\"\r\n";
+        return
+        [
+            .. everyOption
+                .Where(o => o.Kind == kind)
+                .Select(o => new TemplateChoice(o.Name, o.Description, o.IsDefault))
+        ];
+    }
+
+    /// <summary>What each column holds, in the words the template and the upload page share.</summary>
+    private static List<ImportColumn> Guide(IReadOnlyList<TemplateChoice> speeds, IReadOnlyList<TemplateChoice> contents)
+    {
+        string[] help =
+        [
+            "Your own order number, so you can match the parcel to your order later.",
+            "Who receives the parcel.",
+            "The recipient's mobile number. The rider calls it at the door.",
+            "House, road and locality, written as the rider should read it.",
+            "The recipient's area, picked from the drop-down list. It decides the delivery charge.",
+            "The cash the rider collects at the door, in taka. Write 0 if the customer has already paid.",
+            "The parcel's weight in kilograms.",
+            "What is inside, in a few words.",
+            "Anything the rider should know.",
+            $"{Pick(speeds)} Some speeds add to the delivery charge.",
+            $"{Pick(contents)} Some kinds add to the delivery charge.",
+            "The door's map pin: its coordinates, or a full Google Maps link."
+        ];
+        string[] titles =
+        [
+            "Invoice", "Recipient name", "Recipient phone", "Recipient address", "Area", "COD amount (৳)", "Weight (kg)",
+            "Item description", "Note", "Speed", "Product type", "Location"
+        ];
+
+        return
+        [
+            .. Columns.Select((key, index) => new ImportColumn(key, titles[index], !OptionalColumns.Contains(key), help[index]))
+        ];
+    }
+
+    private static string Pick(IReadOnlyList<TemplateChoice> choices)
+    {
+        var usual = choices.FirstOrDefault(c => c.IsDefault);
+
+        return $"Optional. Pick one: {string.Join(", ", choices.Select(c => c.Name))}." +
+            (usual is null ? "" : $" Left empty, it is {usual.Name}.");
+    }
+
+    /// <summary>A heading as the code knows it: "Recipient name *" and "recipient_name" are the same column.</summary>
+    private static string Normalize(string heading)
+    {
+        var key = new StringBuilder(heading.Length);
+        foreach (var c in heading.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                key.Append(c);
+            }
+            else if (key.Length > 0 && key[^1] != '_')
+            {
+                key.Append('_');
+            }
+        }
+
+        return key.ToString().TrimEnd('_');
     }
 
     private static bool TryAmount(string text, out decimal value)
@@ -151,9 +256,9 @@ public class BulkImportHandler(IAppDbContext db, CreateParcelHandler parcels, Pi
     }
 
     /// <summary>Splits CSV into rows of fields: commas, quoted fields with commas, doubled quotes and line breaks inside quotes.</summary>
-    private static List<(int Line, List<string> Fields)> ReadRows(string csv)
+    private static List<SheetRow> ReadRows(string csv)
     {
-        var rows = new List<(int, List<string>)>();
+        var rows = new List<SheetRow>();
         var fields = new List<string>();
         var field = new StringBuilder();
         var quoted = false;
@@ -201,7 +306,7 @@ public class BulkImportHandler(IAppDbContext db, CreateParcelHandler parcels, Pi
                 case '\n':
                     fields.Add(field.ToString());
                     field.Clear();
-                    rows.Add((rowLine, fields));
+                    rows.Add(new SheetRow(rowLine, fields));
                     fields = [];
                     line++;
                     rowLine = line;
@@ -215,7 +320,7 @@ public class BulkImportHandler(IAppDbContext db, CreateParcelHandler parcels, Pi
         if (field.Length > 0 || fields.Count > 0)
         {
             fields.Add(field.ToString());
-            rows.Add((rowLine, fields));
+            rows.Add(new SheetRow(rowLine, fields));
         }
 
         return rows;

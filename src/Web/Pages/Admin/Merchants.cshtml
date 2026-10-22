@@ -23,12 +23,17 @@
 <div class="card">
     <form class="filters" method="get">
         <div class="segmented" style="align-self:center">
-            <a class="@(Model.Status is null ? "active" : "")" asp-route-search="@Model.Search">All</a>
+            <a class="@(Model.Status is null && !Model.Terminated ? "active" : "")" asp-route-search="@Model.Search">All</a>
             <a class="@(Model.Status == MerchantStatus.Pending ? "active" : "")" asp-route-status="Pending" asp-route-search="@Model.Search">Awaiting approval</a>
             <a class="@(Model.Status == MerchantStatus.Active ? "active" : "")" asp-route-status="Active" asp-route-search="@Model.Search">Active</a>
             <a class="@(Model.Status == MerchantStatus.Suspended ? "active" : "")" asp-route-status="Suspended" asp-route-search="@Model.Search">Suspended</a>
+            <a class="@(Model.Terminated ? "active" : "")" asp-route-terminated="true" asp-route-search="@Model.Search">Terminated</a>
         </div>
         <input type="hidden" name="status" value="@Model.Status" />
+        @if (Model.Terminated)
+        {
+            <input type="hidden" name="terminated" value="true" />
+        }
         <div class="field grow">
             <label for="search" class="sr-only">Search</label>
             <input type="search" id="search" name="search" value="@Model.Search" placeholder="Business, owner, phone or merchant ID" />
@@ -37,7 +42,7 @@
     </form>
     @if (Model.Rows.Count == 0)
     {
-        <div class="empty">@Icons.Get("store")<h3>No merchants here</h3></div>
+        <div class="empty">@Icons.Get("store")<h3>@(Model.Terminated ? "No terminated merchants" : "No merchants here")</h3></div>
     }
     else
     {
@@ -50,7 +55,7 @@
                         <tr>
                             <td><a class="cell-main" asp-page="/Admin/Merchant" asp-route-id="@m.Id">@m.Name</a><div class="cell-sub">@m.OwnerName@(m.Account is null ? "" : $" · a business of {m.Account}")</div></td>
                             <td>@Money.Phone(m.Phone)</td>
-                            <td>@Statuses.Badge(m.Status)</td>
+                            <td>@if (Model.Terminated) { <span class="badge badge-cancel">Terminated</span> } else { @Statuses.Badge(m.Status) }</td>
                             <td class="num">@m.Parcels</td>
                             <td class="num">@m.Delivered</td>
                             <td class="num">@m.Returned</td>

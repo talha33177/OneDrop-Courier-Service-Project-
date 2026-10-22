@@ -24,13 +24,13 @@ public interface IUserAccounts
     Task<LoginInfo?> FindByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// A one-time token that lets the login choose a new password, for a link in an email. It stops working once used,
-    /// once the password changes another way, or after a day.
+    /// A short random code that lets the login choose a new password, for a link in an email. It says nothing about
+    /// whose it is, stops working once used, once the password changes another way, or after a day.
     /// </summary>
-    Task<string> PasswordTokenAsync(long userId, CancellationToken cancellationToken = default);
+    Task<string> PasswordLinkCodeAsync(long userId, CancellationToken cancellationToken = default);
 
-    /// <summary>Sets a new password with a token from <see cref="PasswordTokenAsync"/>, or says why not.</summary>
-    Task<Result> ResetPasswordWithTokenAsync(long userId, string token, string password, CancellationToken cancellationToken = default);
+    /// <summary>Sets a new password with a code from <see cref="PasswordLinkCodeAsync"/>, or says why not.</summary>
+    Task<Result> ResetPasswordWithCodeAsync(string code, string password, CancellationToken cancellationToken = default);
 
     /// <summary>The new login's id, or why it was refused (email taken at this courier, weak password).</summary>
     Task<Result<long>> CreateAsync(NewLogin login, CancellationToken cancellationToken = default);
@@ -49,6 +49,15 @@ public interface IUserAccounts
     /// sign-in, and a session already open ends at its next security check.
     /// </summary>
     Task SetLoginEnabledAsync(long userId, bool enabled, CancellationToken cancellationToken = default);
+
+    /// <summary>The ids of every login that works in a merchant account: its owner and its moderators.</summary>
+    Task<IReadOnlyList<long>> MerchantLoginsAsync(long accountId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a login for good. Refused when the login has left its mark on a record that stays (a row it last changed),
+    /// which means it worked here: stop it instead.
+    /// </summary>
+    Task<Result> DeleteLoginAsync(long userId, CancellationToken cancellationToken = default);
 
     /// <summary>Gives a login a new password, for an owner who has to hand one out again.</summary>
     Task<Result> ResetPasswordAsync(long userId, string password, CancellationToken cancellationToken = default);

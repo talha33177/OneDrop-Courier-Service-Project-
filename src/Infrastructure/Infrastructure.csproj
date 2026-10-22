@@ -23,6 +23,7 @@
     <PackageReference Include="Hangfire.SqlServer" />
     <PackageReference Include="Hangfire.AspNetCore" />
     <PackageReference Include="MailKit" />
+    <PackageReference Include="ClosedXML" />
   </ItemGroup>
 
 </Project>

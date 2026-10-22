@@ -135,12 +135,12 @@ public static class Statuses
                 .AppendHtml(Money.Taka(newCodAmount));
     }
 
-    public static IHtmlContent Badge(ReturnListStatus status)
+    public static IHtmlContent Badge(ReturnListStatus status, bool toMerchant = false)
     {
         return status switch
         {
             ReturnListStatus.Out => Pill("out", "With the rider"),
-            ReturnListStatus.HandedOver => Pill("pending", "Waiting for the merchant"),
+            ReturnListStatus.HandedOver => Pill("pending", toMerchant ? "Please confirm you got them" : "Waiting for the merchant"),
             ReturnListStatus.Confirmed => Pill("done", "Received"),
             _ => Pill("return", "Not handed over")
         };
@@ -172,15 +172,18 @@ public static class Statuses
         return status == RunStatus.Open ? Pill("out", "Open") : Pill("done", "Closed");
     }
 
-    /// <summary>A payout's state; <paramref name="stuck"/> marks one the gateway has refused and the run keeps retrying.</summary>
-    public static IHtmlContent Badge(PayoutStatus status, bool stuck = false)
+    /// <summary>
+    /// A payout's state; <paramref name="stuck"/> marks one the gateway has refused and the run keeps retrying. The
+    /// courier reads what it did (paid, processing); the merchant reads what it gets (received, on its way).
+    /// </summary>
+    public static IHtmlContent Badge(PayoutStatus status, bool stuck = false, bool toMerchant = false)
     {
         return status switch
         {
-            PayoutStatus.Paid => Pill("done", "Paid"),
+            PayoutStatus.Paid => Pill("done", toMerchant ? "Received" : "Paid"),
             PayoutStatus.Cancelled => Pill("cancel", "Cancelled"),
-            _ when stuck => Pill("return", "Refused, retrying"),
-            _ => Pill("pending", "Processing")
+            _ when stuck => Pill("return", toMerchant ? "Delayed, we are retrying" : "Refused, retrying"),
+            _ => Pill("pending", toMerchant ? "On its way" : "Processing")
         };
     }
 

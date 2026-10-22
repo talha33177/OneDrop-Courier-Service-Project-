@@ -278,6 +278,58 @@ public class AdminRidersHandler(IAppDbContext db, ITenantContext tenantContext, 
 
         await db.SaveChangesAsync(cancellationToken);
 
+        // A stopped rider's login is shut as well, so their phone cannot sign in; the same switch lets it back
+        if (rider.UserId is { } login)
+        {
+            await accounts.SetLoginEnabledAsync(login, active, cancellationToken);
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Erases a rider who never worked (added by mistake, or who never started) together with their login. A rider with
+    /// a run, a hand-over, a pickup or a return list behind them stays on record: stop them instead, which shuts their
+    /// login for good. Super admin only.
+    /// </summary>
+    public async Task<Result> DeleteAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var rider = await db.Riders.SingleOrDefaultAsync(r => r.Id == id, cancellationToken);
+        if (rider is null)
+        {
+            return NotFound;
+        }
+
+        if (await BusyAsync(rider, "deleted", cancellationToken) is { } busy)
+        {
+            return busy;
+        }
+
+        if (await db.DeliveryRuns.AnyAsync(r => r.RiderId == id, cancellationToken) ||
+            await db.DeliveryAttempts.AnyAsync(a => a.RiderId == id, cancellationToken) ||
+            await db.PickupRequests.AnyAsync(r => r.RiderId == id, cancellationToken) ||
+            await db.ReturnLists.AnyAsync(l => l.RiderId == id, cancellationToken))
+        {
+            return Error.Conflict(
+                "rider.delete",
+                $"{rider.Name} has worked here, so their runs and hand-overs must stay on record. Stop them instead: " +
+                "their login is shut and they leave the lists of riders to give work to.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        db.Riders.Remove(rider);
+        await db.SaveChangesAsync(cancellationToken);
+        if (rider.UserId is { } login)
+        {
+            var deleted = await accounts.DeleteLoginAsync(login, cancellationToken);
+            if (deleted.IsFailure)
+            {
+                return deleted;
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
         return Result.Success();
     }
 

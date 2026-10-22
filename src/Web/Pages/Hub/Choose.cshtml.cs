@@ -34,12 +34,22 @@ public class ChooseModel(HubOverviewHandler overview) : PageModel
                 "Assign" => work.ToAssign > 0,
                 "Runs" => work.OpenRuns > 0,
                 "Scan" => Mode == ScanMode.Receive && work.Incoming > 0,
+                "Cash" => work.CashWaiting,
                 _ => false
             })
             .ToList();
         if (hubs.Count == 1 || withWork.Count == 1)
         {
             return RedirectToPage($"/Hub/{Next}", new { hub = (hubs.Count == 1 ? hubs[0] : withWork[0]).Hub.Code, mode = Mode });
+        }
+
+        // The cash page is about money, so the hubs holding cash come first, the most cash first
+        if (Next == "Cash")
+        {
+            Busy = [.. hubs.Where(work => work.CashWaiting).OrderByDescending(work => work.CashAtHub).ThenBy(work => work.Hub.Name)];
+            Quiet = [.. hubs.Where(work => !work.CashWaiting)];
+
+            return Page();
         }
 
         Busy = [.. hubs.Where(work => work.Total > 0).OrderByDescending(work => work.Total).ThenBy(work => work.Hub.Name)];

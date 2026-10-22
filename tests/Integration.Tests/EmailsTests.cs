@@ -63,24 +63,34 @@ public partial class EmailsTests(WebAppFactory factory) : AppTests(factory)
         Assert.DoesNotContain(Log.Recent, e => e.To == nobody);
 
         var email = Assert.Single(Log.Recent, e => e.To == shop.Email && e.Subject.StartsWith("Choose a new password", StringComparison.Ordinal));
-        var query = ResetLink().Match(email.Text).Groups[1].Value;
-        Assert.NotEmpty(query);
-        var page = $"/Account/ResetPassword?{query}";
-        var fields = query.Split('&').Select(part => part.Split('=', 2)).ToDictionary(part => part[0], part => Uri.UnescapeDataString(part[1]));
+        var code = ResetLink().Match(email.Text).Groups[1].Value;
+
+        // A short link that names no one: no login id, no long token
+        Assert.Equal(16, code.Length);
+        Assert.DoesNotContain("user=", email.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("token=", email.Text, StringComparison.Ordinal);
+        var page = $"/Account/ResetPassword?c={code}";
         const string chosen = "Chosen#2026x";
 
-        var mismatched = await visitor.SubmitAsync(page, page, ("user", fields["user"]), ("Token", fields["token"]), ("password", chosen), ("confirm", "Other#2026x"));
+        var mismatched = await visitor.SubmitAsync(page, page, ("c", code), ("password", chosen), ("confirm", "Other#2026x"));
         Assert.Contains("The two passwords are not the same", mismatched);
 
-        var reset = await visitor.PostFormAsync(page, page, ("user", fields["user"]), ("Token", fields["token"]), ("password", chosen), ("confirm", chosen));
+        // A weak password is refused and the link stays good for another try
+        var weak = await visitor.SubmitAsync(page, page, ("c", code), ("password", "weak"), ("confirm", "weak"));
+        Assert.DoesNotContain("expired or was used already", weak);
+
+        var reset = await visitor.PostFormAsync(page, page, ("c", code), ("password", chosen), ("confirm", chosen));
         Assert.Equal(HttpStatusCode.Redirect, reset.StatusCode);
         Assert.NotEmpty(await SignInCookieAsync("onedrop", shop.Email, chosen));
 
         // The same link does not work twice
-        var again = await visitor.SubmitAsync(page, page, ("user", fields["user"]), ("Token", fields["token"]), ("password", "Another#2026x"), ("confirm", "Another#2026x"));
+        var again = await visitor.SubmitAsync(page, page, ("c", code), ("password", "Another#2026x"), ("confirm", "Another#2026x"));
         Assert.Contains("expired or was used already", again);
+
+        var guess = await visitor.SubmitAsync(page, page, ("c", "notarealcode0000"), ("password", "Another#2026x"), ("confirm", "Another#2026x"));
+        Assert.Contains("expired or was used already", guess);
     }
 
-    [GeneratedRegex(@"/Account/ResetPassword\?(\S+)")]
+    [GeneratedRegex(@"/Account/ResetPassword\?c=([A-Za-z0-9]+)")]
     private static partial Regex ResetLink();
 }

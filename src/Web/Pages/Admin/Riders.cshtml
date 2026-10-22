@@ -79,6 +79,12 @@
                                     <form method="post" asp-page-handler="Active" asp-route-id="@r.Id" asp-route-active="@(!r.Active)" asp-route-hubId="@Model.HubId" class="inline-form">
                                         <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@(r.Active ? $"{r.Name} gets no new parcels or pickups, and their app shows no work until restarted." : $"{r.Name} can sign in and get work again.")" data-confirm-title="@(r.Active ? "Stop this rider?" : "Restart this rider?")" data-confirm-ok="@(r.Active ? "Stop rider" : "Restart")" data-confirm-tone="@(r.Active ? "danger" : "calm")">@(r.Active ? "Stop" : "Restart")</button>
                                     </form>
+                                    @if (Model.IsSuperAdmin)
+                                    {
+                                        <form method="post" asp-page-handler="Delete" asp-route-id="@r.Id" asp-route-hubId="@Model.HubId" class="inline-form">
+                                            <button class="btn btn-ghost btn-sm text-danger" type="submit" data-confirm="@($"{r.Name} and their login are erased for good. This only works for a rider who never worked; one with runs on record is stopped instead.")" data-confirm-title="Delete this rider?" data-confirm-ok="Delete rider" data-confirm-tone="danger">Delete</button>
+                                        </form>
+                                    }
                                 </td>
                             </tr>
                             @if (Model.Edit == r.Id)

@@ -1275,6 +1275,18 @@ dialog.confirm::backdrop { background: rgba(20, 24, 32, .5); backdrop-filter: bl
 .scan-answer.info { background: linear-gradient(135deg, #eaf0ff, #f7f9ff); border-color: #a9c0fa; color: #1b3a8f; }
 .scan-answer.error { background: linear-gradient(135deg, #ffecee, #fff8f8); border-color: #f5a3ab; color: #7c1520; animation: pop .3s var(--ease), shake .5s .3s; }
 .scan-answer h2, .scan-answer h2 + p { color: inherit; }
+.scan-box .btn svg.icon { width: 18px; height: 18px; }
+.camera-scan { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); overflow: hidden; }
+.camera-scan[hidden] { display: none; }
+.camera-frame { position: relative; background: #0b0d11; display: flex; justify-content: center; max-height: min(52vh, 420px); overflow: hidden; }
+.camera-frame video { display: block; width: 100%; max-height: min(52vh, 420px); object-fit: cover; }
+.camera-guide { position: absolute; inset: 0; margin: auto; width: min(62%, 260px); aspect-ratio: 1; border-radius: 18px; border: 3px solid rgba(255, 255, 255, .85); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .35); pointer-events: none; transition: border-color .15s, box-shadow .15s; }
+.camera-frame.hit .camera-guide { border-color: var(--green); }
+.camera-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; flex-wrap: wrap; font-size: 14px; }
+.camera-bar > span { flex: 1; min-width: 180px; }
+.camera-bar .is-on { background: var(--accent); color: var(--ink); }
+.camera-scan.failed .camera-frame { display: none; }
+.camera-scan.failed .camera-bar > span { color: var(--red); }
 .scan-history { margin-top: 18px; }
 .scan-history h4 { margin-bottom: 8px; }
 .scan-history ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

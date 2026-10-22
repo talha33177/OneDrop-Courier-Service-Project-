@@ -115,7 +115,7 @@
             ("Waiting for a rider", toAssign, toAssign > 0, "Hand them to riders", "/Hub/Choose?next=Assign"),
             ("Out with riders", withRiders, withRiders > 0 || d.OpenRuns > 0,
                 d.OpenRuns > 0
-                    ? new Microsoft.AspNetCore.Html.HtmlString($"{d.OpenRuns} run{(d.OpenRuns == 1 ? "" : "s")} to close, {Money.Taka(d.CashWithRiders)} in cash")
+                    ? new Microsoft.AspNetCore.Html.HtmlString($"{(withRiders == 0 ? "All recorded: " : "")}{d.OpenRuns} run{(d.OpenRuns == 1 ? "" : "s")} to close, {Money.Taka(d.CashWithRiders)} in cash")
                     : "Close each run with the cash",
                 "/Hub/Choose?next=Runs"),
             ("Going back to merchants", s.Returns, s.Returns > 0, "Hand them back at the hub that collected them", "/Hub/Choose?next=Returns"),

@@ -24,14 +24,14 @@ public class PasswordResetHandler(IAppDbContext db, IUserAccounts accounts)
         }
     }
 
-    public Task<Result> ResetAsync(long userId, string? token, string? password, CancellationToken cancellationToken = default)
+    public Task<Result> ResetAsync(string? code, string? password, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(token))
+        if (string.IsNullOrWhiteSpace(code))
         {
             return Task.FromResult<Result>(Error.Validation("login.reset", "This link is not complete. Open it from the email again."));
         }
 
-        return accounts.ResetPasswordWithTokenAsync(userId, token, password ?? "", cancellationToken);
+        return accounts.ResetPasswordWithCodeAsync(code.Trim(), password ?? "", cancellationToken);
     }
 
     /// <summary>Emails a login made by someone else where to sign in, with a link to choose a password.</summary>

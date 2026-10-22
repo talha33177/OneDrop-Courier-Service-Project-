@@ -1,4 +1,5 @@
 @page
+@using Application.Hubs.HubOverview
 @model Web.Pages.Hub.IndexModel
 @inject ITenantContext TenantContext
 @{
@@ -52,44 +53,76 @@
     var leaves = TenantContext.Require().PickupTime;
 
     // The hub's day in three phases, so the six steps read as a shape and not as six equal boxes
-    (string Phase, string PhaseNote, string Title, int Count, string Hint, bool Late, string Page, string? Mode)[] flow =
+    // A step has work when its count is above nothing; "Out with riders" also has work while a run is open with every
+    // parcel recorded, because its cash still has to be counted, so its count is never read alone: the hint says which
+    var heldForLater = b.ToAssign.Count - b.ToAssignNow;
+    var runsToClose = $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} to close";
+    (string Phase, string PhaseNote, string Title, int Count, string Hint, bool Late, string Page, string? Mode, bool Work, string Idle)[] flow =
     [
         ("Parcels coming in", leaves is { } truck ? $"The van leaves at {Statuses.Clock(truck)}" : "From merchants and other hubs",
-            "Pickups to send", b.PickupsOpen, "Give each one a van", false, "/Hub/Pickups", null),
+            "Pickups to send", b.PickupsOpen, "Give each one a van", false, "/Hub/Pickups", null, b.PickupsOpen > 0, "All clear"),
         ("Parcels coming in", "", "Coming in", b.Incoming,
-            b.BagsComingIn > 0 ? $"{b.BagsComingIn} bag{(b.BagsComingIn == 1 ? "" : "s")}: scan each bag, then its parcels" : "Scan them in as they arrive", false, "/Hub/Scan", "Receive"),
+            b.BagsComingIn > 0 ? $"{b.BagsComingIn} bag{(b.BagsComingIn == 1 ? "" : "s")}: scan each bag, then its parcels" : "Scan them in as they arrive", false, "/Hub/Scan", "Receive", b.Incoming > 0, "All clear"),
         ("Sorted here", "What is on the floor now", "Send to other hubs", b.ToDispatchCount,
-            b.BagsToSeal > 0 ? $"{b.BagsToSeal} bag{(b.BagsToSeal == 1 ? "" : "s")} to seal onto the truck" : "Bag them per hub", false, "/Hub/Bags", null),
-        ("Sorted here", "", "Waiting for a rider", b.ToAssign.Count,
-            b.LateToAssign > 0 ? $"{b.LateToAssign} late: hand these out first" : "Hand them to riders", b.LateToAssign > 0, "/Hub/Assign", null),
+            b.BagsToSeal > 0 ? $"{b.BagsToSeal} bag{(b.BagsToSeal == 1 ? "" : "s")} to seal onto the truck" : "Bag them per hub", false, "/Hub/Bags", null, b.ToDispatchCount > 0, "All clear"),
+        ("Sorted here", "", "Waiting for a rider", b.ToAssignNow,
+            (b.LateToAssign > 0 ? $"{b.LateToAssign} late: hand these out first" : "Hand them to riders") + (heldForLater > 0 ? $" · {heldForLater} held for a later day" : ""),
+            b.LateToAssign > 0, "/Hub/Assign", null, b.ToAssignNow > 0, heldForLater > 0 ? $"{heldForLater} held for a later day" : "All clear"),
         ("Parcels going out", "Closed off at the end of the day", "Out with riders", b.WithRiders,
             b.LateRuns > 0
                 ? $"{b.LateRuns} rider{(b.LateRuns == 1 ? " is" : "s are")} late back"
-                : $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} to close", b.LateRuns > 0, "/Hub/Runs", null),
-        ("Parcels going out", "", "Hand back", b.ToHandBackCount, "Send them with a rider, or hand over here", false, "/Hub/Returns", null)
+                : b.WithRiders == 0 ? $"All recorded: {runsToClose}" : $"{runsToClose}, count the cash when each is back",
+            b.LateRuns > 0, "/Hub/Runs", null, b.WithRiders > 0 || b.OpenRuns > 0, "All clear"),
+        ("Parcels going out", "", "Hand back", b.ToHandBackCount, "Send them with a rider, or hand over here", false, "/Hub/Returns", null, b.ToHandBackCount > 0, "All clear")
     ];
 
-    // What needs the operator now, most pressing first: only what they may open, and only what is really waiting
-    (string Icon, string What, string Why, string Action, string Page, string? Mode, bool Urgent)[] jobs =
+    // Cash and shortfalls belong to one hub each. On the board of every hub the line names the hub (and links to it) when
+    // only one has any, and otherwise says how many and lists the biggest, so nobody has to guess where the money is
+    var cashHubs = all ? Model.Work.Where(work => work.CashAtHub > 0).OrderByDescending(work => work.CashAtHub).ToList() : [];
+    var shortHubs = all ? Model.Work.Where(work => work.Shortfalls > 0).OrderByDescending(work => work.Shortfalls).ToList() : [];
+    string? HubCashUrl(HubWork? work) => work is not null && Model.MayGo("/Hub/Cash", null) ? Url.Page("/Hub/Cash", new { hub = work.Hub.Code }) : null;
+    var hubName = b.Hub is { } here ? $"{here.Name} ({here.Code})" : "this hub";
+    var cashWhat = cashHubs.Count switch
+    {
+        0 => $"৳{b.CashAtHub:N0} at {hubName} to pay into the bank",
+        1 => $"৳{cashHubs[0].CashAtHub:N0} at {cashHubs[0].Hub.Name} ({cashHubs[0].Hub.Code}) to pay into the bank",
+        _ => $"৳{cashHubs.Sum(work => work.CashAtHub):N0} at {cashHubs.Count} hubs to pay into the bank"
+    };
+    var cashWhy = cashHubs.Count > 1
+        ? string.Join(", ", cashHubs.Take(4).Select(work => $"{work.Hub.Name} ৳{work.CashAtHub:N0}")) + (cashHubs.Count > 4 ? " and more" : "")
+        : "Record each deposit with its slip";
+    var shortWhat = shortHubs.Count switch
+    {
+        0 => $"{b.ShortfallsWaiting} rider shortfall{(b.ShortfallsWaiting == 1 ? "" : "s")} to accept at {hubName}",
+        1 => $"{shortHubs[0].Shortfalls} rider shortfall{(shortHubs[0].Shortfalls == 1 ? "" : "s")} to accept at {shortHubs[0].Hub.Name} ({shortHubs[0].Hub.Code})",
+        _ => $"{b.ShortfallsWaiting} rider shortfalls to accept at {shortHubs.Count} hubs"
+    };
+    var shortWhy = shortHubs.Count > 1
+        ? string.Join(", ", shortHubs.Take(4).Select(work => $"{work.Hub.Name} {work.Shortfalls}")) + (shortHubs.Count > 4 ? " and more" : "")
+        : "A rider handed in less cash than they collected";
+
+    // What needs the operator now, most pressing first: only what they may open, and only what is really waiting.
+    // A line with its own link opens that page for one hub directly; the rest go by Go()
+    (string Icon, string What, string Why, string Action, string Page, string? Mode, bool Urgent, string? Link)[] jobs =
     [
-        ("clock", $"{b.LateRuns} rider{(b.LateRuns == 1 ? "" : "s")} late back with cash", "Close the run and count what they handed in", "Close runs", "/Hub/Runs", null, true),
-        ("alert", $"{b.ShortfallsWaiting} rider shortfall{(b.ShortfallsWaiting == 1 ? "" : "s")} to accept", "A rider handed in less cash than they collected", "Settle it", "/Hub/Cash", null, true),
-        ("send", $"{b.LateToAssign} parcel{(b.LateToAssign == 1 ? " is" : "s are")} past the day {(b.LateToAssign == 1 ? "it was" : "they were")} due", "Hand these to a rider before anything else", "Assign first", "/Hub/Assign", null, true),
-        ("truck", $"{b.PickupsOpen} pickup{(b.PickupsOpen == 1 ? "" : "s")} with no van", "Merchants are waiting to be collected from", "Give the round to a van", "/Hub/Pickups", null, false),
-        ("scan", $"{b.Incoming} parcel{(b.Incoming == 1 ? " is" : "s are")} on the way here", "Scan each one in as it reaches the floor", "Open Receive", "/Hub/Scan", "Receive", false),
-        ("send", $"{b.ToAssign.Count} parcel{(b.ToAssign.Count == 1 ? "" : "s")} waiting for a rider", "These are for your own areas", "Assign to riders", "/Hub/Assign", null, false),
-        ("bag", $"{b.BagsToSeal} bag{(b.BagsToSeal == 1 ? "" : "s")} to seal", "Seal each one when the truck is loaded, and print its manifest", "Open bags", "/Hub/Bags", null, false),
-        ("route", $"{b.ToDispatchCount} parcel{(b.ToDispatchCount == 1 ? "" : "s")} to send to other hubs", "Scan them into the bag for their hub", "Bag them", "/Hub/Scan", "Dispatch", false),
-        ("return", $"{b.ToHandBackCount} return{(b.ToHandBackCount == 1 ? "" : "s")} to hand back", "Send them out on a return list, or hand them over here", "Open returns", "/Hub/Returns", null, false),
-        ("cash", $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} still open", "Count the cash when the rider is back", "Close runs", "/Hub/Runs", null, false),
-        ("bank", $"৳{b.CashAtHub:N0} at the hub to pay into the bank", "Record each deposit with its slip", "Deposit cash", "/Hub/Cash", null, false)
+        ("clock", $"{b.LateRuns} rider{(b.LateRuns == 1 ? "" : "s")} late back with cash", "Close the run and count what they handed in", "Close runs", "/Hub/Runs", null, true, null),
+        ("alert", shortWhat, shortWhy, "Settle it", "/Hub/Cash", null, true, HubCashUrl(shortHubs.Count == 1 ? shortHubs[0] : null)),
+        ("send", $"{b.LateToAssign} parcel{(b.LateToAssign == 1 ? " is" : "s are")} past the day {(b.LateToAssign == 1 ? "it was" : "they were")} due", "Hand these to a rider before anything else", "Assign first", "/Hub/Assign", null, true, null),
+        ("truck", $"{b.PickupsOpen} pickup{(b.PickupsOpen == 1 ? "" : "s")} with no van", "Merchants are waiting to be collected from", "Give the round to a van", "/Hub/Pickups", null, false, null),
+        ("scan", $"{b.Incoming} parcel{(b.Incoming == 1 ? " is" : "s are")} on the way here", "Scan each one in as it reaches the floor", "Open Receive", "/Hub/Scan", "Receive", false, null),
+        ("send", $"{b.ToAssignNow} parcel{(b.ToAssignNow == 1 ? "" : "s")} waiting for a rider", "These are for your own areas", "Assign to riders", "/Hub/Assign", null, false, null),
+        ("bag", $"{b.BagsToSeal} bag{(b.BagsToSeal == 1 ? "" : "s")} to seal", "Seal each one when the truck is loaded, and print its manifest", "Open bags", "/Hub/Bags", null, false, null),
+        ("route", $"{b.ToDispatchCount} parcel{(b.ToDispatchCount == 1 ? "" : "s")} to send to other hubs", "Scan them into the bag for their hub", "Bag them", "/Hub/Scan", "Dispatch", false, null),
+        ("return", $"{b.ToHandBackCount} return{(b.ToHandBackCount == 1 ? "" : "s")} to hand back", "Send them out on a return list, or hand them over here", "Open returns", "/Hub/Returns", null, false, null),
+        ("cash", $"{b.OpenRuns} run{(b.OpenRuns == 1 ? "" : "s")} still open", b.WithRiders == 0 ? "Every parcel is recorded: count each rider's cash and close the run" : "Count the cash when the rider is back", "Close runs", "/Hub/Runs", null, false, null),
+        ("bank", cashWhat, cashWhy, cashHubs.Count > 1 ? "Choose a hub" : "Deposit cash", "/Hub/Cash", null, false, HubCashUrl(cashHubs.Count == 1 ? cashHubs[0] : null))
     ];
     var counts = new[]
     {
-        b.LateRuns, b.ShortfallsWaiting, b.LateToAssign, b.PickupsOpen, b.Incoming, b.ToAssign.Count, b.BagsToSeal, b.ToDispatchCount,
+        b.LateRuns, b.ShortfallsWaiting, b.LateToAssign, b.PickupsOpen, b.Incoming, b.ToAssignNow, b.BagsToSeal, b.ToDispatchCount,
         b.ToHandBackCount, b.OpenRuns, b.CashAtHub > 0 ? 1 : 0
     };
-    var needed = jobs.Where((job, at) => counts[at] > 0 && Go(job.Page, job.Mode) is not null).Take(3).ToList();
+    var needed = jobs.Where((job, at) => counts[at] > 0 && (job.Link ?? Go(job.Page, job.Mode)) is not null).Take(3).ToList();
 }
 
 <div data-live="board">
@@ -115,7 +148,7 @@
                             <strong>@job.What</strong>
                             <span>@job.Why</span>
                         </div>
-                        <a class="btn @(at == 0 ? "btn-primary" : "btn-outline") btn-sm" href="@Go(job.Page, job.Mode)">@job.Action @Icons.Get("arrow-right")</a>
+                        <a class="btn @(at == 0 ? "btn-primary" : "btn-outline") btn-sm" href="@(job.Link ?? Go(job.Page, job.Mode))">@job.Action @Icons.Get("arrow-right")</a>
                     </li>
                 }
             </ol>
@@ -133,10 +166,10 @@
                 <nav class="flow flow-part" style="--steps:@phase.Count()">
                     @foreach (var step in phase)
                     {
-                        <a class="flow-step @(step.Late ? "late" : step.Count > 0 ? "has-work" : "clear")" href="@Go(step.Page, step.Mode)">
+                        <a class="flow-step @(step.Late ? "late" : step.Work ? "has-work" : "clear")" href="@Go(step.Page, step.Mode)">
                             <span class="flow-title">@step.Title</span>
                             <span class="flow-count">@step.Count</span>
-                            <span class="flow-hint">@(step.Count > 0 ? step.Hint : "All clear")</span>
+                            <span class="flow-hint">@(step.Work ? step.Hint : step.Idle)</span>
                         </a>
                     }
                 </nav>
@@ -148,7 +181,7 @@
         <div class="card">
             <div class="card-head">
                 <div><h2>@Icons.Get("send") Waiting for a rider</h2><p>Parcels @(all ? "each hub delivers" : "this hub delivers"), scanned in and ready to go out</p></div>
-                @if (b.ToAssign.Count > 0)
+                @if (b.ToAssignNow > 0)
                 {
                     <a class="btn btn-primary btn-sm" href="@Go("/Hub/Assign")">Assign to riders @Icons.Get("arrow-right")</a>
                 }
@@ -296,10 +329,46 @@
                 <div class="stat-icon green">@Icons.Get("cash")</div>
                 <div><div class="stat-label">Cash with riders</div><div class="stat-value">@Money.Taka(b.CashWithRiders)</div><div class="stat-sub">Counted when each run is closed</div></div>
             </div>
-            <a class="stat" href="@(Go("/Hub/Cash") ?? "#")">
-                <div class="stat-icon">@Icons.Get("bank")</div>
-                <div><div class="stat-label">Cash at the hub</div><div class="stat-value">@Money.Taka(b.CashAtHub)</div><div class="stat-sub">Handed in, not yet paid into the bank</div></div>
-            </a>
+            @if (all)
+            {
+                <div class="card">
+                    <div class="card-head"><div><h2>@Icons.Get("bank") Cash at the hubs</h2><p>Handed in by riders, not yet paid into the bank</p></div></div>
+                    @if (cashHubs.Count == 0)
+                    {
+                        <div class="card-body muted">No hub holds cash to pay in.</div>
+                    }
+                    else
+                    {
+                        <div class="table-wrap">
+                            <table class="table compact">
+                                <tbody>
+                                    @foreach (var work in cashHubs)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @if (HubCashUrl(work) is { } cashUrl) { <a class="code-link" href="@cashUrl">@work.Hub.Code</a> } else { <span class="code-link">@work.Hub.Code</span> } @work.Hub.Name
+                                                @if (work.Shortfalls > 0)
+                                                {
+                                                    <div class="cell-sub negative">@work.Shortfalls rider @(work.Shortfalls == 1 ? "shortfall" : "shortfalls") to accept</div>
+                                                }
+                                            </td>
+                                            <td class="num strong">@Money.Taka(work.CashAtHub)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot><tr><td class="strong">At every hub</td><td class="num strong">@Money.Taka(cashHubs.Sum(work => work.CashAtHub))</td></tr></tfoot>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <a class="stat" href="@(Go("/Hub/Cash") ?? "#")">
+                    <div class="stat-icon">@Icons.Get("bank")</div>
+                    <div><div class="stat-label">Cash at @(b.Hub?.Name ?? "the hub")</div><div class="stat-value">@Money.Taka(b.CashAtHub)</div><div class="stat-sub">Handed in, not yet paid into the bank</div></div>
+                </a>
+            }
         </div>
     </div>
 </div>

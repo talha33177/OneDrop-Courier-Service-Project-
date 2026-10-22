@@ -48,7 +48,7 @@ public class CashModel(HubOverviewHandler hubs, HubCashHandler cash) : HubPage(h
 
         var recorded = await cash.DepositAsync(Hub.Code, amount, bank, slip, depositedOn, cancellationToken);
         TempData[recorded.IsSuccess ? "Done" : "Problem"] = recorded.IsSuccess
-            ? $"Deposit {recorded.Value} of ৳{amount:N0} recorded. Finance confirms it once it shows in the bank."
+            ? $"Deposit {recorded.Value} of ৳{amount:N0} from {Hub.Name} recorded. Finance confirms it once it shows in the bank."
             : recorded.Error!.Message;
 
         return RedirectToPage(new { hub = Hub.Code });

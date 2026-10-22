@@ -1,12 +1,13 @@
 @using Application.Payments.MerchantPayments
-@model (PayoutDetails Details, string ParcelLink)
-@* One payout as an invoice: who was paid, how, and the parcels it covers *@
+@model (PayoutDetails Details, string ParcelLink, bool ToMerchant)
+@* One payout as an invoice: who was paid, how, and the parcels it covers. The merchant reads it as money coming to it, the courier as money it sends *@
 @{
     var p = Model.Details.Payout;
+    var toMerchant = Model.ToMerchant;
 }
 @if (p.IsStuck)
 {
-    <div class="alert alert-error" role="alert">@Icons.Get("alert")<div>The transfer to @p.Method.DisplayName() @p.Account was refused @(p.FailedAttempts == 1 ? "once" : $"{p.FailedAttempts} times")@(p.LastTriedOn is { } tried ? $", last on {tried:d MMM, h:mm tt}" : ""): <strong>@p.LastError</strong> It is sent again every hour; if the account is wrong, the payout account needs correcting.</div></div>
+    <div class="alert alert-error" role="alert">@Icons.Get("alert")<div>The transfer to @p.Method.DisplayName() @p.Account was refused @(p.FailedAttempts == 1 ? "once" : $"{p.FailedAttempts} times")@(p.LastTriedOn is { } tried ? $", last on {tried:d MMM, h:mm tt}" : ""): <strong>@p.LastError</strong> It is sent again every hour; if the account is wrong, @(toMerchant ? "correct your payout account in Settings." : "the payout account needs correcting.")</div></div>
 }
 else if (p.Status == Domain.Payments.PayoutStatus.Cancelled)
 {
@@ -18,12 +19,12 @@ else if (p.Status == Domain.Payments.PayoutStatus.Cancelled)
         @await Html.PartialAsync("_StatementLines", (Model.Details.Lines, Model.ParcelLink))
     </div>
     <div class="card">
-        <div class="card-head"><h2>@Icons.Get("file") Invoice @p.Number</h2>@Statuses.Badge(p.Status, p.IsStuck)</div>
+        <div class="card-head"><h2>@Icons.Get("file") Invoice @p.Number</h2>@Statuses.Badge(p.Status, p.IsStuck, toMerchant)</div>
         <div class="card-body">
             <dl class="kv">
                 <dt>Merchant</dt><dd>@p.Merchant</dd>
                 <dt>Covers</dt><dd>Parcels finished up to @p.UpToDate.ToString("d MMMM yyyy")</dd>
-                <dt>Paid to</dt><dd>@p.Method.DisplayName() @(p.Method == Domain.Merchants.PayoutMethod.Bank ? p.Account : Money.Phone(p.Account))</dd>
+                <dt>@(toMerchant ? "Sent to your" : "Paid to")</dt><dd>@p.Method.DisplayName() @(p.Method == Domain.Merchants.PayoutMethod.Bank ? p.Account : Money.Phone(p.Account))</dd>
                 <dt>Made</dt><dd>@p.Created.ToString("d MMM yyyy, h:mm tt")</dd>
                 @if (p.PaidOn is { } paid)
                 {
@@ -37,7 +38,12 @@ else if (p.Status == Domain.Payments.PayoutStatus.Cancelled)
                 {
                     <div><span class="muted">Adjustments</span><span class="@(p.AdjustmentsTotal < 0 ? "negative" : "")">@Money.Taka(p.AdjustmentsTotal)</span></div>
                 }
-                <div class="total"><span>@(p.Status switch { Domain.Payments.PayoutStatus.Paid => "Paid", Domain.Payments.PayoutStatus.Cancelled => "Not paid", _ => "To pay" })</span><span>@Money.Taka(p.Amount)</span></div>
+                <div class="total"><span>@(p.Status switch
+                {
+                    Domain.Payments.PayoutStatus.Paid => toMerchant ? "You received" : "Paid",
+                    Domain.Payments.PayoutStatus.Cancelled => toMerchant ? "Not sent" : "Not paid",
+                    _ => toMerchant ? "You will receive" : "To pay"
+                })</span><span>@Money.Taka(p.Amount)</span></div>
             </div>
             <button class="btn btn-outline btn-block mt no-print" type="button" onclick="window.print()">@Icons.Get("printer") Print invoice</button>
         </div>

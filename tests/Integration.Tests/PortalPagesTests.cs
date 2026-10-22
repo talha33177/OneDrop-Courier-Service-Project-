@@ -38,6 +38,23 @@ public partial class PortalPagesTests(WebAppFactory factory) : AppTests(factory)
     }
 
     [Fact]
+    public async Task The_scan_page_offers_the_camera_and_serves_what_it_needs()
+    {
+        WebAppFactory.RequireDatabase();
+        var hub = await SignInAsync("onedrop", "hub@onedrop.test");
+
+        var page = await hub.PageAsync("/Hub/Scan?hub=MIR&mode=Receive");
+
+        Assert.Contains("data-camera-open", page);
+        Assert.Contains("data-camera-close", page);
+        var scripts = Regex.Matches(page, "<script src=\"([^\"]+)\"").Select(m => WebUtility.HtmlDecode(m.Groups[1].Value)).ToList();
+        var scanner = scripts.Single(src => src.Contains("scanner"));
+        Assert.Contains("data-jsqr=\"/lib/jsqr/jsQR.js\"", page);
+        Assert.Equal(HttpStatusCode.OK, (await hub.GetAsync(scanner)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await hub.GetAsync("/lib/jsqr/jsQR.js")).StatusCode);
+    }
+
+    [Fact]
     public async Task Hub_staff_choose_their_hub_after_signing_in_and_see_where_pickups_wait()
     {
         WebAppFactory.RequireDatabase();

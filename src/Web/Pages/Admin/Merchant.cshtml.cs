@@ -5,6 +5,7 @@ using Application.Parcels.Browse;
 using Application.Payments.RunPayouts;
 using Domain.Common;
 using Domain.Merchants;
+using Web.Authentication;
 
 namespace Web.Pages.Admin;
 
@@ -13,8 +14,15 @@ namespace Web.Pages.Admin;
 /// requests; approve, suspend or reactivate, correct its profile and payout account, hold, release or pay its payouts
 /// now, and write adjustments on its balance.
 /// </summary>
-public class MerchantModel(AdminMerchantsHandler merchants, ParcelListHandler parcels, PayoutsJob job) : PageModel
+public class MerchantModel(
+    AdminMerchantsHandler merchants,
+    MerchantRemovalHandler removal,
+    ParcelListHandler parcels,
+    PayoutsJob job) : PageModel
 {
+    /// <summary>Terminating or deleting an account is the super admin's alone.</summary>
+    public bool IsSuperAdmin => StaffPages.Rights(HttpContext)?.IsSuperAdmin == true;
+
     public MerchantView Merchant { get; private set; } = null!;
 
     public MerchantAccountView Account { get; private set; } = null!;
@@ -52,6 +60,45 @@ public class MerchantModel(AdminMerchantsHandler merchants, ParcelListHandler pa
     public async Task<IActionResult> OnPostSuspendAsync(long id, CancellationToken cancellationToken)
     {
         return Answer(id, await merchants.SuspendAsync(id, cancellationToken), "Suspended: the merchant cannot book parcels.");
+    }
+
+    public async Task<IActionResult> OnPostTerminateAsync(long id, CancellationToken cancellationToken)
+    {
+        return Answer(
+            id,
+            await removal.TerminateAsync(id, cancellationToken),
+            "Terminated: its people can only read their history now, and its API keys are shut. Its record stays.");
+    }
+
+    public async Task<IActionResult> OnPostRestoreAsync(long id, CancellationToken cancellationToken)
+    {
+        return Answer(
+            id,
+            await removal.RestoreAsync(id, cancellationToken),
+            "Brought back: it can book and change things again. Its API keys stay closed.");
+    }
+
+    public async Task<IActionResult> OnPostStopModeratorAsync(long id, long moderatorId, CancellationToken cancellationToken)
+    {
+        return Answer(id, await merchants.StopModeratorAsync(moderatorId, cancellationToken), "They are stopped and cannot sign in.");
+    }
+
+    public async Task<IActionResult> OnPostLetModeratorInAsync(long id, long moderatorId, CancellationToken cancellationToken)
+    {
+        return Answer(id, await merchants.LetModeratorBackInAsync(moderatorId, cancellationToken), "They can sign in again with the same password.");
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(long id, CancellationToken cancellationToken)
+    {
+        var deleted = await removal.DeleteAsync(id, cancellationToken);
+        if (deleted.IsSuccess)
+        {
+            TempData["Done"] = "Merchant deleted.";
+
+            return RedirectToPage("/Admin/Merchants");
+        }
+
+        return Answer(id, deleted, "");
     }
 
     public async Task<IActionResult> OnPostReactivateAsync(long id, CancellationToken cancellationToken)

@@ -97,6 +97,7 @@ public static class DependencyInjection
 
         services.AddScoped<MerchantOnboarding>();
         services.AddScoped<AdminMerchantsHandler>();
+        services.AddScoped<MerchantRemovalHandler>();
         services.AddScoped<MerchantAccountHandler>();
         services.AddScoped<MerchantBusinessesHandler>();
         services.AddScoped<MerchantPictureHandler>();

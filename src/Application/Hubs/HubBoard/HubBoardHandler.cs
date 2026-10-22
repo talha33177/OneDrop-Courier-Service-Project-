@@ -72,6 +72,9 @@ public sealed record HubBoard(
 
     public int LateToAssign => ToAssign.Count(p => p.DueOn < Today);
 
+    /// <summary>The parcels a rider can be given today: those the customer asked to have on a later day wait.</summary>
+    public int ToAssignNow => ToAssign.Count(p => p.HoldUntil is not { } day || day <= Today);
+
     public int ToDispatchCount => ToDispatch.Sum(group => group.Parcels.Count);
 
     public int ToHandBackCount => ToHandBack.Sum(group => group.Parcels.Count);

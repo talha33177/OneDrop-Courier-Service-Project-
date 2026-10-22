@@ -8,7 +8,15 @@
 
 <div class="page-head">
     <div>
-        <h1>Cash and deposits</h1>
+        @if (Model.Hub is { } cashHub)
+        {
+            <div class="page-kicker">@Icons.Get("warehouse") @cashHub.Code · @cashHub.Address</div>
+            <h1>@cashHub.Name: cash and deposits</h1>
+        }
+        else
+        {
+            <h1>Cash and deposits</h1>
+        }
         <p>The cash riders hand in at closing stays at the hub until the cash desk pays it into the bank. Record each deposit with its slip; finance confirms it once the money shows in the bank.</p>
     </div>
     <div class="page-actions">@await Html.PartialAsync("_HubSwitch", Model)</div>
@@ -29,7 +37,7 @@
 <div class="grid grid-3 mb">
     <div class="stat">
         <div class="stat-icon green">@Icons.Get("cash")</div>
-        <div><div class="stat-label">Cash at the hub</div><div class="stat-value">@Money.Taka(data.InHand)</div><div class="stat-sub">Handed in by riders, not yet paid in</div></div>
+        <div><div class="stat-label">Cash at @(Model.Hub?.Name ?? "the hub")</div><div class="stat-value">@Money.Taka(data.InHand)</div><div class="stat-sub">Handed in by riders, not yet paid in</div></div>
     </div>
     <div class="stat">
         <div class="stat-icon">@Icons.Get("bank")</div>
@@ -122,12 +130,12 @@
         @if (Model.MayDeposit)
         {
             <form method="post" asp-page-handler="Deposit" asp-route-hub="@Model.Hub?.Code" class="card">
-                <div class="card-head"><div><h2>@Icons.Get("plus") Record a deposit</h2><p>As the bank's slip shows it</p></div></div>
+                <div class="card-head"><div><h2>@Icons.Get("plus") Record a deposit</h2><p>Cash of @Model.Hub?.Name (@Model.Hub?.Code), as the bank's slip shows it</p></div></div>
                 <div class="card-body">
                     <div class="field">
                         <label for="amount">Amount paid in</label>
                         <div class="input-group"><span class="prefix">৳</span><input id="amount" name="amount" type="number" min="1" step="1" max="@data.InHand.ToString("0")" required /></div>
-                        <div class="hint">The hub holds @Money.Taka(data.InHand).</div>
+                        <div class="hint">@Model.Hub?.Name holds @Money.Taka(data.InHand).</div>
                     </div>
                     <div class="field">
                         <label for="bank">Bank and branch</label>

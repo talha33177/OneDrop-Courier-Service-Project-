@@ -131,6 +131,12 @@
                                             <button class="btn btn-ghost btn-sm" type="submit" data-confirm="@person.Name is signed out and cannot sign in until let back in. What they did stays in the parcels' history." data-confirm-title="Stop @person.Name?" data-confirm-ok="Stop" data-confirm-tone="danger">Stop</button>
                                         </form>
                                     }
+                                    @if (Model.Me.IsSuperAdmin)
+                                    {
+                                        <form method="post" asp-page-handler="Delete" asp-route-id="@person.UserId" class="inline-form">
+                                            <button class="btn btn-ghost btn-sm text-danger" type="submit" data-confirm="@($"{person.Name} and their login are erased for good. This only works for someone who never did any work here; anyone else is stopped instead, so what they did stays on record.")" data-confirm-title="@($"Delete {person.Name}?")" data-confirm-ok="Delete" data-confirm-tone="danger">Delete</button>
+                                        </form>
+                                    }
                                 }
                                 else if (isMe)
                                 {

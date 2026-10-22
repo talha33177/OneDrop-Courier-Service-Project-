@@ -261,12 +261,13 @@ public class DashboardHandler(
                 h.Name,
                 db.Parcels.Count(p => p.CurrentHubId == h.Id),
                 db.Parcels.Count(p => p.CurrentHubId == h.Id && p.DeliveryHubId == h.Id &&
-                    (p.Status == ParcelStatus.AtHub || p.Status == ParcelStatus.OnHold)),
+                    (p.Status == ParcelStatus.AtHub || p.Status == ParcelStatus.OnHold) &&
+                    (p.HoldUntil == null || p.HoldUntil <= today)),
                 db.Parcels.Count(p => p.TransferToHubId == h.Id ||
                     (p.Status == ParcelStatus.PickedUp && p.PickupHubId == h.Id)),
                 (from a in db.DeliveryAttempts
                     join run in db.DeliveryRuns on a.RunId equals run.Id
-                    where run.HubId == h.Id && a.Outcome == null
+                    where run.HubId == h.Id && run.Status == RunStatus.Open && a.Outcome == null
                     select a.Id).Count()))
             .AsNoTracking()
             .ToListAsync(cancellationToken);

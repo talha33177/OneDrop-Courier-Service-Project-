@@ -55,8 +55,8 @@ public class HubScanHandler(IAppDbContext db, ITenantContext tenantContext, HubD
             return UnknownHub;
         }
 
-        var code = trackingCode?.Trim().ToUpperInvariant();
-        if (string.IsNullOrEmpty(code))
+        var code = ScanCode.Read(trackingCode);
+        if (code is null)
         {
             return new ScanAnswer(ScanTone.Error, "Scan or type a tracking code.");
         }

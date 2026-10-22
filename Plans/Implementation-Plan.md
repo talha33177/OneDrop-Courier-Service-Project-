@@ -16,7 +16,7 @@ The one place to see where we are and what comes next for **OneDrop Courier**, t
 |---|---|
 | Current phase | **Phase 5** — staff jobs at the hubs and at head office (Phase 4 is done) |
 | Next task | The owner's review of 5.1, 5.4 (bags between hubs), 5.5 (hub cash and deposits) and 4.8 (the admin pages). Then 5.2 desk homes and who did it, then 5.3 racks and the sort scan. The owner's senior puts the site live with [Deployment.md](../Documentation/Deployment.md) (server and address are theirs to choose). Still waiting on the owner: review and commit of everything since `db63259` (uncommitted on `main`); 2.6 and 2.7 wait on accounts and a decision |
-| Last session | 2026-10-21 — 5.4 bags between hubs, 5.5 hub cash and deposits, then 4.8 the pass over every admin page (all uncommitted; both databases published) |
+| Last session | 2026-10-22 — hub scanning ready for hand scanners and a camera scanner (uncommitted); before it 5.4 bags, 5.5 hub cash and 4.8 the admin pass (uncommitted; both databases published) |
 | Blockers | None. `OneDrop` was re-created clean on 2026-10-20 (map, rates, delivery types, one admin; no merchants or riders) |
 
 ---
@@ -341,6 +341,208 @@ New ones are added there and dated here.
 ## Daily log
 
 Newest first.
+
+### 2026-10-22 (hub scanning: ready for hand scanners, and a camera scanner to try it with)
+- **Owner's request:** the hub types the parcel code to scan; make it work with real scanner devices in production, and
+  add a mobile camera scanner so it can be tested now.
+- **Found:** the scan box already accepted a hand scanner's typing, but it cleared itself only after the server
+  answered, so a scanner quicker than the server (or two labels in a row) could lose or join codes; a label whose QR
+  held a link, or a scanner adding a prefix, was "not found"; and Tab-terminated scanners did nothing.
+- **Done:** (1) scans are queued and answered in order, the box is emptied the moment a scan is taken, Tab ends a scan
+  like Enter, and a lost connection or a signed-out session says so instead of silently reposting. (2)
+  `Domain.Parcels.ScanCode` reads what arrived (see Project-Context, "Scanning at the hub"). (3) A **Camera** button:
+  `wwwroot/js/scanner.js` with `BarcodeDetector` or jsQR (vendored in `wwwroot/lib/jsqr`), torch, one count per label
+  held in view, friendly messages for a refused camera, no camera and an insecure address. (4) A "camera" icon.
+- **Tested:** build 0 warnings; domain **293** (12 new `ScanCodeTests`), architecture 6; integration `PortalPagesTests`
+  and `DeliveryFlowTests` 18 of 18 on `OneDrop-Test` (new: the scan page offers the camera and serves its scripts; the
+  flow scans with a `]Q1…` prefix and a tracking link). Live on `OneDrop-Test` (port 5090, `Jobs:Server` off) in
+  Chrome: four scans fired at once were answered in order; the camera, fed a canvas stream of a real label QR, read
+  through jsQR (this Chrome has no `BarcodeDetector`): one scan per label held steady, again after it left the view;
+  the refused-camera message; phone width, no console errors.
+- **Not done / for the owner:** a real phone and a real hand scanner (neither could be tried here); the
+  `BarcodeDetector` path (only jsQR was exercised). The camera needs https (or localhost): to try it from a phone
+  against this PC, use Chrome on Android with USB debugging and `adb reverse tcp:5080 tcp:5080`, then open
+  `http://onedrop.localhost:5080/Hub/Scan`; the live site is https. Labels hold a QR code only, so a 1D laser scanner
+  cannot read them; adding a Code 128 barcode to labels is the next step if the hubs buy those.
+- **Went wrong:** `OneDrop-Test` and `OneDrop` both hold the owner's real mail server, so starting the app there with
+  the job server on sent 13 queued test emails (to `@shop.test`, `@signup.test` and the like) through it; expect
+  bounces. Run the app against those databases with `Jobs__Server=false`.
+
+### 2026-10-22 (the bulk upload template is a simple Excel sheet)
+- **Owner's request:** the bulk upload's downloadable template looked too minimal; make it look better and easier to
+  understand. First version (a guide tab, example rows, four tabs) was too complex; the owner asked for it simple and
+  with no dummy data.
+- **Done:** the download is a workbook (`IParcelSheets`, `Infrastructure/Spreadsheets/ParcelSheets.cs`, ClosedXML
+  0.105.0) with one visible, empty sheet, "Parcels": dark headings (required ones marked *), a tip and a check on each
+  column, drop-downs for area, speed and contents (read from a hidden "Lists" sheet, which comes from the courier's own
+  areas and delivery types), invoice, phone and location kept as text so a leading 0 stays. No sample data anywhere: the
+  CSV template is now the heading row alone. The upload takes the filled workbook as it is, or a CSV; headings may be
+  the template's titles or the CSV names (`BulkImportHandler.Normalize`). The page has a short "How it works" box and a
+  column table. The plain CSV template stays as a second button.
+- **Tested:** build 0 warnings (into a separate artifacts folder, since the owner's dev server held `src/Web/bin`);
+  `BulkUploadTests` (new, 4: the template's sheet, headings, drop-downs, hidden lists and no rows; a filled workbook
+  booked or refused with its row number; an unreadable or wrong workbook refused; a CSV with the template's titles) 4 of
+  4 on `OneDrop-Test`; `MerchantPanelTests` passed on the first version. **Not done:** the full suite; seeing the
+  simple workbook rendered in Excel (the first version was).
+
+### 2026-10-22 (a terminated account's blocked pages open, disabled, instead of going to the dashboard)
+- **Owner's report:** "Book a parcel" and other pages sent a terminated merchant to the dashboard, which was
+  misleading; show those pages with everything disabled instead.
+- **Done:** `MerchantPermissionFilter` no longer redirects GETs: every page opens as it always did, under the
+  "terminated by OneDrop Courier" banner, with its forms greyed out and their fields and buttons disabled
+  (`main.is-readonly` in `_AppLayout`); links stay, so the disabled page can be seen. A post that gets past a disabled
+  form (forged) is refused and sent back to the same page with the reason. The menu and buttons are the ones the login
+  had before (the read-only page whitelist and permission masking, `MerchantPages.ReadOnlyPages` and
+  `MerchantRights.ReadOnly`, are gone). The booking page no longer says "account is not active yet" under the banner.
+- **Tested:** build 0 warnings; `AccountRemovalTests` 6 of 6 (the five pages that book or change things open with the
+  banner and `is-readonly`; a forged settings post and parcel cancel go back to the same page and change nothing).
+  **Not done:** a look in a browser at the disabled forms.
+
+### 2026-10-22 (accounts terminated before the read-only change could not sign in)
+- **Owner's report:** a merchant terminated earlier today got "This login has been stopped" at sign-in. **Cause:** it
+  was terminated while terminate still shut the owner's login; the new read-only rule only applies to logins that are
+  open. **Done:** `Scripts/2026/016_TerminatedOwnersSignInAgain.sql` lets back in the owner's login of every terminated
+  account (not its moderators, which stay stopped; the admin lets them in from the merchant's page). Published to
+  `OneDrop` and `OneDrop-Test` (it ran on each). **Not done:** a sign-in check in the browser.
+
+### 2026-10-22 (a terminated account reads its history, and can do nothing else)
+- **Owner's request:** a terminated account should still sign in to see its work history, under a warning that it was
+  terminated by OneDrop; it cannot book or do anything; everything is disabled and read only.
+- **Changed:** terminating no longer shuts logins or stops moderators (this replaces what the same day's earlier entry
+  says). `MerchantRights.Terminated` (read from the account's `Archived` on every request, for the owner and moderators
+  alike) leaves only dashboard, parcels and payments to read (`MerchantRights.ReadOnly`), so the menu, favourites and
+  dashboard offer nothing else. `MerchantPermissionFilter` refuses, for a terminated account, every page outside
+  `MerchantPages.ReadOnlyPages` and every post (except working in another of its businesses), redirecting to the
+  dashboard with a note. A red banner on every page says "This account was terminated by OneDrop Courier ... call us";
+  buttons that post are greyed out and links to booking and settings disabled (the server refuses them regardless); the
+  dashboard drops the suspended notice and the get-started list; the booking-only bits of the top bar and the
+  account menu are hidden. The business switcher and `/Merchant/Businesses` now include archived businesses (they were
+  hidden), so the owner reads every business's history. The termination email now says they can still read their
+  history; bringing back no longer has logins to open; the admin may let a moderator back in at any time.
+- **Tested:** build 0 warnings; `AccountRemovalTests` 6 of 6 (the terminated owner signs in, sees the banner and the
+  cancelled parcel and the payments, is redirected from booking, bulk upload, settings, API keys, moderators and the
+  fraud check, has a settings post and a parcel cancel refused with nothing changed; after bringing back, booking opens
+  and the banner is gone). Also passing: domain 281, architecture 6, `ModeratorsTests`, `MerchantPanelTests`,
+  `MerchantBusinessesTests`, `BellTests`, `AccountMenuTests`, `PortalPagesTests`, `EmailsTests`, `StatsTests`,
+  `PayoutAccountsTests`, `IsolationTests`. **Not done:** a look in a browser at the greyed-out buttons; the full suite.
+
+### 2026-10-22 (ending accounts, round two: emails, bring back, moderators, delete staff)
+- **Owner's request:** which of terminate and delete does what; a terminated merchant should get an email; a terminated
+  merchant should be brought back from the panel; delete staff; the super admin stops a merchant's moderators.
+- **Done:** (1) The two buttons now say what they do on the page: Terminate closes a shop that has worked here and keeps
+  its record (and can be undone); Delete wipes an account that never did anything and cannot be undone. (2) Terminating
+  emails the owner once for the account (`MerchantNotice.Terminated`, `MerchantEmailKind.Terminated`; only the main
+  profile raises it, not each business); bringing it back emails "welcome back" (`Restored`). (3) **Bring account back**
+  (`MerchantRemovalHandler.RestoreAsync`, `Merchant.Restore()`): every business is active and listed again and the
+  owner's login opens; the API keys stay revoked, the moderators stopped and the called-off parcels cancelled, each its
+  own decision. Terminated accounts are on a new **Terminated** tab of `/Admin/Merchants`. (4) The super admin stops and
+  lets back in a merchant's moderators from the merchant's page (refused for letting back in while the account is
+  terminated). (5) **Delete staff** on `/Admin/Staff` (super admin only; `StaffHandler.DeleteAsync`): erases someone
+  who never did any work (the login and staff row), under the stop guards (not yourself, never the last super admin);
+  anyone who scanned or changed a record is refused and stopped instead, because their id is on what they did. All
+  five buttons are in `StaffPages.SuperAdminOnly`.
+- **Also fixed:** `MerchantEmails` threw (and queued a failed message) when the merchant had been deleted before an email
+  was sent; it now skips it as out of date.
+- **Tested:** build 0 warnings; `AccountRemovalTests` 6 of 6 (new: the email to the terminated owner and once only, the
+  Terminated tab, bringing back with the key still closed and the welcome-back email, moderator stop and let back in,
+  accounts staff refused; staff deleted when idle and refused for one who scanned a parcel, for oneself and for a hub
+  manager). Other suites: see below.
+
+### 2026-10-22 (the super admin ends rider and merchant accounts)
+- **Owner's request:** the super admin should be able to delete or terminate any rider or merchant, and "check more
+  logic like these".
+- **Found:** stopping a rider never shut their login (only the rider app showed no work); and nothing could end a
+  merchant: `Merchant.Archived` existed and was read everywhere but never set, so a spam sign-up stayed in the list for
+  ever and a closed shop kept its login and API key.
+- **Done:** (1) Stop and Restart on `/Admin/Riders` now also shut and open the rider's login. (2) **Delete rider**
+  (super admin only): erases a rider who never worked with their login; a rider with a run, hand-over, pickup or return
+  list is refused and told to stop instead (their history stays). (3) **Terminate account** on `/Admin/Merchant/{id}`
+  (super admin only, `MerchantRemovalHandler`): the whole account (main profile and every business) is closed for good:
+  `Merchant.Terminate()` (archived and suspended, webhook off), API keys revoked, moderators stopped, every login shut,
+  parcels not yet picked up cancelled at no charge. It waits until nothing is settled-open: no parcel on the way, a
+  balance of exactly ৳0 (pay it with Pay now, or write it off with an adjustment), no unsent payout, no open request,
+  no online payment being settled. A terminated merchant leaves the lists; its page says so. (4) **Delete merchant**
+  (super admin only): erases an account that never did anything (a spam sign-up, a mistake) with its logins; refused
+  once it has a parcel, ledger line, payment, pickup or return list. `StaffPages.SuperAdminOnly` holds the three
+  buttons for super admins whatever a job's permissions are.
+- **Tested:** build 0 warnings; integration `AccountRemovalTests` (new, 4: stop shuts and restart opens the login, a
+  rider who never worked is deleted and one who delivered is not, a merchant with nothing is deleted with its key,
+  point and login and one with a parcel is not, terminate refused while ৳100 is owed and again while a parcel is on
+  the way, then after settling it cancels the waiting parcel and shuts the login and API key and the merchant leaves
+  the list, accounts staff are refused), `GuardTests`, `StaffRolesTests`, `StaffTests`, `PortalPagesTests`,
+  `IsolationTests` pass. **Not done:** a look in a browser; the full suite; terminate sends the merchant no email (its
+  login is shut, so it hears nothing); a terminated merchant cannot be brought back from the panel; staff cannot yet be
+  deleted, only stopped.
+
+### 2026-10-22 (the choose-a-password link is short and names no one)
+- **Owner's report:** the link in the welcome and forgot-password emails was very long and showed the login's id
+  (`?user=3&token=…`, about 250 characters of Identity token).
+- **Done:** the link is now `/Account/ResetPassword?c=` and a 16-character random code (no look-alike characters).
+  Only its SHA-256 is kept, in Identity's own `Identity.UserToken` table (provider `PasswordLink`, the expiry as the
+  value), so there is no schema change and reading the table gives no working link. One link per login (a new one
+  replaces the old); it works once and for a day; a weak password leaves it usable for another try; a password handed
+  over by hand ends it. Another courier's code, an unknown or used one all say "expired or was used already".
+  `IUserAccounts.PasswordLinkCodeAsync` and `ResetPasswordWithCodeAsync` replace the token pair; the page posts `c`.
+- **Tested:** build 0 warnings; integration `EmailsTests` (the link is 16 characters with no `user=` or `token=`,
+  weak password then success, twice and a guessed code refused), `IsolationTests` (another courier's code finds
+  nobody), `ModeratorsTests`, `StaffTests` 8 of 8. **Not done:** the full suite; emails already sent keep the old long
+  link, which no longer works (they ask for a new one at "Forgot your password?").
+
+### 2026-10-22 (merchant pages read payouts as money received, not money paid)
+- **Owner's report:** a merchant's Payments page showed the payout's status as "Paid"; from the merchant's side it is
+  money received. "Find more issue like this and fix them."
+- **Done:** the payout badge, table and invoice are shared with the courier's pages, so they now know who reads them
+  (`Statuses.Badge(PayoutStatus, stuck, toMerchant)`, `_PayoutInvoice` takes a third value). The merchant sees
+  Received / On its way / Delayed, we are retrying (the courier keeps Paid / Processing / Refused, retrying); the
+  payouts table says "You get" and "Sent to"; the invoice says "Sent to your bKash …" and "You received" / "You will
+  receive" / "Not sent", and tells the merchant to correct its own payout account; the empty state says "We pay you
+  every morning …". Also: a return list handed to the merchant says "Please confirm you got them" (it read "Waiting for
+  the merchant" to the merchant itself), the dashboard's "Last payment" is "Last payout received", and a parcel's
+  "Paid out in INV-…" is "Included in payout INV-…".
+- **Checked and left:** the merchant's emails and bell already speak to the merchant; "Paid" on the merchant's online
+  payments is right (it paid the courier).
+- **Tested:** build 0 warnings; `PayoutTests`, `MerchantPanelTests`, `ReturnListsTests`, `PortalPagesTests` 27 of 27
+  (`PayoutTests` now checks the merchant's and the courier's invoice read differently). **Not done:** a look in a
+  browser; the full suite.
+
+### 2026-10-22 (last: paying one merchant ahead of the daily run asks with the real figures)
+- **Owner's request:** the super admin should be able to run a merchant's payout on the same day, for a specific
+  merchant, with a confirmation warning. **Found:** the button existed ("Pay now" on `/Admin/Merchant/{id}`, finance
+  permission, which super admins hold; it includes today's lines) but its confirmation was a calm one-liner.
+- **Done:** the confirmation is now a warning (red) that gives the merchant's figures: the amount sent, how much of it
+  is today's (which the daily run would send tomorrow), the cash still with riders whose run is not closed, and the
+  parcels on their way with the charges owed if they come back; it says a sent payout cannot be taken back.
+  `MerchantView` gained `UnpaidToday`, `CashWithRiders`, `OnTheWay`, `ChargesIfReturned` (same rules as the payout
+  request review). No schema change, no change to who may use it.
+- **Tested:** build 0 warnings (to a side folder: a running `Web.exe` locks `src/Web/bin`); `PayoutTests` 5 of 5
+  (extended: the merchant page carries the warning). **Not done:** a look in a browser; the full suite.
+
+### 2026-10-22 (later: counts that said "all clear" while work waited)
+- **Owner's report:** a rider's run was open with its one parcel delivered, and the board said "Out with riders 0, All
+  clear". Also: the hub menu had no red "!" while the hub had a job (fixed earlier today in `MenuWorkHandler`).
+- **Found and fixed:** (1) "Out with riders" counts parcels not yet recorded, so an open run with everything delivered
+  looked clear: the step now has work while a run is open and says "All recorded: 1 run to close" (hub board, hub
+  chooser's cards, admin dashboard); `HubWork.Total` counts the run, so the menu mark and the chooser ordering do too.
+  (2) "Waiting for a rider" counted parcels the customer asked to have on a later day, which cannot be handed out: the
+  count, the job line, the menu mark, the chooser and the admin dashboard now count only what a rider can be given today
+  (`HubBoard.ToAssignNow`), and the step says "n held for a later day". (3) The admin dashboard's out-with-riders count
+  included unrecorded parcels of closed runs; it now counts open runs only, like the hub board.
+- **Tested:** build 0 warnings; domain 281; integration `HubCashTests` (extended: the open run with every parcel
+  recorded), `PortalPagesTests`, `DeliveryFlowTests`, `DailyPickupTests`, `BellTests`, `StaffRolesTests`,
+  `HubBagsTests`, `IsolationTests` 38 of 38. **Not done:** a look in a browser; no test yet for the held-for-a-later-day
+  parcel.
+
+### 2026-10-22 (the hub's cash says which hub it is at)
+- **Owner's report:** on the all-hubs board "৳1,000 at the hub to pay into the bank" did not say which hub, "Deposit cash"
+  opened a chooser that showed "Nothing waiting" at every hub, and the Cash page never named its hub.
+- **Done:** `HubWork` carries each hub's cash and shortfalls (`CashAtHub`, `Shortfalls`, `CashWaiting`). On the board of
+  every hub the cash and shortfall lines name the hub and open its Cash page when only one has any, and otherwise say how
+  many hubs and list the biggest; the bottom card is a table of each hub's cash with a total. The chooser for the Cash
+  page lists the hubs holding cash first with their amount. The Cash page says "{hub}: cash and deposits" with the hub's
+  code and address, the deposit form and the confirmation name the hub, and finance's deposits to confirm show the code.
+- **Tested:** build 0 warnings; integration `HubCashTests` (extended: the Cash page and the board name Khulna, the
+  chooser lists it) and `PortalPagesTests`, `StaffRolesTests`, `IsolationTests` 20 of 20. **Not done:** a look in a
+  browser (none connected).
 
 ### 2026-10-21 (later: 4.8, a pass over every admin page)
 - **Owner's request:** "lets complete it first" (4.8 before the review of Phase 5).

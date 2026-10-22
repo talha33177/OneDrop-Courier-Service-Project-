@@ -9,10 +9,11 @@
     <div>
         <div class="breadcrumb"><a asp-page="/Merchant/Parcels">Parcels</a> <span>/</span> <span>Bulk upload</span></div>
         <h1>Bulk upload</h1>
-        <p>Book up to @BulkImportHandler.MaxRows parcels at once from a CSV file.</p>
+        <p>Book up to @BulkImportHandler.MaxRows parcels at once from an Excel workbook or a CSV file.</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-outline" asp-page-handler="Template">@Icons.Get("download") Download the template</a>
+        <a class="btn btn-outline" asp-page-handler="CsvTemplate">@Icons.Get("download") CSV template</a>
+        <a class="btn btn-primary" asp-page-handler="Template">@Icons.Get("download") Download the Excel template</a>
     </div>
 </div>
 
@@ -71,47 +72,76 @@
     }
 }
 
+<div class="card mb">
+    <div class="card-head"><h2>@Icons.Get("info") How it works</h2></div>
+    <ol class="guide-steps">
+        <li>
+            <div class="guide-step-text">
+                <h3>Download the template</h3>
+                <p>An empty Excel sheet with a column for each detail. Area, speed and what is inside are drop-down lists.</p>
+            </div>
+        </li>
+        <li>
+            <div class="guide-step-text">
+                <h3>Fill in one parcel per row</h3>
+                <p>Open the Parcels sheet and start on row 2. Columns marked * are required; the others can stay empty.</p>
+            </div>
+        </li>
+        <li>
+            <div class="guide-step-text">
+                <h3>Upload it here</h3>
+                <p>Every row is checked first. Nothing is booked until all rows are right, and any row to fix is listed with its number.</p>
+            </div>
+        </li>
+    </ol>
+</div>
+
 <div class="grid grid-main">
     <div class="card">
         <div class="card-head"><h2>@Icons.Get("upload") Upload a file</h2></div>
         <div class="card-body">
             <form method="post" enctype="multipart/form-data">
                 <div class="field">
-                    <label for="file">CSV file</label>
-                    <input type="file" id="file" name="file" accept=".csv,text/csv" required />
-                    <span class="hint">Save your spreadsheet as "CSV UTF-8". At most 1 MB.</span>
+                    <label for="file">Filled-in template</label>
+                    <input type="file" id="file" name="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+                    <span class="hint">The Excel template (.xlsx), or a spreadsheet saved as "CSV UTF-8". At most 1 MB.</span>
                 </div>
                 <button class="btn btn-primary" type="submit">@Icons.Get("upload") Check and book</button>
             </form>
         </div>
     </div>
     <div class="card">
-        <div class="card-head"><h2>@Icons.Get("info") Columns</h2></div>
+        <div class="card-head"><h2>@Icons.Get("info") Good to know</h2></div>
         <div class="card-body">
-            <dl class="kv">
-                <dt><code>invoice</code></dt><dd>Your order number (optional)</dd>
-                <dt><code>recipient_name</code></dt><dd>Required</dd>
-                <dt><code>recipient_phone</code></dt><dd>Required, such as 01712345678</dd>
-                <dt><code>recipient_address</code></dt><dd>Required</dd>
-                <dt><code>area</code></dt><dd>Required, exactly as in the area list</dd>
-                <dt><code>cod_amount</code></dt><dd>Cash to collect, 0 if paid</dd>
-                <dt><code>weight_kg</code></dt><dd>Such as 0.5</dd>
-                <dt><code>item_description</code></dt><dd>Optional</dd>
-                <dt><code>note</code></dt><dd>Optional, for the rider</dd>
-                <dt><code>speed</code></dt><dd>Optional: regular (the default) or express</dd>
-                <dt><code>product_type</code></dt><dd>Optional: general (the default), liquid, fragile, fresh food or frozen</dd>
-                <dt><code>location</code></dt><dd>Optional: the door's coordinates, such as "23.8103, 90.4125", or a full Google Maps link</dd>
-            </dl>
-            <p class="hint mt">Every parcel goes with the day's pickup by itself: booked before the truck reaches your pickup point, it is collected the same day; once the truck has been, with the next day's.</p>
+            <p class="hint mt-0">Every parcel goes with the day's pickup by itself: booked before the truck reaches your pickup point, it is collected the same day; once the truck has been, with the next day's.</p>
             <details class="mt">
-                <summary class="link-btn">Show the @Model.Areas.Count area names</summary>
+                <summary class="link-btn">Show the @Model.Template.Areas.Count area names</summary>
                 <div class="pill-row mt">
-                    @foreach (var area in Model.Areas.OrderBy(a => a.Name))
+                    @foreach (var area in Model.Template.Areas)
                     {
                         <span class="pill">@area.Name</span>
                     }
                 </div>
             </details>
         </div>
+    </div>
+</div>
+
+<div class="card mt">
+    <div class="card-head"><h2>@Icons.Get("info") What goes in each column</h2></div>
+    <div class="table-wrap">
+        <table class="table compact">
+            <thead><tr><th>Column</th><th>Needed</th><th>What to write</th></tr></thead>
+            <tbody>
+                @foreach (var column in Model.Template.Columns)
+                {
+                    <tr>
+                        <td><strong>@column.Title</strong><div class="hint mt-xs"><code>@column.Key</code></div></td>
+                        <td>@if (column.Required) { <span class="badge badge-brand plain">Required</span> } else { <span class="badge badge-cancel plain">Optional</span> }</td>
+                        <td>@column.Help</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 </div>
